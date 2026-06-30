@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="mb-3">Importar orçamento (PDF)</h4>
+<div class="card"><div class="card-body">
+  <p class="text-muted small">
+    Selecione o fornecedor e envie o PDF do orçamento. O sistema lê os itens com valor
+    e, na próxima tela, você faz o "de-para" com as solicitações em aberto.
+    Funciona melhor com PDFs de texto (não escaneados).
+  </p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-3">
+      <label class="form-label">Fornecedor</label>
+      <select name="fornecedor_id" class="form-select" required>
+        <option value="">— selecione —</option>
+        {% for f in fornecedores %}<option value="{{ f.id }}">{{ f.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Arquivo PDF do orçamento</label>
+      <input type="file" name="pdf" accept="application/pdf" class="form-control" required>
+    </div>
+    <button class="btn btn-primary">Ler PDF</button>
+  </form>
+</div></div>
+{% endblock %}

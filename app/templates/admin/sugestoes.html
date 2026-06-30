@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="{{ url_for('admin.cadastros') }}" class="small">&larr; Cadastros</a>
+<h4 class="mt-2 mb-3">Sugestões de melhoria</h4>
+<div class="card"><div class="list-group list-group-flush">
+  {% for s in lista %}
+  <div class="list-group-item">
+    <div class="small text-muted">{{ s.autor.nome if s.autor else 'Anônimo' }} — {{ s.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+    {{ s.texto }}
+  </div>
+  {% else %}<div class="list-group-item text-muted">Nenhuma sugestão ainda.</div>{% endfor %}
+</div></div>
+{% endblock %}

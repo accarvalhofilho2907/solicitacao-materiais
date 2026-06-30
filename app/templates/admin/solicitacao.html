@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="{{ url_for('admin.dashboard') }}" class="small">&larr; Voltar ao painel</a>
+<div class="d-flex justify-content-between align-items-center mt-2 mb-3">
+  <h4 class="mb-0">Solicitação Nº {{ s.id }}</h4>
+  <span class="badge bg-secondary fs-6">{{ s.status_label }}</span>
+</div>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-body">
+      <h6>Dados</h6>
+      <dl class="row mb-0 small">
+        <dt class="col-4">Material</dt><dd class="col-8">{{ s.material }}</dd>
+        <dt class="col-4">Quantidade</dt><dd class="col-8">
+          <form method="post" action="{{ url_for('admin.alterar_quantidade', sid=s.id) }}" class="d-inline-flex gap-1 align-items-center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input name="quantidade" type="number" min="1" value="{{ s.quantidade }}" class="form-control form-control-sm" style="width:84px">
+            <button class="btn btn-sm btn-outline-secondary">Salvar</button></form>
+          {% if s.quantidade_alterada_por %}<div class="small text-danger mt-1">&#9998; alterada (orig.: {{ s.quantidade_original }}{% if s.editor_qtd %}, por {{ s.editor_qtd.nome }}{% endif %})</div>{% endif %}
+        </dd>
+        <dt class="col-4">Fabricante</dt><dd class="col-8">{{ s.fabricante or '-' }}</dd>
+        <dt class="col-4">Tipo</dt><dd class="col-8">{{ s.tipo.nome if s.tipo else '-' }}</dd>
+        <dt class="col-4">Local / frente</dt><dd class="col-8">{{ s.local_servico or '-' }}</dd>
+        <dt class="col-4">Solicitante</dt><dd class="col-8">{{ s.solicitante.nome }}</dd>
+        <dt class="col-4">Similar</dt><dd class="col-8">{% if s.link_similar %}<a href="{{ s.link_similar }}" target="_blank">link</a>{% else %}-{% endif %}</dd>
+        {% if s.prazo_recebimento %}<dt class="col-4">Prazo receb.</dt><dd class="col-8">{{ s.prazo_recebimento.strftime('%d/%m/%Y') }}</dd>{% endif %}
+        {% if s.frete_tipo %}<dt class="col-4">Frete</dt><dd class="col-8">{{ s.frete_tipo }}{% if s.frete_modalidade %} · {{ s.frete_modalidade|capitalize }}{% endif %}{% if s.transportadora %} · {{ s.transportadora.nome }}{% endif %}{% if s.cidade_retirada %} · {{ s.cidade_retirada.rotulo }}{% endif %}</dd>{% endif %}
+      </dl>
+      {% if s.imagens %}<div class="d-flex flex-wrap gap-2 mt-2">{% for img in s.imagens %}<a href="{{ img.url }}" target="_blank"><img src="{{ img.url }}" style="height:70px" class="rounded border"></a>{% endfor %}</div>{% endif %}
+    </div></div>
+    <div class="card mb-3"><div class="card-body">
+      <h6>Status</h6>
+      <form method="post" action="{{ url_for('admin.mudar_status', sid=s.id) }}" class="d-flex gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="status" class="form-select">{% for code in STATUS %}<option value="{{ code }}" {{ 'selected' if s.status==code }}>{{ STATUS_LABEL[code] }}</option>{% endfor %}</select>
+        <button class="btn btn-outline-primary">Salvar</button></form>
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h6>Mensagens</h6>
+      {% for c in s.comentarios %}<div class="border rounded p-2 mb-2 {{ 'bg-light' if c.autor.is_admin }}"><div class="small text-muted">{{ c.autor.nome }} &mdash; {{ c.criado_em.strftime('%d/%m %H:%M') }}</div>{{ c.texto }}</div>{% else %}<p class="text-muted small">Sem mensagens.</p>{% endfor %}
+      <form method="post" action="{{ url_for('admin.comentar', sid=s.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <textarea name="texto" class="form-control mb-2" rows="2" placeholder="Mensagem ao solicitante..."></textarea>
+        <button class="btn btn-sm btn-primary">Enviar</button></form>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-body">
+      <h6>Solicitar cotação</h6>
+      {% if fornecedores %}
+        <form method="post" action="{{ url_for('admin.enviar_pedido', sid=s.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <textarea name="corpo" class="form-control mb-2" rows="2" placeholder="Corpo do e-mail (opcional; padrão cita 5 dias úteis)."></textarea>
+          <button class="btn btn-success btn-sm">Enviar cotação por e-mail (PDF)</button></form>
+        <div class="mt-2 small">WhatsApp: {% for f in fornecedores %}{% if wa and wa[f.id] %}<a class="badge text-bg-success text-decoration-none" target="_blank" href="{{ wa[f.id] }}">{{ f.nome }}</a> {% else %}<span class="badge bg-light text-muted">{{ f.nome }} (sem tel.)</span> {% endif %}{% endfor %}</div>
+      {% else %}<p class="text-warning small mb-0">Defina o tipo de material com fornecedores ativos.</p>{% endif %}
+    </div></div>
+    <div class="card mb-3"><div class="card-body">
+      <h6>Orçamentos</h6>
+      {% if orcamentos %}<table class="table table-sm align-middle"><thead class="table-light"><tr><th>Fornecedor</th><th>Item</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>
+        {% for o in orcamentos %}<tr class="{{ 'table-success' if o.escolhido else ('table-warning' if o.valor_total==menor_valor) }}">
+          <td>{{ o.fornecedor.nome }}{% if o.escolhido %} <span class="badge bg-success">definido</span>{% endif %}</td>
+          <td class="small">{{ o.item_fornecedor or '-' }}</td>
+          <td>R$ {{ '%.2f'|format(o.valor_total) }}{% if o.valor_total==menor_valor %} <span class="badge bg-warning text-dark">menor</span>{% endif %}</td>
+          <td class="small">{{ o.prazo_entrega or '-' }}</td></tr>{% endfor %}</tbody></table>
+      {% else %}<p class="text-muted small">Nenhum orçamento ainda.</p>{% endif %}
+      <hr>
+      <form method="post" action="{{ url_for('admin.lancar_orcamento', sid=s.id) }}" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-2"><div class="col-12"><select name="fornecedor_id" class="form-select form-select-sm" required><option value="">— fornecedor —</option>{% for f in fornecedores %}<option value="{{ f.id }}">{{ f.nome }}</option>{% endfor %}</select></div>
+          <div class="col-12"><input name="item_fornecedor" class="form-control form-control-sm" placeholder="Item como o fornecedor descreveu *" required></div>
+          <div class="col-6"><input name="valor_total" class="form-control form-control-sm" placeholder="Valor" required></div>
+          <div class="col-6"><input name="prazo_entrega" class="form-control form-control-sm" placeholder="Prazo"></div></div>
+        <button class="btn btn-sm btn-primary mt-2">Lançar orçamento</button></form>
+    </div></div>
+    {% if orcamentos %}
+    <div class="card"><div class="card-body">
+      <h6>Definir fornecedor + Ordem de Compra</h6>
+      <form method="post" action="{{ url_for('admin.definir_fornecedor', sid=s.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label small">Fornecedor vencedor</label>
+        {% for o in orcamentos %}<div class="form-check"><input class="form-check-input" type="radio" name="orcamento_id" value="{{ o.id }}" id="o{{ o.id }}" {{ 'checked' if o.escolhido }} required>
+          <label class="form-check-label" for="o{{ o.id }}">{{ o.fornecedor.nome }} — R$ {{ '%.2f'|format(o.valor_total) }}</label></div>{% endfor %}
+        <div class="row g-2 mt-2">
+          <div class="col-6"><label class="form-label small">Frete</label>
+            <select name="frete_tipo" class="form-select form-select-sm" onchange="document.getElementById('fobbox').style.display=this.value=='FOB'?'block':'none'">
+              <option value="">— escolher —</option><option value="CIF">CIF (fornecedor entrega)</option><option value="FOB">FOB (retirada)</option></select></div>
+          <div class="col-6"><label class="form-label small">Prazo de recebimento *</label><input type="date" name="prazo_recebimento" class="form-control form-control-sm" required></div>
+        </div>
+        <div id="fobbox" style="display:none" class="border rounded p-2 mt-2">
+          <select name="frete_modalidade" class="form-select form-select-sm mb-2" onchange="document.getElementById('tbox').style.display=this.value=='TRANSPORTADORA'?'block':'none';document.getElementById('cbox').style.display=this.value=='COLABORADOR'?'block':'none'">
+            <option value="">— FOB: como será a retirada? —</option><option value="TRANSPORTADORA">Transportadora</option><option value="COLABORADOR">Colaborador do parque</option></select>
+          <div id="tbox" style="display:none" class="input-group input-group-sm mb-1"><select name="transportadora_id" id="selTransp" class="form-select"><option value="">— transportadora —</option>{% for t in transportadoras %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}</select>
+            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('transportadora','selTransp')">+</button></div>
+          <div id="cbox" style="display:none" class="input-group input-group-sm"><select name="cidade_retirada_id" id="selCidade" class="form-select"><option value="">— cidade de retirada —</option>{% for c in cidades %}<option value="{{ c.id }}">{{ c.rotulo }}</option>{% endfor %}</select>
+            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('cidade','selCidade',true)">+</button></div>
+        </div>
+        <button class="btn btn-success btn-sm mt-2">Definir e enviar Ordem de Compra</button>
+        <div class="form-text">O frete é interno (não vai no e-mail ao fornecedor).</div>
+      </form>
+    </div></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

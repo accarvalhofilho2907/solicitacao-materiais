@@ -1,0 +1,694 @@
+from functools import wraps
+from datetime import datetime, date
+from urllib.parse import quote
+
+from flask import (
+    Blueprint, render_template, redirect, url_for, request, flash, abort, current_app, jsonify
+)
+from flask_login import login_required, current_user
+
+from .extensions import db, csrf
+from .models import (
+    Usuario, TipoMaterial, Fornecedor, Solicitacao, Comentario, PedidoCompra, Orcamento,
+    Cidade, Transportadora, Empresa, Sugestao, Atividade, Notinha, STATUS, STATUS_PADRAO,
+)
+from .storage import salvar_imagem
+from .emails import enviar_email
+from .pdf import gerar_pdf_pedido, gerar_pdf_pedido_lote
+from .pdf_orcamento import extrair_itens, _parse_valor
+from .util import normalizar_telefone_br, somar_dias_uteis
+
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+NOTA_WHATS = ("(Esta solicitação de cotação também foi enviada por e-mail; estamos "
+              "encaminhando por aqui também. Pode responder por e-mail ou por aqui.)")
+
+
+def admin_required(f):
+    @wraps(f)
+    @login_required
+    def wrapper(*a, **k):
+        if not current_user.is_admin:
+            abort(403)
+        return f(*a, **k)
+    return wrapper
+
+
+def _prazo_cotacao():
+    d = somar_dias_uteis(5)
+    return d, d.strftime("%d/%m/%Y")
+
+
+def _texto_cotacao(itens, contato=None):
+    _, prazo = _prazo_cotacao()
+    saud = f"Olá {contato}! " if contato else "Olá! "
+    linhas = [f"{saud}Segue solicitação de cotação:"]
+    for s in itens:
+        fab = f" — {s.fabricante}" if s.fabricante else ""
+        linhas.append(f"• Nº {s.id} | {s.material} (qtd {s.quantidade}){fab}")
+        if s.link_similar:
+            linhas.append(f"   Link do produto: {s.link_similar}")
+    linhas.append(f"Prazo para retorno da cotação: 5 dias úteis (até {prazo}).")
+    linhas.append(NOTA_WHATS)
+    return "\n".join(linhas)
+
+
+def _wa_link(f, texto):
+    return f"https://wa.me/{f.telefone_e164}?text={quote(texto)}" if f.telefone_e164 else None
+
+
+# ---------------- Painel ----------------
+@admin_bp.route("/")
+@admin_required
+def dashboard():
+    q = Solicitacao.query
+    f_status = request.args.getlist("status")
+    f_sol = request.args.getlist("solicitante")
+    f_tipo = request.args.get("tipo")
+    f_busca = (request.args.get("q") or "").strip()
+    f_forn = request.args.getlist("fornecedor")
+    f_de = request.args.get("de")
+    f_ate = request.args.get("ate")
+    aplicou = bool(request.args)
+    if not f_status and not aplicou:
+        f_status = STATUS_PADRAO[:]  # padrão: tudo menos Concluído/Cancelada
+    if f_status:
+        q = q.filter(Solicitacao.status.in_(f_status))
+    if f_sol:
+        q = q.filter(Solicitacao.solicitante_id.in_([int(x) for x in f_sol]))
+    if f_forn:
+        ids = [int(x) for x in f_forn]
+        sub = db.session.query(Orcamento.solicitacao_id).filter(Orcamento.fornecedor_id.in_(ids))
+        q = q.filter(db.or_(Solicitacao.fornecedor_definido_id.in_(ids), Solicitacao.id.in_(sub)))
+    if f_tipo:
+        q = q.filter_by(tipo_material_id=int(f_tipo))
+    if f_busca:
+        q = q.filter(Solicitacao.material.ilike(f"%{f_busca}%"))
+    if f_de:
+        q = q.filter(Solicitacao.criado_em >= datetime.strptime(f_de, "%Y-%m-%d"))
+    if f_ate:
+        q = q.filter(Solicitacao.criado_em <= datetime.strptime(f_ate, "%Y-%m-%d").replace(hour=23, minute=59))
+    pedidos = q.order_by(Solicitacao.atualizado_em.desc()).all()
+
+    # Resumo de notinhas (mês corrente) + filtro de atividade
+    f_ativ = request.args.get("ativ_resumo")
+    ini = date.today().replace(day=1)
+    nq = Notinha.query.filter(Notinha.data >= ini)
+    if f_ativ:
+        nq = nq.filter_by(atividade_id=int(f_ativ))
+    total_notinhas_mes = sum(float(n.valor) for n in nq.all())
+
+    return render_template("admin/dashboard.html", pedidos=pedidos,
+        tipos=TipoMaterial.query.order_by(TipoMaterial.nome).all(),
+        solicitantes=Usuario.query.filter(Usuario.papel.in_(["solicitante", "almoxarifado"])).order_by(Usuario.nome).all(),
+        fornecedores=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(),
+        atividades=Atividade.query.filter_by(ativo=True).order_by(Atividade.nome).all(),
+        total_notinhas_mes=total_notinhas_mes, f_ativ=f_ativ,
+        pendentes=Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").count(),
+        f_status=f_status, f_tipo=f_tipo, f_sol=[int(x) for x in f_sol],
+        f_forn=[int(x) for x in f_forn], f_busca=f_busca, f_de=f_de, f_ate=f_ate)
+
+
+@admin_bp.route("/aprovacoes")
+@admin_required
+def aprovacoes():
+    pedidos = Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").order_by(Solicitacao.criado_em).all()
+    return render_template("admin/aprovacoes.html", pedidos=pedidos)
+
+
+@admin_bp.route("/solicitacao/<int:sid>/aprovar", methods=["POST"])
+@admin_required
+def aprovar(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    if s.status == "AGUARDANDO_APROVACAO":
+        s.status = "AGUARDANDO_ENVIO_COTACAO"
+        db.session.commit()
+        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} aprovada", f"Sua solicitação Nº {s.id} foi aprovada.")
+        flash(f"Solicitação Nº {s.id} aprovada.", "success")
+    return redirect(request.referrer or url_for("admin.aprovacoes"))
+
+
+@admin_bp.route("/solicitacao/<int:sid>")
+@admin_required
+def solicitacao(sid):
+    s = db.session.get(Solicitacao, sid)
+    if not s:
+        abort(404)
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo] if s.tipo else []
+    orcamentos = sorted(s.orcamentos, key=lambda o: o.valor_total)
+    wa = {f.id: _wa_link(f, _texto_cotacao([s], f.contato_nome)) for f in fornecedores} if fornecedores else None
+    return render_template("admin/solicitacao.html", s=s, fornecedores=fornecedores, orcamentos=orcamentos,
+        menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa,
+        transportadoras=Transportadora.query.filter_by(ativo=True).order_by(Transportadora.nome).all(),
+        cidades=Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all())
+
+
+@admin_bp.route("/solicitacao/<int:sid>/status", methods=["POST"])
+@admin_required
+def mudar_status(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    novo = request.form.get("status")
+    if novo in STATUS:
+        s.status = novo
+        db.session.commit()
+        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — status atualizado", f"Status: {s.status_label}.")
+        flash("Status atualizado.", "success")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/comentar", methods=["POST"])
+@admin_required
+def comentar(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    texto = request.form.get("texto", "").strip()
+    if texto:
+        db.session.add(Comentario(solicitacao_id=s.id, autor_id=current_user.id, texto=texto))
+        db.session.commit()
+        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — nova mensagem",
+                     f"{texto}\n\n{current_app.config['BASE_URL']}/solicitante/solicitacao/{s.id}")
+        flash("Mensagem enviada.", "success")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/enviar-cotacao", methods=["POST"])
+@admin_required
+def enviar_pedido(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo] if s.tipo else []
+    if not fornecedores:
+        flash("Defina o tipo de material com fornecedores ativos.", "warning")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    _, prazo = _prazo_cotacao()
+    corpo = request.form.get("corpo", "").strip() or (
+        f"Prezados, segue solicitação de cotação (Nº {s.id}) em anexo. Por favor, retornem com "
+        f"valor, prazo e condições de pagamento em até 5 dias úteis (até {prazo}).")
+    pdf = gerar_pdf_pedido(s)
+    emails = [f.email for f in fornecedores]
+    enviar_email(emails, f"Solicitação de Cotação Nº {s.id}", corpo, anexo_bytes=pdf, anexo_nome=f"cotacao_{s.id}.pdf")
+    db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id, destinatarios=", ".join(emails)))
+    s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+    db.session.commit()
+    flash(f"Cotação enviada por e-mail para {len(emails)} fornecedor(es).", "success")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+def _agrupar(status):
+    itens = (Solicitacao.query.filter_by(status=status).filter(Solicitacao.tipo_material_id.isnot(None))
+             .order_by(Solicitacao.id).all())
+    grupos = {}
+    for s in itens:
+        for f in s.tipo.fornecedores:
+            if f.ativo:
+                grupos.setdefault(f.id, {"fornecedor": f, "itens": []})["itens"].append(s)
+    return itens, grupos
+
+
+@admin_bp.route("/enviar-lote")
+@admin_required
+def enviar_lote():
+    itens, grupos = _agrupar("AGUARDANDO_ENVIO_COTACAO")
+    lista = [{"fornecedor": g["fornecedor"], "itens": g["itens"],
+              "wa": _wa_link(g["fornecedor"], _texto_cotacao(g["itens"], g["fornecedor"].contato_nome))}
+             for g in grupos.values()]
+    return render_template("admin/enviar_lote.html", itens=itens, grupos=lista)
+
+
+@admin_bp.route("/enviar-lote/confirmar", methods=["POST"])
+@admin_required
+def enviar_lote_confirmar():
+    corpo_base = request.form.get("corpo", "").strip()
+    _, grupos = _agrupar("AGUARDANDO_ENVIO_COTACAO")
+    if not grupos:
+        flash("Não há solicitações para enviar cotação.", "warning")
+        return redirect(url_for("admin.enviar_lote"))
+    _, prazo = _prazo_cotacao()
+    enviadas = {}
+    for g in grupos.values():
+        f = g["fornecedor"]
+        corpo = corpo_base or ("Prezados, segue solicitação de cotação em anexo. Por favor, retornem com "
+            f"valor, prazo e condições de pagamento em até 5 dias úteis (até {prazo}).")
+        pdf = gerar_pdf_pedido_lote(f.nome, g["itens"])
+        enviar_email(f.email, "Solicitação de Cotação", corpo, anexo_bytes=pdf, anexo_nome="cotacao.pdf")
+        for s in g["itens"]:
+            enviadas.setdefault(s.id, set()).add(f.email)
+    for sid, emails in enviadas.items():
+        s = db.session.get(Solicitacao, sid)
+        db.session.add(PedidoCompra(solicitacao_id=sid, enviado_por=current_user.id, destinatarios=", ".join(sorted(emails))))
+        s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+    db.session.commit()
+    flash(f"Cotação enviada: {len(grupos)} fornecedor(es), {len(enviadas)} solicitação(ões).", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
+def _apos_orcamento(s):
+    if s.status in ("AGUARDANDO_RECEBIMENTO_COTACAO", "AGUARDANDO_ENVIO_COTACAO"):
+        s.status = "AGUARDANDO_DEFINICAO_FORNECEDOR"
+
+
+@admin_bp.route("/solicitacao/<int:sid>/orcamento", methods=["POST"])
+@admin_required
+def lancar_orcamento(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    try:
+        valor = float(request.form.get("valor_total", "0").replace(".", "").replace(",", "."))
+    except ValueError:
+        flash("Valor inválido.", "danger")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    item = request.form.get("item_fornecedor", "").strip()
+    if not item:
+        flash("Informe o nome do item como o fornecedor descreveu (obrigatório).", "danger")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    anexo = salvar_imagem(request.files.get("anexo")) if request.files.get("anexo") else None
+    db.session.add(Orcamento(solicitacao_id=s.id, fornecedor_id=int(request.form["fornecedor_id"]), valor_total=valor,
+        prazo_entrega=request.form.get("prazo_entrega", "").strip(), item_fornecedor=item,
+        observacoes=request.form.get("observacoes", "").strip(), anexo_url=anexo, registrado_por=current_user.id))
+    _apos_orcamento(s)
+    db.session.commit()
+    flash("Orçamento lançado.", "success")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/definir", methods=["POST"])
+@admin_required
+def definir_fornecedor(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    oid = request.form.get("orcamento_id")
+    o = db.session.get(Orcamento, int(oid)) if oid else None
+    if not o or o.solicitacao_id != s.id:
+        flash("Escolha um orçamento válido.", "danger")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    ft = request.form.get("frete_tipo")
+    if ft not in ("CIF", "FOB"):
+        flash("Informe o tipo de frete (CIF ou FOB).", "danger")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    modalidade = transp = cidade = None
+    if ft == "FOB":
+        modalidade = request.form.get("frete_modalidade")
+        if modalidade == "TRANSPORTADORA":
+            transp = request.form.get("transportadora_id") or None
+            if not transp:
+                flash("Indique a transportadora.", "danger")
+                return redirect(url_for("admin.solicitacao", sid=s.id))
+        elif modalidade == "COLABORADOR":
+            cidade = request.form.get("cidade_retirada_id") or None
+            if not cidade:
+                flash("Indique a cidade de retirada.", "danger")
+                return redirect(url_for("admin.solicitacao", sid=s.id))
+        else:
+            flash("No FOB, escolha Transportadora ou Colaborador do parque.", "danger")
+            return redirect(url_for("admin.solicitacao", sid=s.id))
+    prazo = request.form.get("prazo_recebimento")
+    if not prazo:
+        flash("Informe o prazo de recebimento (obrigatório).", "danger")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    for outro in s.orcamentos:
+        outro.escolhido = (outro.id == o.id)
+    s.fornecedor_definido_id = o.fornecedor_id
+    s.frete_tipo = ft
+    s.frete_modalidade = modalidade
+    s.transportadora_id = int(transp) if transp else None
+    s.cidade_retirada_id = int(cidade) if cidade else None
+    s.prazo_recebimento = datetime.strptime(prazo, "%Y-%m-%d").date()
+    s.status = "AGUARDANDO_CHEGADA"
+    pdf = gerar_pdf_pedido(s)
+    enviar_email(o.fornecedor.email, f"Ordem de Compra Nº {s.id}",
+                 f"Prezados, confirmamos a compra do item da solicitação Nº {s.id}. Segue OC em anexo.",
+                 anexo_bytes=pdf, anexo_nome=f"OC_{s.id}.pdf")
+    db.session.commit()
+    flash("Fornecedor definido e Ordem de Compra enviada. Status: Aguardando chegada.", "success")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/quantidade", methods=["POST"])
+@admin_required
+def alterar_quantidade(sid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    try:
+        nova = int(request.form.get("quantidade"))
+    except (TypeError, ValueError):
+        flash("Quantidade inválida.", "danger")
+        return redirect(url_for("admin.solicitacao", sid=s.id))
+    if nova <= 0:
+        flash("A quantidade deve ser maior que zero.", "danger")
+    elif nova != s.quantidade:
+        if s.quantidade_original is None:
+            s.quantidade_original = s.quantidade
+        s.quantidade = nova
+        s.quantidade_alterada_por = current_user.id
+        s.quantidade_alterada_em = datetime.utcnow()
+        db.session.commit()
+        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — quantidade ajustada",
+                     f"A quantidade foi ajustada para {nova} pelo administrador.")
+        flash("Quantidade atualizada.", "success")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+@admin_bp.route("/importar-orcamento", methods=["GET", "POST"])
+@admin_required
+def importar_orcamento():
+    fornecedores = Fornecedor.query.order_by(Fornecedor.nome_fantasia).all()
+    if request.method == "POST":
+        fid = request.form.get("fornecedor_id")
+        arq = request.files.get("pdf")
+        if not fid or not arq or not arq.filename:
+            flash("Selecione o fornecedor e o arquivo PDF.", "warning")
+            return render_template("admin/importar_orcamento.html", fornecedores=fornecedores)
+        try:
+            itens = extrair_itens(arq)
+        except Exception:
+            itens = []
+        if not itens:
+            flash("Não consegui ler itens com valores nesse PDF.", "warning")
+            return render_template("admin/importar_orcamento.html", fornecedores=fornecedores)
+        abertas = (Solicitacao.query.filter(Solicitacao.status.in_(
+            ["AGUARDANDO_RECEBIMENTO_COTACAO", "AGUARDANDO_DEFINICAO_FORNECEDOR", "AGUARDANDO_ENVIO_COTACAO"]))
+            .order_by(Solicitacao.id).all())
+        return render_template("admin/mapear_orcamento.html", itens=itens, abertas=abertas,
+                               fornecedor=db.session.get(Fornecedor, int(fid)))
+    return render_template("admin/importar_orcamento.html", fornecedores=fornecedores)
+
+
+@admin_bp.route("/importar-orcamento/confirmar", methods=["POST"])
+@admin_required
+def confirmar_orcamento_pdf():
+    fid = int(request.form["fornecedor_id"])
+    n = int(request.form.get("n", 0))
+    criados = 0
+    for i in range(n):
+        sid = request.form.get(f"sol_{i}")
+        val = request.form.get(f"val_{i}")
+        if not sid or not val:
+            continue
+        valor = _parse_valor(val)
+        if valor is None:
+            continue
+        desc = (request.form.get(f"desc_{i}", "") or "").strip()
+        db.session.add(Orcamento(solicitacao_id=int(sid), fornecedor_id=fid, valor_total=valor,
+            item_fornecedor=desc[:300], observacoes=desc[:200], registrado_por=current_user.id))
+        s = db.session.get(Solicitacao, int(sid))
+        if s:
+            _apos_orcamento(s)
+        criados += 1
+    db.session.commit()
+    flash(f"{criados} orçamento(s) importado(s) do PDF.", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
+# ---------------- Cadastros ----------------
+@admin_bp.route("/cadastros")
+@admin_required
+def cadastros():
+    return render_template("admin/cadastros.html")
+
+
+@admin_bp.route("/usuarios", methods=["GET", "POST"])
+@admin_required
+def usuarios():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        if Usuario.query.filter_by(email=email).first():
+            flash("Já existe usuário com esse e-mail.", "warning")
+        else:
+            u = Usuario(nome=request.form.get("nome", "").strip(), email=email,
+                        papel=request.form.get("papel", "solicitante"),
+                        empresa_id=request.form.get("empresa_id") or None,
+                        senha_temporaria=True)
+            u.set_senha(request.form.get("senha", ""))
+            db.session.add(u)
+            db.session.commit()
+            flash("Usuário criado. Ele trocará a senha no primeiro acesso.", "success")
+        return redirect(url_for("admin.usuarios"))
+    return render_template("admin/usuarios.html", lista=Usuario.query.order_by(Usuario.nome).all(),
+                           empresas=Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all())
+
+
+@admin_bp.route("/usuarios/<int:uid>", methods=["POST"])
+@admin_required
+def usuario_editar(uid):
+    u = db.session.get(Usuario, uid) or abort(404)
+    u.nome = request.form.get("nome", u.nome).strip()
+    u.papel = request.form.get("papel", u.papel)
+    u.empresa_id = request.form.get("empresa_id") or None
+    u.ativo = request.form.get("ativo") == "1"
+    nova = request.form.get("nova_senha", "").strip()
+    if nova:
+        u.set_senha(nova)
+        u.senha_temporaria = True
+        flash(f"Senha de {u.nome} redefinida (ele troca no próximo acesso).", "success")
+    db.session.commit()
+    flash("Usuário atualizado.", "success")
+    return redirect(url_for("admin.usuarios"))
+
+
+def _cad_simples(model, template, label, extra=None):
+    """Cria/lista um cadastro simples (nome [+ extra])."""
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        if nome:
+            obj = model(nome=nome)
+            if extra:
+                extra(obj)
+            db.session.add(obj)
+            db.session.commit()
+            flash(f"{label} cadastrado(a).", "success")
+        return redirect(request.path)
+    return render_template(template, lista=model.query.order_by(model.nome).all())
+
+
+@admin_bp.route("/tipos", methods=["GET", "POST"])
+@admin_required
+def tipos():
+    return _cad_simples(TipoMaterial, "admin/tipos.html", "Tipo")
+
+
+@admin_bp.route("/tipos/<int:tid>", methods=["POST"])
+@admin_required
+def tipo_editar(tid):
+    t = db.session.get(TipoMaterial, tid) or abort(404)
+    t.nome = request.form.get("nome", t.nome).strip()
+    t.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Tipo atualizado.", "success")
+    return redirect(url_for("admin.tipos"))
+
+
+@admin_bp.route("/cidades", methods=["GET", "POST"])
+@admin_required
+def cidades():
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        if nome:
+            db.session.add(Cidade(nome=nome, uf=(request.form.get("uf", "").strip().upper()[:2] or None)))
+            db.session.commit()
+            flash("Cidade cadastrada.", "success")
+        return redirect(url_for("admin.cidades"))
+    return render_template("admin/cidades.html", lista=Cidade.query.order_by(Cidade.nome).all())
+
+
+@admin_bp.route("/cidades/<int:cid>", methods=["POST"])
+@admin_required
+def cidade_editar(cid):
+    c = db.session.get(Cidade, cid) or abort(404)
+    c.nome = request.form.get("nome", c.nome).strip()
+    c.uf = request.form.get("uf", "").strip().upper()[:2] or None
+    c.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Cidade atualizada.", "success")
+    return redirect(url_for("admin.cidades"))
+
+
+@admin_bp.route("/transportadoras", methods=["GET", "POST"])
+@admin_required
+def transportadoras():
+    return _cad_simples(Transportadora, "admin/transportadoras.html", "Transportadora")
+
+
+@admin_bp.route("/transportadoras/<int:tid>", methods=["POST"])
+@admin_required
+def transportadora_editar(tid):
+    t = db.session.get(Transportadora, tid) or abort(404)
+    t.nome = request.form.get("nome", t.nome).strip()
+    t.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Transportadora atualizada.", "success")
+    return redirect(url_for("admin.transportadoras"))
+
+
+@admin_bp.route("/empresas", methods=["GET", "POST"])
+@admin_required
+def empresas():
+    return _cad_simples(Empresa, "admin/empresas.html", "Empresa")
+
+
+@admin_bp.route("/empresas/<int:eid>", methods=["POST"])
+@admin_required
+def empresa_editar(eid):
+    e = db.session.get(Empresa, eid) or abort(404)
+    e.nome = request.form.get("nome", e.nome).strip()
+    e.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Empresa atualizada.", "success")
+    return redirect(url_for("admin.empresas"))
+
+
+def _aplicar_fornecedor(f):
+    f.razao_social = request.form.get("razao_social", "").strip()
+    f.nome_fantasia = request.form.get("nome_fantasia", "").strip()
+    f.email = request.form.get("email", "").strip()
+    f.contato_nome = request.form.get("contato_nome", "").strip()
+    e164, exib = normalizar_telefone_br(request.form.get("telefone", "").strip())
+    f.telefone = exib or request.form.get("telefone", "").strip()
+    f.telefone_e164 = e164
+    f.tipos = TipoMaterial.query.filter(TipoMaterial.id.in_(request.form.getlist("tipos"))).all()
+
+
+@admin_bp.route("/fornecedores", methods=["GET", "POST"])
+@admin_required
+def fornecedores():
+    tipos = TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all()
+    if request.method == "POST":
+        f = Fornecedor(email="")
+        _aplicar_fornecedor(f)
+        f.ativo = True
+        db.session.add(f)
+        db.session.commit()
+        flash("Fornecedor cadastrado.", "success")
+        return redirect(url_for("admin.fornecedores"))
+    return render_template("admin/fornecedores.html",
+                           lista=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(), tipos=tipos)
+
+
+@admin_bp.route("/fornecedores/<int:fid>/editar", methods=["GET", "POST"])
+@admin_required
+def fornecedor_editar(fid):
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    tipos = TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all()
+    if request.method == "POST":
+        _aplicar_fornecedor(f)
+        f.ativo = request.form.get("ativo") == "1"
+        db.session.commit()
+        flash("Fornecedor atualizado.", "success")
+        return redirect(url_for("admin.fornecedores"))
+    return render_template("admin/fornecedor_editar.html", f=f, tipos=tipos, tipos_ids={t.id for t in f.tipos})
+
+
+@admin_bp.route("/sugestoes")
+@admin_required
+def sugestoes():
+    return render_template("admin/sugestoes.html",
+                           lista=Sugestao.query.order_by(Sugestao.criado_em.desc()).all())
+
+
+def _melhor_por_fornecedor(s):
+    """Menor orçamento de cada fornecedor para a solicitação s."""
+    por_forn = {}
+    for o in s.orcamentos:
+        atual = por_forn.get(o.fornecedor_id)
+        if atual is None or o.valor_total < atual.valor_total:
+            por_forn[o.fornecedor_id] = o
+    return sorted(por_forn.values(), key=lambda o: o.valor_total)
+
+
+@admin_bp.route("/comparativo")
+@admin_required
+def comparativo():
+    """Compras aguardando definição de fornecedor. Visão por produto ou por fornecedor."""
+    modo = request.args.get("modo", "produto")
+    sols = (Solicitacao.query.filter_by(status="AGUARDANDO_DEFINICAO_FORNECEDOR")
+            .order_by(Solicitacao.id).all())
+    if modo == "fornecedor":
+        # Agrupa por fornecedor as solicitações em que ele é o MAIS BARATO
+        grupos = {}
+        for s in sols:
+            melhores = _melhor_por_fornecedor(s)
+            if not melhores:
+                continue
+            vencedor = melhores[0]
+            g = grupos.setdefault(vencedor.fornecedor_id, {"fornecedor": vencedor.fornecedor, "itens": [], "total": 0.0})
+            g["itens"].append({"s": s, "orc": vencedor})
+            g["total"] += float(vencedor.valor_total)
+        return render_template("admin/comparativo.html", modo=modo, grupos=sorted(grupos.values(), key=lambda g: g["fornecedor"].nome))
+    dados = [{"s": s, "melhores": _melhor_por_fornecedor(s)} for s in sols]
+    return render_template("admin/comparativo.html", modo="produto", dados=dados)
+
+
+@admin_bp.route("/aprovar-fornecedor", methods=["POST"])
+@admin_required
+def aprovar_fornecedor():
+    """Define um fornecedor como vencedor em TODAS as compras em que ele é o mais barato."""
+    fid = int(request.form["fornecedor_id"])
+    prazo = request.form.get("prazo_recebimento")
+    if not prazo:
+        flash("Informe o prazo de recebimento para aprovar em lote.", "danger")
+        return redirect(url_for("admin.comparativo", modo="fornecedor"))
+    ft = request.form.get("frete_tipo") or "CIF"
+    prazo_d = datetime.strptime(prazo, "%Y-%m-%d").date()
+    sols = Solicitacao.query.filter_by(status="AGUARDANDO_DEFINICAO_FORNECEDOR").all()
+    n = 0
+    for s in sols:
+        melhores = _melhor_por_fornecedor(s)
+        if not melhores or melhores[0].fornecedor_id != fid:
+            continue
+        o = melhores[0]
+        for outro in s.orcamentos:
+            outro.escolhido = (outro.id == o.id)
+        s.fornecedor_definido_id = fid
+        s.frete_tipo = ft
+        s.prazo_recebimento = prazo_d
+        s.status = "AGUARDANDO_CHEGADA"
+        pdf = gerar_pdf_pedido(s)
+        enviar_email(o.fornecedor.email, f"Ordem de Compra Nº {s.id}",
+                     f"Prezados, confirmamos a compra do item da solicitação Nº {s.id}. Segue OC em anexo.",
+                     anexo_bytes=pdf, anexo_nome=f"OC_{s.id}.pdf")
+        n += 1
+    db.session.commit()
+    flash(f"{n} compra(s) aprovada(s) para o fornecedor de uma vez.", "success")
+    return redirect(url_for("admin.comparativo", modo="fornecedor"))
+
+
+@admin_bp.route("/tipos/ativar-todos", methods=["POST"])
+@admin_required
+def tipos_ativar_todos():
+    TipoMaterial.query.update({TipoMaterial.ativo: True})
+    db.session.commit()
+    flash("Todos os tipos de material foram ativados.", "success")
+    return redirect(url_for("admin.tipos"))
+
+
+@admin_bp.route("/atividades", methods=["GET", "POST"])
+@admin_required
+def atividades():
+    return _cad_simples(Atividade, "admin/atividades.html", "Atividade")
+
+
+@admin_bp.route("/atividades/<int:aid>", methods=["POST"])
+@admin_required
+def atividade_editar(aid):
+    a = db.session.get(Atividade, aid) or abort(404)
+    a.nome = request.form.get("nome", a.nome).strip()
+    a.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Atividade atualizada.", "success")
+    return redirect(url_for("admin.atividades"))
+
+
+# ---------------- Cadastro rápido (inline / JSON) ----------------
+@admin_bp.route("/api/criar/<entidade>", methods=["POST"])
+@admin_required
+@csrf.exempt
+def api_criar(entidade):
+    nome = (request.json or {}).get("nome", "").strip() if request.is_json else request.form.get("nome", "").strip()
+    if not nome:
+        return jsonify(ok=False, erro="nome vazio"), 400
+    mapa = {"tipo": TipoMaterial, "cidade": Cidade, "transportadora": Transportadora,
+            "empresa": Empresa, "atividade": Atividade}
+    model = mapa.get(entidade)
+    if not model:
+        return jsonify(ok=False, erro="entidade inválida"), 400
+    obj = model(nome=nome)
+    if entidade == "cidade":
+        uf = ((request.json or {}).get("uf") if request.is_json else request.form.get("uf")) or ""
+        obj.uf = uf.strip().upper()[:2] or None
+    db.session.add(obj)
+    db.session.commit()
+    rotulo = obj.rotulo if entidade == "cidade" else obj.nome
+    return jsonify(ok=True, id=obj.id, nome=rotulo)

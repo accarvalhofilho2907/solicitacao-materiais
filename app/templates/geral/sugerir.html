@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-7">
+  <h4 class="mb-1">Sugira uma melhoria 💡</h4>
+  <p class="text-muted small">Sua opinião ajuda a melhorar a plataforma. Conte o que você gostaria de ver ou o que poderia ficar mais fácil.</p>
+  <div class="card"><div class="card-body">
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="texto" class="form-control mb-3" rows="5" placeholder="Escreva aqui sua sugestão..." required></textarea>
+      <button class="btn btn-primary">Enviar sugestão</button>
+    </form>
+  </div></div>
+</div></div>
+{% endblock %}

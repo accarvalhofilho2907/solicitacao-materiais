@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h4 class="mb-0">Comparativo</h4>
+  <div class="btn-group btn-group-sm" role="group">
+    <a class="btn {{ 'btn-primary' if modo=='produto' else 'btn-outline-primary' }}" href="{{ url_for('admin.comparativo', modo='produto') }}">Por produto</a>
+    <a class="btn {{ 'btn-primary' if modo=='fornecedor' else 'btn-outline-primary' }}" href="{{ url_for('admin.comparativo', modo='fornecedor') }}">Por fornecedor</a>
+  </div>
+</div>
+<p class="text-muted small">Compras aguardando definição de fornecedor.{% if modo=='fornecedor' %} Agrupadas pelo fornecedor mais barato — dá para aprovar tudo dele de uma vez.{% else %} Mostra o menor preço de cada fornecedor por item.{% endif %}</p>
+
+{% if modo == 'fornecedor' %}
+  {% for g in grupos %}
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">— {{ g.itens|length }} item(ns) · total R$ {{ '%.2f'|format(g.total) }}</span></div>
+      <form method="post" action="{{ url_for('admin.aprovar_fornecedor') }}" class="d-flex align-items-end gap-2" onsubmit="return confirm('Aprovar todos os itens desse fornecedor?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="fornecedor_id" value="{{ g.fornecedor.id }}">
+        <div><label class="form-label small mb-0">Frete</label><select name="frete_tipo" class="form-select form-select-sm"><option value="CIF">CIF</option><option value="FOB">FOB</option></select></div>
+        <div><label class="form-label small mb-0">Prazo receb. *</label><input type="date" name="prazo_recebimento" class="form-control form-control-sm" required></div>
+        <button class="btn btn-sm btn-success">Aprovar tudo desse fornecedor</button>
+      </form>
+    </div>
+    <table class="table table-sm mt-2 mb-0 align-middle">
+      <thead class="table-light"><tr><th>Nº</th><th>Solicitação</th><th>Item no orçamento</th><th class="text-end">Menor preço</th></tr></thead>
+      <tbody>{% for it in g.itens %}<tr><td>{{ it.s.id }}</td><td>{{ it.s.material }}</td><td class="small">{{ it.orc.item_fornecedor or '-' }}</td><td class="text-end">R$ {{ '%.2f'|format(it.orc.valor_total) }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div></div>
+  {% else %}<div class="alert alert-info">Nenhuma compra aguardando definição de fornecedor.</div>{% endfor %}
+
+{% else %}
+  {% for d in dados %}
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <div><strong>Nº {{ d.s.id }} — {{ d.s.material }}</strong> <span class="text-muted small">(x{{ d.s.quantidade }}{% if d.s.tipo %} · {{ d.s.tipo.nome }}{% endif %})</span></div>
+      <a class="btn btn-sm btn-success" href="{{ url_for('admin.solicitacao', sid=d.s.id) }}">Definir fornecedor</a>
+    </div>
+    {% if d.melhores %}
+    <table class="table table-sm mt-2 mb-0 align-middle">
+      <thead class="table-light"><tr><th>Fornecedor</th><th>Item no orçamento</th><th class="text-end">Menor preço</th><th>Prazo</th></tr></thead>
+      <tbody>{% for o in d.melhores %}<tr class="{{ 'table-warning' if loop.first }}"><td>{{ o.fornecedor.nome }}{% if loop.first %} <span class="badge bg-warning text-dark">menor</span>{% endif %}</td>
+        <td class="small">{{ o.item_fornecedor or '-' }}</td><td class="text-end">R$ {{ '%.2f'|format(o.valor_total) }}</td><td class="small">{{ o.prazo_entrega or '-' }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="text-muted small mt-2 mb-0">Sem orçamentos lançados ainda.</p>{% endif %}
+  </div></div>
+  {% else %}<div class="alert alert-info">Nenhuma compra aguardando definição de fornecedor.</div>{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-5">
+  <div class="card"><div class="card-body">
+    <h5 class="mb-3">Defina sua senha</h5>
+    <p class="small text-muted">Como é seu primeiro acesso (ou a senha foi redefinida), escolha uma nova senha.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-2"><label class="form-label">Nova senha</label><input type="password" name="nova" class="form-control" required minlength="6"></div>
+      <div class="mb-3"><label class="form-label">Confirmar senha</label><input type="password" name="confirma" class="form-control" required></div>
+      <button class="btn btn-primary w-100">Salvar senha</button>
+    </form>
+  </div></div>
+</div></div>
+{% endblock %}

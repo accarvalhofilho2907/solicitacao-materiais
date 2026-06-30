@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="{{ url_for('solicitante.index') }}" class="small">&larr; Voltar</a>
+<div class="d-flex justify-content-between align-items-center mt-2 mb-3">
+  <h4 class="mb-0">Solicitação Nº {{ s.id }}</h4>
+  <span class="badge bg-secondary fs-6">{{ s.status_label }}</span>
+</div>
+{% if pode_criar %}
+<div class="alert alert-success d-flex justify-content-between align-items-center">
+  <span>Quer fazer uma nova solicitação?</span>
+  <a class="btn btn-sm btn-success" href="{{ url_for('solicitante.nova') }}">+ Nova solicitação</a>
+</div>
+{% endif %}
+<div class="card mb-3"><div class="card-body">
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Material</dt><dd class="col-sm-9">{{ s.material }}</dd>
+    <dt class="col-sm-3">Quantidade</dt><dd class="col-sm-9">{{ s.quantidade }}</dd>
+    <dt class="col-sm-3">Fabricante</dt><dd class="col-sm-9">{{ s.fabricante or '-' }}</dd>
+    <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">{{ s.tipo.nome if s.tipo else '-' }}</dd>
+    <dt class="col-sm-3">Local / frente</dt><dd class="col-sm-9">{{ s.local_servico or '-' }}</dd>
+    <dt class="col-sm-3">Solicitante</dt><dd class="col-sm-9">{{ s.solicitante.nome }}</dd>
+    <dt class="col-sm-3">Similar</dt><dd class="col-sm-9">{% if s.link_similar %}<a href="{{ s.link_similar }}" target="_blank">{{ s.link_similar }}</a>{% else %}-{% endif %}</dd>
+    {% if s.prazo_recebimento %}<dt class="col-sm-3">Prazo recebimento</dt><dd class="col-sm-9">{{ s.prazo_recebimento.strftime('%d/%m/%Y') }}</dd>{% endif %}
+  </dl>
+  {% if s.imagens %}<div class="d-flex flex-wrap gap-2 mt-3">{% for img in s.imagens %}<a href="{{ img.url }}" target="_blank"><img src="{{ img.url }}" style="height:90px" class="rounded border"></a>{% endfor %}</div>{% endif %}
+</div></div>
+<div class="card"><div class="card-body">
+  <h6>Mensagens</h6>
+  {% for c in s.comentarios %}<div class="border rounded p-2 mb-2 {{ 'bg-light' if c.autor.is_admin }}"><div class="small text-muted">{{ c.autor.nome }} — {{ c.criado_em.strftime('%d/%m %H:%M') }}</div>{{ c.texto }}</div>{% else %}<p class="text-muted small">Sem mensagens.</p>{% endfor %}
+  {% if not leitura %}
+  <form method="post" class="mt-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <textarea name="texto" class="form-control mb-2" rows="2" placeholder="Escreva uma mensagem..."></textarea>
+    <button class="btn btn-sm btn-primary">Enviar</button></form>
+  {% endif %}
+</div></div>
+{% endblock %}

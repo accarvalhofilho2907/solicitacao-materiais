@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card mb-3" style="background:#F1EFE8;"><div class="card-body py-2">
+  <form method="get" action="{{ url_for('admin.dashboard') }}" class="d-flex flex-wrap align-items-center gap-3">
+    <div class="d-flex flex-column">
+      <span class="small text-muted">Notinhas — total no mês corrente</span>
+      <span style="font-size:22px; font-weight:500;">R$ {{ '%.2f'|format(total_notinhas_mes) }}</span>
+    </div>
+    <div class="d-flex align-items-end gap-2">
+      <div><label class="form-label small mb-0">Atividade</label>
+        <select name="ativ_resumo" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">Todas as atividades</option>
+          {% for a in atividades %}<option value="{{ a.id }}" {{ 'selected' if f_ativ==a.id|string }}>{{ a.nome }}</option>{% endfor %}
+        </select></div>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('notinhas.index') }}">Abrir notinhas</a>
+    </div>
+  </form>
+</div></div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Solicitações</h4>
+  <div>
+    {% if pendentes %}<a class="btn btn-sm btn-success" href="{{ url_for('admin.aprovacoes') }}">{{ pendentes }} aguardando aprovação</a>{% endif %}
+    <a class="btn btn-sm btn-primary" href="{{ url_for('solicitante.nova') }}">+ Nova solicitação</a>
+  </div>
+</div>
+<form class="card card-body mb-3" method="get"><div class="row g-2 align-items-end">
+  <div class="col-md-3"><label class="form-label small mb-0">Status</label>
+    <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Selecionar status</button>
+      <div class="dropdown-menu p-2" style="max-height:240px;overflow:auto">
+        {% for code in STATUS %}<div class="form-check"><input class="form-check-input" type="checkbox" name="status" value="{{ code }}" id="st{{ loop.index }}" {{ 'checked' if code in f_status }}><label class="form-check-label small" for="st{{ loop.index }}">{{ STATUS_LABEL[code] }}</label></div>{% endfor %}
+      </div></div></div>
+  <div class="col-md-3"><label class="form-label small mb-0">Solicitante</label>
+    <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Selecionar solicitante</button>
+      <div class="dropdown-menu p-2" style="max-height:240px;overflow:auto">
+        {% for u in solicitantes %}<div class="form-check"><input class="form-check-input" type="checkbox" name="solicitante" value="{{ u.id }}" id="so{{ u.id }}" {{ 'checked' if u.id in f_sol }}><label class="form-check-label small" for="so{{ u.id }}">{{ u.nome }}</label></div>{% endfor %}
+      </div></div></div>
+  <div class="col-md-3"><label class="form-label small mb-0">Fornecedor</label>
+    <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Selecionar fornecedor</button>
+      <div class="dropdown-menu p-2" style="max-height:240px;overflow:auto">
+        {% for f in fornecedores %}<div class="form-check"><input class="form-check-input" type="checkbox" name="fornecedor" value="{{ f.id }}" id="fo{{ f.id }}" {{ 'checked' if f.id in f_forn }}><label class="form-check-label small" for="fo{{ f.id }}">{{ f.nome }}</label></div>{% endfor %}
+      </div></div></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Tipo</label>
+    <select name="tipo" class="form-select form-select-sm"><option value="">Todos</option>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if f_tipo==t.id|string }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  <div class="col-md-4"><label class="form-label small mb-0">Buscar material</label><input name="q" value="{{ f_busca }}" class="form-control form-control-sm"></div>
+  <div class="col-md-3"><label class="form-label small mb-0">De</label><input type="date" name="de" value="{{ f_de or '' }}" class="form-control form-control-sm"></div>
+  <div class="col-md-3"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
+  <div class="col-md-6 text-end"><button class="btn btn-sm btn-primary">Filtrar</button> <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.dashboard') }}?status=">Ver todos</a></div>
+</div><div class="form-text">Por padrão mostra tudo menos Concluído e Cancelada.</div></form>
+<form method="post" action="{{ url_for('solicitante.exportar') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="d-flex justify-content-end mb-2"><button class="btn btn-sm btn-outline-primary">Exportar selecionadas em PDF</button></div>
+  <div class="card"><div class="table-responsive"><table class="table table-hover mb-0 align-middle">
+    <thead class="table-light"><tr><th><input type="checkbox" id="selTodos" checked onclick="marcarTodos(this)"></th><th>Nº</th><th>Material</th><th>Solicitante</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for p in pedidos %}<tr>
+      <td><input type="checkbox" class="cbItem" name="ids" value="{{ p.id }}" checked></td>
+      <td>{{ p.id }}</td><td>{{ p.material }} <span class="text-muted small">(x{{ p.quantidade }})</span></td>
+      <td class="small">{{ p.solicitante.nome }}</td><td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span></td>
+      <td class="text-nowrap">{% if p.status == 'AGUARDANDO_APROVACAO' %}<span class="badge bg-warning text-dark">aprovar</span> {% endif %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.solicitacao', sid=p.id) }}">Abrir</a></td></tr>
+    {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nada encontrado.</td></tr>{% endfor %}</tbody>
+  </table></div></div>
+</form>
+<script>function marcarTodos(c){ document.querySelectorAll('.cbItem').forEach(function(b){ b.checked=c.checked; }); }</script>
+{% endblock %}

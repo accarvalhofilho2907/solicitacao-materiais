@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="mb-1">Enviar cotação (lote)</h4>
+<p class="text-muted">Junta as solicitações <strong>aprovadas</strong> (Aguardando envio p/ cotação) e envia <strong>um e-mail por fornecedor</strong> (PDF). Para o WhatsApp, use os botões — abre a conversa com a mensagem pronta (texto).</p>
+{% if not grupos %}
+  <div class="alert alert-info">Nada para enviar. Aprove solicitações para que entrem aqui.</div>
+{% else %}
+  {% for g in grupos %}
+  <div class="card mb-2"><div class="card-body py-2">
+    <div class="d-flex justify-content-between align-items-center">
+      <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">({{ g.fornecedor.email }})</span></div>
+      {% if g.wa %}<a class="btn btn-sm btn-success" target="_blank" href="{{ g.wa }}">Abrir WhatsApp</a>{% else %}<span class="badge bg-light text-muted">sem telefone p/ WhatsApp</span>{% endif %}
+    </div>
+    <ul class="mb-0 mt-1 small">{% for s in g.itens %}<li>Nº {{ s.id }} — {{ s.material }} (x{{ s.quantidade }})</li>{% endfor %}</ul>
+  </div></div>
+  {% endfor %}
+  <form method="post" action="{{ url_for('admin.enviar_lote_confirmar') }}" class="mt-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="form-label">Corpo do e-mail (opcional; padrão já cita o prazo de 5 dias úteis)</label>
+    <textarea name="corpo" class="form-control mb-3" rows="3"></textarea>
+    <button class="btn btn-success" onclick="return confirm('Enviar os e-mails de cotação para todos os fornecedores?')">Enviar e-mails de cotação</button>
+  </form>
+{% endif %}
+{% endblock %}

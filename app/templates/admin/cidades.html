@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="{{ url_for('admin.cadastros') }}" class="small">&larr; Cadastros</a>
+<h4 class="mt-2 mb-3">Cidades</h4>
+<div class="row g-3">
+  <div class="col-md-4"><div class="card"><div class="card-body">
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-2"><input name="nome" class="form-control" placeholder="Cidade" required></div>
+      <div class="mb-2"><input name="uf" class="form-control" placeholder="UF (ex.: MA)" maxlength="2"></div>
+      <button class="btn btn-primary">Cadastrar</button></form>
+  </div></div></div>
+  <div class="col-md-8"><div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+    <thead class="table-light"><tr><th>Cidade</th><th>UF</th><th>Situação</th><th></th></tr></thead>
+    <tbody>{% for c in lista %}
+      <tr><td>{{ c.nome }}</td><td>{{ c.uf or '-' }}</td><td>{% if c.ativo %}<span class="badge bg-success">ativa</span>{% else %}<span class="badge bg-secondary">inativa</span>{% endif %}</td>
+        <td><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ c.id }}">Editar</button></td></tr>
+      <tr class="collapse" id="c{{ c.id }}"><td colspan="4"><form method="post" action="{{ url_for('admin.cidade_editar', cid=c.id) }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-5"><input name="nome" class="form-control form-control-sm" value="{{ c.nome }}"></div>
+        <div class="col-md-2"><input name="uf" class="form-control form-control-sm" value="{{ c.uf or '' }}" maxlength="2"></div>
+        <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if c.ativo }}><label class="form-check-label small">Ativa</label></div></div>
+        <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
+    {% else %}<tr><td colspan="4" class="text-muted">Nenhuma cidade.</td></tr>{% endfor %}</tbody>
+  </table></div></div></div>
+</div>
+{% endblock %}

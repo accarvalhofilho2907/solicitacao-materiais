@@ -23,7 +23,7 @@ def _light_migrate():
     # Colunas "ativo" recém-criadas ficam NULL nas linhas antigas; tratar como ativas.
     for table in db.metadata.sorted_tables:
         if insp.has_table(table.name) and "ativo" in {c["name"] for c in insp.get_columns(table.name)}:
-            db.session.execute(text(f'UPDATE "{table.name}" SET ativo = 1 WHERE ativo IS NULL'))
+            db.session.execute(text(f'UPDATE "{table.name}" SET ativo = TRUE WHERE ativo IS NULL'))
     db.session.commit()
 
 

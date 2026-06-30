@@ -8,5 +8,6 @@ reportlab==4.2.2
 cloudinary==1.41.0
 python-dotenv==1.0.1
 pdfplumber==0.11.4
+psycopg2-binary==2.9.10
 gunicorn==22.0.0
 Werkzeug==3.0.3

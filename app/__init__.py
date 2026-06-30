@@ -32,6 +32,35 @@ def _light_migrate():
             db.session.commit()
         except Exception:
             db.session.rollback()
+    # Backfill: todos os cadastros em MAIÚSCULAS (item 88). Idempotente.
+    _maiusculas_cadastros(insp)
+
+
+def _maiusculas_cadastros(insp):
+    """Converte para maiúsculas os cadastros já existentes (só altera o que precisa)."""
+    alvos = [
+        ("empresas", ["nome"]),
+        ("usuarios", ["nome"]),
+        ("tipos_material", ["nome"]),
+        ("atividades", ["nome"]),
+        ("cidades", ["nome", "uf"]),
+        ("transportadoras", ["nome"]),
+        ("fornecedores", ["razao_social", "nome_fantasia", "contato_nome"]),
+    ]
+    for tabela, colunas in alvos:
+        if not insp.has_table(tabela):
+            continue
+        existentes = {c["name"] for c in insp.get_columns(tabela)}
+        for col in colunas:
+            if col not in existentes:
+                continue
+            try:
+                db.session.execute(text(
+                    f'UPDATE "{tabela}" SET "{col}" = UPPER("{col}") '
+                    f'WHERE "{col}" IS NOT NULL AND "{col}" <> UPPER("{col}")'))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
 
 def _seed_tipos():

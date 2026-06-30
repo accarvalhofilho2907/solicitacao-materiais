@@ -8,11 +8,15 @@
   {% for g in grupos %}
   <div class="card mb-2"><div class="card-body py-2">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">{% if g.fornecedor.email %}({{ g.fornecedor.email }}){% else %}(sem e-mail){% endif %}</span></div>
-      <div class="d-flex gap-1">
+      <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">#{{ g.seq }} · {% if g.fornecedor.email %}{{ g.fornecedor.email }}{% else %}sem e-mail{% endif %}</span></div>
+      <div class="d-flex gap-1 flex-wrap">
         {% if g.wa %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ g.wa }}">WhatsApp</a>{% endif %}
         {% if g.mail %}<a class="btn btn-sm btn-outline-primary py-0" href="{{ g.mail }}">E-mail</a>{% endif %}
         <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('lt{{ g.fornecedor.id }}')">Texto pronto</button>
+        <form method="post" action="{{ url_for('admin.marcar_cotacao_enviada', fid=g.fornecedor.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-warning py-0" title="Marca como enviada e muda o status">Cotação enviada</button>
+        </form>
       </div>
     </div>
     <ul class="mb-0 mt-1 small">{% for s in g.itens %}<li>Nº {{ s.id }} — {{ s.material }} (x{{ s.quantidade }})</li>{% endfor %}</ul>

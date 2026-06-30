@@ -4,15 +4,21 @@
 <p class="text-muted small">Materiais aguardando chegada. Confirme quando o item for recebido no almoxarifado.</p>
 <div class="card mb-4"><div class="table-responsive">
 <table class="table table-hover mb-0 align-middle">
-  <thead class="table-light"><tr><th>Nº</th><th>Material</th><th>Qtd</th><th>Prazo receb.</th><th></th></tr></thead>
+  <thead class="table-light"><tr><th>Nº</th><th>Material</th><th>Qtd</th><th>Recebido</th><th>Prazo receb.</th><th>Confirmar chegada</th></tr></thead>
   <tbody>
-    {% for p in pendentes %}<tr>
+    {% for p in pendentes %}
+    {% set ja = p.quantidade_recebida or 0 %}{% set restante = p.quantidade - ja %}
+    <tr>
       <td>{{ p.id }}</td><td>{{ p.material }}</td><td>{{ p.quantidade }}</td>
+      <td class="small">{{ ja }} de {{ p.quantidade }}{% if ja > 0 and ja < p.quantidade %} <span class="badge bg-warning text-dark">parcial</span>{% endif %}</td>
       <td class="small">{{ p.prazo_recebimento.strftime('%d/%m/%Y') if p.prazo_recebimento else '-' }}</td>
-      <td><form method="post" action="{{ url_for('almox.marcar_chegada', sid=p.id) }}">
+      <td><form method="post" action="{{ url_for('almox.marcar_chegada', sid=p.id) }}" class="input-group input-group-sm" style="max-width:230px">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-sm btn-success">Confirmar chegada</button></form></td></tr>
-    {% else %}<tr><td colspan="5" class="text-center text-muted py-4">Nada aguardando chegada.</td></tr>{% endfor %}
+        <span class="input-group-text">Qtd</span>
+        <input type="number" name="qtd_recebida" min="1" max="{{ restante }}" value="{{ restante }}" class="form-control" title="Quantas chegaram">
+        <button class="btn btn-success">Confirmar</button></form>
+        <div class="form-text">Faltam {{ restante }}. Informe quantas chegaram (parcial é aceito).</div></td></tr>
+    {% else %}<tr><td colspan="6" class="text-center text-muted py-4">Nada aguardando chegada.</td></tr>{% endfor %}
   </tbody>
 </table>
 </div></div>

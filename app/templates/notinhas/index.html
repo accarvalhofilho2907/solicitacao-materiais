@@ -8,15 +8,17 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="row g-2 align-items-end">
       <div class="col-md-2"><label class="form-label small mb-0">Data *</label><input type="date" name="data" value="{{ hoje }}" class="form-control form-control-sm" required></div>
-      <div class="col-md-2"><label class="form-label small mb-0">Competência</label><input type="month" name="competencia" value="{{ hoje[:7] }}" class="form-control form-control-sm"></div>
       <div class="col-md-3"><label class="form-label small mb-0">Fornecedor *</label>
         <select name="fornecedor_id" class="form-select form-select-sm" required><option value="">— selecione —</option>{% for f in fornecedores %}<option value="{{ f.id }}">{{ f.nome }}</option>{% endfor %}</select></div>
-      <div class="col-md-3"><label class="form-label small mb-0">Atividade *</label>
-        <select name="atividade_id" class="form-select form-select-sm" required><option value="">— selecione —</option>{% for a in atividades %}<option value="{{ a.id }}">{{ a.nome }}</option>{% endfor %}</select></div>
-      <div class="col-md-2"><label class="form-label small mb-0">Valor (R$) *</label><input name="valor" class="form-control form-control-sm valorBR" placeholder="0,00" inputmode="decimal" required></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Atividade *</label>
+        <div class="input-group input-group-sm">
+          <select name="atividade_id" id="selAtivNova" class="form-select selAtividade" required><option value="">— selecione —</option>{% for a in atividades %}<option value="{{ a.id }}">{{ a.nome }}</option>{% endfor %}</select>
+          <button type="button" class="btn btn-outline-secondary" title="Cadastrar nova atividade" onclick="addAtividade('selAtivNova')">+</button>
+        </div></div>
+      <div class="col-md-3"><label class="form-label small mb-0">Valor (R$) *</label><input name="valor" class="form-control form-control-sm valorBR" placeholder="0,00" inputmode="decimal" required></div>
     </div>
     <button class="btn btn-primary btn-sm mt-2">Adicionar</button>
-    <span class="form-text">Use só números e vírgula (ex.: 1234,50). A data já vem preenchida com hoje.</span>
+    <span class="form-text">Use só números e vírgula (ex.: 1234,50). A competência é definida automaticamente pela data.</span>
   </form>
 </div></div>
 
@@ -25,7 +27,11 @@
   <div class="col-md-2"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
   <div class="col-md-3"><label class="form-label small mb-0">Fornecedor</label><select name="fornecedor" class="form-select form-select-sm"><option value="">Todos</option>{% for f in fornecedores %}<option value="{{ f.id }}" {{ 'selected' if f_forn==f.id|string }}>{{ f.nome }}</option>{% endfor %}</select></div>
   <div class="col-md-3"><label class="form-label small mb-0">Atividade</label><select name="atividade" class="form-select form-select-sm"><option value="">Todas</option>{% for a in atividades %}<option value="{{ a.id }}" {{ 'selected' if f_ativ==a.id|string }}>{{ a.nome }}</option>{% endfor %}</select></div>
-  <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Filtrar</button> <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('notinhas.exportar', de=f_de, ate=f_ate, fornecedor=f_forn, atividade=f_ativ) }}">PDF</a></div>
+  <div class="col-md-1"><label class="form-label small mb-0">Valor mín.</label><input name="valor_min" value="{{ f_vmin or '' }}" class="form-control form-control-sm valorBR" placeholder="0,00" inputmode="decimal"></div>
+  <div class="col-md-1"><label class="form-label small mb-0">Valor máx.</label><input name="valor_max" value="{{ f_vmax or '' }}" class="form-control form-control-sm valorBR" placeholder="0,00" inputmode="decimal"></div>
+  <div class="col-md-12 text-end mt-1"><button class="btn btn-sm btn-primary">Filtrar</button>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('notinhas.exportar', de=f_de, ate=f_ate, fornecedor=f_forn, atividade=f_ativ, valor_min=f_vmin, valor_max=f_vmax) }}">PDF</a>
+    <a class="btn btn-sm btn-link" href="{{ url_for('notinhas.index') }}">Limpar</a></div>
 </div></form>
 
 <div class="row g-3 mb-3">
@@ -49,10 +55,9 @@
           <form method="post" action="{{ url_for('notinhas.excluir', nid=n.id) }}" class="d-inline" onsubmit="return confirm('Excluir esta notinha?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger py-0">Excluir</button></form></td></tr>
       <tr class="collapse" id="n{{ n.id }}"><td colspan="6"><form method="post" action="{{ url_for('notinhas.editar', nid=n.id) }}" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-2"><input type="date" name="data" value="{{ n.data.isoformat() }}" class="form-control form-control-sm"></div>
-        <div class="col-md-2"><input type="month" name="competencia" value="{{ n.competencia or '' }}" class="form-control form-control-sm"></div>
+        <div class="col-md-3"><input type="date" name="data" value="{{ n.data.isoformat() }}" class="form-control form-control-sm"></div>
         <div class="col-md-3"><select name="fornecedor_id" class="form-select form-select-sm">{% for f in fornecedores %}<option value="{{ f.id }}" {{ 'selected' if n.fornecedor_id==f.id }}>{{ f.nome }}</option>{% endfor %}</select></div>
-        <div class="col-md-2"><select name="atividade_id" class="form-select form-select-sm">{% for a in atividades %}<option value="{{ a.id }}" {{ 'selected' if n.atividade_id==a.id }}>{{ a.nome }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><select name="atividade_id" class="form-select form-select-sm selAtividade">{% for a in atividades %}<option value="{{ a.id }}" {{ 'selected' if n.atividade_id==a.id }}>{{ a.nome }}</option>{% endfor %}</select></div>
         <div class="col-md-2"><input name="valor" class="form-control form-control-sm valorBR" value="{{ '%.2f'|format(n.valor)|replace('.', ',') }}"></div>
         <div class="col-md-1 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
     {% else %}<tr><td colspan="6" class="text-center text-muted py-3">Nenhuma notinha.</td></tr>{% endfor %}</tbody>
@@ -60,5 +65,15 @@
 </div></div>
 <script>
 document.querySelectorAll('.valorBR').forEach(function(i){ i.addEventListener('input', function(){ this.value = this.value.replace(/[^0-9,]/g,''); }); });
+function addAtividade(selId){
+  var nome=prompt('Nova atividade:'); if(!nome) return;
+  fetch('{{ url_for("notinhas.atividade_rapida") }}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome})})
+   .then(function(r){return r.json();}).then(function(d){ if(!d.ok){alert('Erro: '+(d.erro||''));return;}
+     document.querySelectorAll('.selAtividade').forEach(function(sel){
+       if(!sel.querySelector('option[value="'+d.id+'"]')){ var op=document.createElement('option'); op.value=d.id; op.textContent=d.nome; sel.appendChild(op); }
+     });
+     var alvo=document.getElementById(selId); if(alvo) alvo.value=d.id;
+   }).catch(function(){ alert('Falha ao cadastrar.'); });
+}
 </script>
 {% endblock %}

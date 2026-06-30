@@ -123,6 +123,7 @@ class Solicitacao(db.Model):
     quantidade_original = db.Column(db.Integer)
     quantidade_alterada_por = db.Column(db.ForeignKey("usuarios.id"))
     quantidade_alterada_em = db.Column(db.DateTime)
+    quantidade_recebida = db.Column(db.Integer, default=0)   # chegada parcial acumulada
 
     fornecedor_definido_id = db.Column(db.ForeignKey("fornecedores.id"))
     frete_tipo = db.Column(db.String(10))
@@ -173,6 +174,7 @@ class PedidoCompra(db.Model):
     enviado_em = db.Column(db.DateTime, default=datetime.utcnow)
     enviado_por = db.Column(db.ForeignKey("usuarios.id"))
     destinatarios = db.Column(db.String(1000))
+    cotacao_seq = db.Column(db.String(20))   # sequencial da cotação (ex.: COT-2026-001)
     solicitacao = db.relationship("Solicitacao")
 
 

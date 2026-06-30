@@ -26,17 +26,20 @@
 <form class="card card-body mb-3" method="get"><div class="row g-2 align-items-end">
   <div class="col-md-3"><label class="form-label small mb-0">Status</label>
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Selecionar status</button>
-      <div class="dropdown-menu p-2" style="max-height:240px;overflow:auto">
+      <div class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
+        <input class="form-control form-control-sm mb-2" placeholder="Buscar..." oninput="filtraDrop(this)" onclick="event.stopPropagation()">
         {% for code in STATUS %}<div class="form-check"><input class="form-check-input" type="checkbox" name="status" value="{{ code }}" id="st{{ loop.index }}" {{ 'checked' if code in f_status }}><label class="form-check-label small" for="st{{ loop.index }}">{{ STATUS_LABEL[code] }}</label></div>{% endfor %}
       </div></div></div>
   <div class="col-md-3"><label class="form-label small mb-0">Solicitante</label>
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Selecionar solicitante</button>
-      <div class="dropdown-menu p-2" style="max-height:240px;overflow:auto">
+      <div class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
+        <input class="form-control form-control-sm mb-2" placeholder="Buscar..." oninput="filtraDrop(this)" onclick="event.stopPropagation()">
         {% for u in solicitantes %}<div class="form-check"><input class="form-check-input" type="checkbox" name="solicitante" value="{{ u.id }}" id="so{{ u.id }}" {{ 'checked' if u.id in f_sol }}><label class="form-check-label small" for="so{{ u.id }}">{{ u.nome }}</label></div>{% endfor %}
       </div></div></div>
   <div class="col-md-3"><label class="form-label small mb-0">Fornecedor</label>
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Selecionar fornecedor</button>
-      <div class="dropdown-menu p-2" style="max-height:240px;overflow:auto">
+      <div class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
+        <input class="form-control form-control-sm mb-2" placeholder="Buscar..." oninput="filtraDrop(this)" onclick="event.stopPropagation()">
         {% for f in fornecedores %}<div class="form-check"><input class="form-check-input" type="checkbox" name="fornecedor" value="{{ f.id }}" id="fo{{ f.id }}" {{ 'checked' if f.id in f_forn }}><label class="form-check-label small" for="fo{{ f.id }}">{{ f.nome }}</label></div>{% endfor %}
       </div></div></div>
   <div class="col-md-2"><label class="form-label small mb-0">Tipo</label>

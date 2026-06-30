@@ -19,12 +19,14 @@
 </head>
 <body>
 <nav class="navbar navbar-expand-lg topbar navbar-dark"><div class="container">
-  <a class="navbar-brand d-flex align-items-center gap-2" href="/"><span class="brand-mark"></span> Solicitação de Materiais</a>
+  {% set _papeis = {'admin':'Administrador','almoxarifado':'Almoxarifado','solicitante':'Solicitante','visualizador':'Visualização'} %}
+  <a class="navbar-brand d-flex align-items-center gap-2" href="/"><span class="brand-mark"></span> {% if current_user.is_authenticated %}{{ _papeis.get(current_user.papel, 'Solicitação de Materiais') }}{% else %}Solicitação de Materiais{% endif %}</a>
   {% if current_user.is_authenticated %}
   <div class="navbar-nav ms-auto flex-row flex-wrap gap-2 align-items-center">
     {% if current_user.is_admin %}
       <a class="nav-link text-white" href="{{ url_for('admin.dashboard') }}">Painel</a>
       <a class="nav-link text-white" href="{{ url_for('admin.aprovacoes') }}">Aprovações{% if n_aprovacoes %}<span class="bolha">{{ n_aprovacoes }}</span>{% endif %}</a>
+      <a class="nav-link text-white" href="{{ url_for('almox.index') }}">Chegadas</a>
       <div class="dropdown">
         <a class="nav-link text-white dropdown-toggle" href="#" data-bs-toggle="dropdown">Compras{% if n_cotacao %}<span class="bolha">{{ n_cotacao }}</span>{% endif %}</a>
         <ul class="dropdown-menu">
@@ -76,7 +78,7 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% if current_user.is_authenticated %}
-<footer class="container text-center pb-4 rodape">v1.6</footer>
+<footer class="container text-center pb-4 rodape">v1.7</footer>
 {% endif %}
 <script>
 function cadastrarRapido(entidade, selectId, comUF){
@@ -88,6 +90,15 @@ function cadastrarRapido(entidade, selectId, comUF){
    }).catch(function(){ alert('Falha ao cadastrar.'); });
 }
 function copiarTexto(id){ var el=document.getElementById(id); navigator.clipboard.writeText(el.value||el.textContent).then(function(){ alert('Texto copiado!'); }); }
+function _semAcento(t){ return (t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function filtraDrop(inp){
+  var termo=_semAcento(inp.value);
+  var menu=inp.closest('.dropdown-menu');
+  menu.querySelectorAll('.form-check').forEach(function(row){
+    var txt=_semAcento(row.textContent);
+    row.style.display = txt.indexOf(termo)>=0 ? '' : 'none';
+  });
+}
 </script>
 </body>
 </html>

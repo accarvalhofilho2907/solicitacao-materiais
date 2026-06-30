@@ -9,10 +9,15 @@
     <div class="col-md-4"><label class="form-label">Quantidade *</label><input name="quantidade" type="number" min="1" value="1" class="form-control" required></div>
     <div class="col-md-6"><label class="form-label">Fabricante</label><input name="fabricante" class="form-control"></div>
     <div class="col-md-6"><label class="form-label">Tipo de material</label>
-      <select name="tipo_material_id" class="form-select" id="selTipo">
-        <option value="">— selecione —</option>
-        {% for t in tipos %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}
-      </select></div>
+      <div class="input-group">
+        <select name="tipo_material_id" class="form-select" id="selTipo">
+          <option value="">— selecione —</option>
+          {% for t in tipos %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}
+        </select>
+        {% if current_user.is_admin %}<button type="button" class="btn btn-outline-secondary" title="Cadastrar novo tipo" onclick="cadastrarRapido('tipo','selTipo')">+</button>{% endif %}
+      </div>
+      {% if current_user.is_admin %}<div class="form-text">Não achou o tipo? Use o "+" para cadastrar na hora.</div>{% endif %}
+    </div>
     <div class="col-12"><label class="form-label">Local / frente de serviço</label>
       <input name="local_servico" class="form-control" placeholder="Onde o material será usado"></div>
     <div class="col-12"><label class="form-label">Link de compra de um similar</label>

@@ -2,10 +2,10 @@ from functools import wraps
 from datetime import date, datetime
 from collections import defaultdict
 
-from flask import (Blueprint, render_template, redirect, url_for, request, flash, abort, Response)
+from flask import (Blueprint, render_template, redirect, url_for, request, flash, abort, Response, jsonify)
 from flask_login import login_required, current_user
 
-from .extensions import db
+from .extensions import db, csrf
 from .models import Notinha, Fornecedor, Atividade
 from .pdf import gerar_pdf_notinhas
 
@@ -36,11 +36,18 @@ def _competencia_de(data_str):
     return data_str[:7] if data_str else date.today().strftime("%Y-%m")
 
 
+def _parse_valor_filtro(s):
+    v = _parse_valor(s)
+    return v
+
+
 def _filtra(q):
     f_de = request.args.get("de")
     f_ate = request.args.get("ate")
     f_forn = request.args.get("fornecedor")
     f_ativ = request.args.get("atividade")
+    f_vmin = request.args.get("valor_min")
+    f_vmax = request.args.get("valor_max")
     if f_de:
         q = q.filter(Notinha.data >= datetime.strptime(f_de, "%Y-%m-%d").date())
     if f_ate:
@@ -49,13 +56,19 @@ def _filtra(q):
         q = q.filter_by(fornecedor_id=int(f_forn))
     if f_ativ:
         q = q.filter_by(atividade_id=int(f_ativ))
-    return q, f_de, f_ate, f_forn, f_ativ
+    vmin = _parse_valor_filtro(f_vmin)
+    vmax = _parse_valor_filtro(f_vmax)
+    if vmin is not None:
+        q = q.filter(Notinha.valor >= vmin)
+    if vmax is not None:
+        q = q.filter(Notinha.valor <= vmax)
+    return q, f_de, f_ate, f_forn, f_ativ, f_vmin, f_vmax
 
 
 @notinhas_bp.route("/")
 @_pode
 def index():
-    q, f_de, f_ate, f_forn, f_ativ = _filtra(Notinha.query)
+    q, f_de, f_ate, f_forn, f_ativ, f_vmin, f_vmax = _filtra(Notinha.query)
     notas = q.order_by(Notinha.data.desc(), Notinha.id.desc()).all()
     # Totais por fornecedor (com base no filtro aplicado)
     por_forn = defaultdict(float)
@@ -70,6 +83,7 @@ def index():
     return render_template("notinhas/index.html", notas=notas, por_forn=por_forn, total=total,
                            total_mes=total_mes, hoje=date.today().isoformat(),
                            f_de=f_de, f_ate=f_ate, f_forn=f_forn, f_ativ=f_ativ,
+                           f_vmin=f_vmin, f_vmax=f_vmax,
                            fornecedores=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all(),
                            atividades=Atividade.query.filter_by(ativo=True).order_by(Atividade.nome).all())
 
@@ -84,7 +98,7 @@ def nova():
     if not fid or not aid or valor is None or valor <= 0:
         flash("Preencha Data, Fornecedor, Atividade e Valor (use só números e vírgula).", "danger")
         return redirect(url_for("notinhas.index"))
-    comp = (request.form.get("competencia") or "").strip() or _competencia_de(data_str)
+    comp = _competencia_de(data_str)   # competência sempre derivada da data (item 79)
     db.session.add(Notinha(
         data=datetime.strptime(data_str, "%Y-%m-%d").date(), competencia=comp,
         fornecedor_id=int(fid), atividade_id=int(aid), valor=valor, criado_por=current_user.id))
@@ -103,7 +117,7 @@ def editar(nid):
         return redirect(url_for("notinhas.index"))
     data_str = request.form.get("data") or n.data.isoformat()
     n.data = datetime.strptime(data_str, "%Y-%m-%d").date()
-    n.competencia = (request.form.get("competencia") or "").strip() or _competencia_de(data_str)
+    n.competencia = _competencia_de(data_str)   # competência sempre derivada da data (item 79)
     if request.form.get("fornecedor_id"):
         n.fornecedor_id = int(request.form["fornecedor_id"])
     if request.form.get("atividade_id"):
@@ -122,6 +136,22 @@ def excluir(nid):
     db.session.commit()
     flash("Notinha excluída.", "success")
     return redirect(url_for("notinhas.index"))
+
+
+@notinhas_bp.route("/atividade-rapida", methods=["POST"])
+@_pode
+@csrf.exempt
+def atividade_rapida():
+    """Cadastro inline de Atividade nas Notinhas (item 78) — almox e admin."""
+    nome = ((request.json or {}).get("nome", "") if request.is_json else request.form.get("nome", "")).strip().upper()
+    if not nome:
+        return jsonify(ok=False, erro="nome vazio"), 400
+    a = Atividade.query.filter(db.func.upper(Atividade.nome) == nome).first()
+    if not a:
+        a = Atividade(nome=nome)
+        db.session.add(a)
+        db.session.commit()
+    return jsonify(ok=True, id=a.id, nome=a.nome)
 
 
 @notinhas_bp.route("/exportar")

@@ -34,27 +34,38 @@ def admin_required(f):
     return wrapper
 
 
+# Dados fixos do comprador para o e-mail de cotação (item 73). (SPE, Endereço, CNPJ, I.E.)
+SPES_COTACAO = [
+    ("Delta 3 I Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.517/0002-00", "124895123"),
+    ("Delta 3 II Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.858/0002-86", "124897193"),
+    ("Delta 3 III Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.847/0002-04", "124897070"),
+    ("Delta 3 IV Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.842/0002-73", "124897029"),
+    ("Delta 3 V Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.829/0002-14", "124897134"),
+    ("Delta 3 VI Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.831/0002-93", "124896995"),
+    ("Delta 3 VII Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "23.598.844/0002-62", "124897100"),
+    ("Delta 3 VIII Energia S.A.", "Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000", "15.190.472/0002-02", "12.512653-0"),
+    ("Delta 5 I Energia S.A.", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 5, Zona Rural - Paulino Neves/MA - 65585-000", "29.296.171/0002-72", "12.556889-4"),
+    ("Delta 5 II Energia S.A.", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 5, Zona Rural - Paulino Neves/MA - 65585-000", "29.303.897/0002-95", "12.556898-3"),
+    ("Delta 6 I Energia S.A.", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 6, Zona Rural - Paulino Neves/MA - 65585-000", "29.296.141/0002-66", "12.556908-4"),
+    ("Delta 6 II Energia S.A.", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 6, Zona Rural - Paulino Neves/MA - 65585-000", "29.296.975/0002-71", "12.556887-8"),
+    ("Delta 7 I Energia S.A", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 7, Zona Rural - Paulino Neves/MA - 65585-000", "30.866.542/0002-93", "12.583428-4"),
+    ("Delta 7 II Energia S.A", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 7, Zona Rural - Paulino Neves/MA - 65585-000", "30.905.225/0002-39", "12.583447-0"),
+    ("Delta 8 I Energia S.A.", "Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 8, Zona Rural - Paulino Neves/MA - 65585-000", "30.866.547/0002-16", "12.583436-5"),
+]
+ASSINATURA_COTACAO = ("Antonio Carlos Carvalho\n"
+                      "Analista Administrativo Jr de O&M – Cluster Delta MA\n"
+                      "+55 (86) 99939-9872\n"
+                      "srna.co")
+
+
+def _mai(v):
+    """Padroniza texto de cadastro em MAIÚSCULAS (item 88)."""
+    return (v or "").strip().upper()
+
+
 def _prazo_cotacao():
     d = somar_dias_uteis(5)
     return d, d.strftime("%d/%m/%Y")
-
-
-def _texto_cotacao(itens, contato=None):
-    _, prazo = _prazo_cotacao()
-    saud = f"Olá {contato}! " if contato else "Olá! "
-    linhas = [f"{saud}Segue solicitação de cotação:"]
-    for s in itens:
-        fab = f" — {s.fabricante}" if s.fabricante else ""
-        linhas.append(f"• Nº {s.id} | {s.material} (qtd {s.quantidade}){fab}")
-        if s.link_similar:
-            linhas.append(f"   Link do produto: {_link_curto(s)}")
-    linhas.append(f"Prazo para retorno da cotação: 5 dias úteis (até {prazo}).")
-    linhas.append(NOTA_WHATS)
-    return "\n".join(linhas)
-
-
-def _wa_link(f, texto):
-    return f"https://wa.me/{f.telefone_e164}?text={quote(texto)}" if f.telefone_e164 else None
 
 
 def _log(s, evento):
@@ -64,31 +75,76 @@ def _log(s, evento):
 
 
 def _link_curto(s):
-    """Link curto interno para o produto (redireciona para o link longo)."""
-    base = current_app.config.get("BASE_URL", "").rstrip("/")
-    return f"{base}/r/{s.id}" if s.link_similar else ""
+    """Link curto interno (item 71): detecta o endereço de onde o sistema é acessado."""
+    if not s.link_similar:
+        return ""
+    try:
+        base = request.url_root.rstrip("/")
+    except Exception:
+        base = current_app.config.get("BASE_URL", "").rstrip("/")
+    return f"{base}/r/{s.id}"
 
 
-def _corpo_cotacao_email(itens):
-    """Corpo do e-mail em 'tabela' (texto alinhado)."""
+def _proximo_num_cotacao(ano=None):
+    ano = ano or date.today().year
+    prefixo = f"COT-{ano}-"
+    maxn = 0
+    for (c,) in db.session.query(PedidoCompra.cotacao_seq).filter(PedidoCompra.cotacao_seq.like(prefixo + "%")).all():
+        try:
+            maxn = max(maxn, int(c.rsplit("-", 1)[-1]))
+        except (ValueError, AttributeError):
+            pass
+    return maxn + 1
+
+
+def _seq_str(n, ano=None):
+    return f"COT-{ano or date.today().year}-{n:03d}"
+
+
+def _assunto_cotacao(fornecedor, seq):
+    return f"SRNA | {fornecedor.nome}: Cotação de material #{seq}"
+
+
+def _tabela_texto(cabecalhos, linhas, larguras):
+    """Tabela em texto puro com colunas alinhadas (item 77). Última coluna fica livre."""
+    def fmt(vals):
+        n = len(vals)
+        return "  ".join(str(v) if i == n - 1 else str(v).ljust(larguras[i]) for i, v in enumerate(vals))
+    sep = "  ".join("-" * w for w in larguras)
+    return "\n".join([fmt(cabecalhos), sep] + [fmt(l) for l in linhas])
+
+
+def _corpo_cotacao(fornecedor, itens):
+    """Corpo padrão do e-mail/WhatsApp/texto de cotação (itens 73/75/77)."""
     _, prazo = _prazo_cotacao()
-    linhas = ["Prezados, segue solicitação de cotação:", ""]
-    linhas.append(f"{'Nº':<5}{'Material':<34}{'Qtd':<6}{'Fabricante':<18}")
-    linhas.append("-" * 63)
-    for s in itens:
-        linhas.append(f"{s.id:<5}{(s.material or '')[:33]:<34}{s.quantidade:<6}{(s.fabricante or '-')[:17]:<18}")
-        if s.link_similar:
-            linhas.append(f"     Link: {_link_curto(s)}")
-    linhas.append("")
-    linhas.append(f"Prazo para retorno: 5 dias úteis (até {prazo}).")
-    return "\n".join(linhas)
+    contato = (fornecedor.contato_nome or "").strip()
+    saud = f"Olá, {contato}, tudo bem?" if contato else "Olá, tudo bem?"
+    L = [saud, "",
+         "Poderia enviar a cotação do material abaixo considerando:",
+         "i. Frete CIF",
+         "ii. Pagamento 30 DDL",
+         "iii. Material com finalidade de Uso e Consumo",
+         "", "Dados para Cotação:"]
+    spe_linhas = [(spe, cnpj, ie, end) for (spe, end, cnpj, ie) in SPES_COTACAO]
+    L.append(_tabela_texto(["SPE", "CNPJ", "I.E.", "Endereço"], spe_linhas, [26, 20, 13, 60]))
+    L += ["", "Produtos:"]
+    prod = [[f"#{s.id}#", (s.material or ""), (s.fabricante or "N/D"), s.quantidade, _link_curto(s) or "-"]
+            for s in itens]
+    L.append(_tabela_texto(["Nº", "Produto", "Fabricante/Marca", "Qtd", "Link"], prod, [7, 30, 20, 5, 40]))
+    L += ["", f"Prazo para retorno: 5 dias úteis (Até {prazo}).", "",
+          "Qualquer dúvida, estou à disposição.", "", ASSINATURA_COTACAO]
+    return "\n".join(L)
 
 
-def _mailto(fornecedor, itens):
+def _wa_link(f, texto):
+    return f"https://wa.me/{f.telefone_e164}?text={quote(texto)}" if f.telefone_e164 else None
+
+
+def _mailto(fornecedor, itens, seq):
     if not fornecedor.email:
         return None
-    assunto = "Solicitação de Cotação"
-    corpo = _corpo_cotacao_email(itens)
+    assunto = _assunto_cotacao(fornecedor, seq)
+    corpo = _corpo_cotacao(fornecedor, itens)
     return f"mailto:{fornecedor.email}?subject={quote(assunto)}&body={quote(corpo)}"
 
 
@@ -205,11 +261,15 @@ def solicitacao(sid):
         abort(404)
     fornecedores = [f for f in s.tipo.fornecedores if f.ativo] if s.tipo else []
     orcamentos = sorted(s.orcamentos, key=lambda o: o.valor_total)
-    wa = {f.id: _wa_link(f, _texto_cotacao([s], f.contato_nome)) for f in fornecedores} if fornecedores else None
-    mail = {f.id: _mailto(f, [s]) for f in fornecedores} if fornecedores else None
-    txt = {f.id: _texto_cotacao([s], f.contato_nome) for f in fornecedores} if fornecedores else None
+    base = _proximo_num_cotacao()
+    seqs = {f.id: _seq_str(base + i) for i, f in enumerate(fornecedores)}
+    wa = {f.id: _wa_link(f, _corpo_cotacao(f, [s])) for f in fornecedores} if fornecedores else None
+    mail = {f.id: _mailto(f, [s], seqs[f.id]) for f in fornecedores} if fornecedores else None
+    txt = {f.id: _corpo_cotacao(f, [s]) for f in fornecedores} if fornecedores else None
     return render_template("admin/solicitacao.html", s=s, fornecedores=fornecedores, orcamentos=orcamentos,
-        menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa, mail=mail, txt=txt,
+        menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa, mail=mail, txt=txt, seqs=seqs,
+        hoje=date.today().isoformat(),
+        tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),
         transportadoras=Transportadora.query.filter_by(ativo=True).order_by(Transportadora.nome).all(),
         cidades=Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all())
 
@@ -280,12 +340,14 @@ def _agrupar(status):
 @admin_required
 def enviar_lote():
     itens, grupos = _agrupar("AGUARDANDO_ENVIO_COTACAO")
+    base = _proximo_num_cotacao()
     lista = []
-    for g in grupos.values():
+    for i, g in enumerate(grupos.values()):
         f = g["fornecedor"]
-        texto = _texto_cotacao(g["itens"], f.contato_nome)
-        lista.append({"fornecedor": f, "itens": g["itens"], "wa": _wa_link(f, texto),
-                      "mail": _mailto(f, g["itens"]), "texto": texto})
+        seq = _seq_str(base + i)
+        texto = _corpo_cotacao(f, g["itens"])
+        lista.append({"fornecedor": f, "itens": g["itens"], "seq": seq, "wa": _wa_link(f, texto),
+                      "mail": _mailto(f, g["itens"], seq), "assunto": _assunto_cotacao(f, seq), "texto": texto})
     return render_template("admin/enviar_lote.html", itens=itens, grupos=lista)
 
 
@@ -297,23 +359,26 @@ def enviar_lote_confirmar():
     if not grupos:
         flash("Não há solicitações para enviar cotação.", "warning")
         return redirect(url_for("admin.enviar_lote"))
-    _, prazo = _prazo_cotacao()
     enviadas = {}
+    seqs = {}
+    ano = date.today().year
+    n = _proximo_num_cotacao(ano)
     for g in grupos.values():
         f = g["fornecedor"]
         if not (f.usa_email and f.email):
             continue  # fornecedor sem e-mail: contato por WhatsApp/outro meio
-        corpo = corpo_base or ("Prezados, segue solicitação de cotação em anexo. Por favor, retornem com "
-            f"valor, prazo e condições de pagamento em até 5 dias úteis (até {prazo}).")
-        pdf = gerar_pdf_pedido_lote(f.nome, g["itens"])
-        enviar_email(f.email, "Solicitação de Cotação", corpo, anexo_bytes=pdf, anexo_nome="cotacao.pdf")
+        seq = _seq_str(n, ano); n += 1
+        corpo = corpo_base or _corpo_cotacao(f, g["itens"])
+        enviar_email(f.email, _assunto_cotacao(f, seq), corpo)
         for s in g["itens"]:
             enviadas.setdefault(s.id, set()).add(f.email)
+            seqs.setdefault(s.id, seq)
     for sid, emails in enviadas.items():
         s = db.session.get(Solicitacao, sid)
-        db.session.add(PedidoCompra(solicitacao_id=sid, enviado_por=current_user.id, destinatarios=", ".join(sorted(emails))))
+        db.session.add(PedidoCompra(solicitacao_id=sid, enviado_por=current_user.id,
+                                    destinatarios=", ".join(sorted(emails)), cotacao_seq=seqs.get(sid)))
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
-        _log(s, "Cotação enviada por e-mail (lote)")
+        _log(s, f"Cotação {seqs.get(sid)} enviada por e-mail (lote)")
     db.session.commit()
     flash(f"Cotação enviada: {len(grupos)} fornecedor(es), {len(enviadas)} solicitação(ões).", "success")
     return redirect(url_for("admin.dashboard"))
@@ -426,6 +491,62 @@ def alterar_quantidade(sid):
     return redirect(request.referrer or url_for("admin.solicitacao", sid=s.id))
 
 
+@admin_bp.route("/solicitacao/<int:sid>/editar-campos", methods=["POST"])
+@admin_required
+def editar_campos(sid):
+    """Editar Tipo, Local/frente e Fabricante da solicitação (item 84)."""
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    mudou = []
+    novo_tipo = request.form.get("tipo_material_id") or None
+    novo_tipo = int(novo_tipo) if novo_tipo else None
+    if novo_tipo != s.tipo_material_id:
+        ant = s.tipo.nome if s.tipo else "-"
+        s.tipo_material_id = novo_tipo
+        nt = db.session.get(TipoMaterial, novo_tipo) if novo_tipo else None
+        mudou.append(f"Tipo: {ant} -> {nt.nome if nt else '-'}")
+    local = (request.form.get("local_servico") or "").strip()
+    if local != (s.local_servico or ""):
+        mudou.append(f"Local/frente: {s.local_servico or '-'} -> {local or '-'}")
+        s.local_servico = local
+    fab = (request.form.get("fabricante") or "").strip()
+    if fab != (s.fabricante or ""):
+        mudou.append(f"Fabricante: {s.fabricante or '-'} -> {fab or '-'}")
+        s.fabricante = fab
+    if mudou:
+        _log(s, "Edição — " + "; ".join(mudou))
+        db.session.commit()
+        flash("Solicitação atualizada.", "success")
+    else:
+        flash("Nada a alterar.", "info")
+    return redirect(url_for("admin.solicitacao", sid=s.id))
+
+
+@admin_bp.route("/cotacao/marcar-enviada/<int:fid>", methods=["POST"])
+@admin_required
+def marcar_cotacao_enviada(fid):
+    """Marca a cotação como enviada para um fornecedor e avança o status (item 72)."""
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    base = (Solicitacao.query.filter_by(status="AGUARDANDO_ENVIO_COTACAO")
+            .filter(Solicitacao.tipo_material_id.isnot(None)).all())
+    itens = [s for s in base if s.tipo and any(t.id == fid for t in s.tipo.fornecedores)]
+    ids = request.form.getlist("ids")
+    if ids:
+        alvo = {int(x) for x in ids}
+        itens = [s for s in itens if s.id in alvo]
+    if not itens:
+        flash("Nenhuma solicitação pendente de cotação para este fornecedor.", "warning")
+        return redirect(request.referrer or url_for("admin.enviar_lote"))
+    seq = _seq_str(_proximo_num_cotacao())
+    for s in itens:
+        db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
+                                    destinatarios=(f.email or f.nome), cotacao_seq=seq))
+        s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+        _log(s, f"Cotação {seq} marcada como enviada para {f.nome}")
+    db.session.commit()
+    flash(f"Cotação {seq} marcada como enviada para {f.nome} ({len(itens)} item(ns)).", "success")
+    return redirect(request.referrer or url_for("admin.enviar_lote"))
+
+
 @admin_bp.route("/importar-orcamento", methods=["GET", "POST"])
 @admin_required
 def importar_orcamento():
@@ -492,7 +613,7 @@ def usuarios():
         if Usuario.query.filter_by(email=email).first():
             flash("Já existe usuário com esse e-mail.", "warning")
         else:
-            u = Usuario(nome=request.form.get("nome", "").strip(), email=email,
+            u = Usuario(nome=_mai(request.form.get("nome")), email=email,
                         papel=request.form.get("papel", "solicitante"),
                         empresa_id=request.form.get("empresa_id") or None,
                         senha_temporaria=True)
@@ -515,7 +636,7 @@ def usuario_editar(uid):
             flash("Já existe usuário com esse e-mail.", "warning")
             return redirect(url_for("admin.usuarios"))
         u.email = novo_email
-    u.nome = request.form.get("nome", u.nome).strip()
+    u.nome = _mai(request.form.get("nome")) or u.nome
     u.papel = request.form.get("papel", u.papel)
     u.empresa_id = request.form.get("empresa_id") or None
     u.ativo = request.form.get("ativo") == "1"
@@ -532,7 +653,7 @@ def usuario_editar(uid):
 def _cad_simples(model, template, label, extra=None):
     """Cria/lista um cadastro simples (nome [+ extra])."""
     if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
+        nome = _mai(request.form.get("nome"))
         if nome:
             obj = model(nome=nome)
             if extra:
@@ -554,7 +675,7 @@ def tipos():
 @admin_required
 def tipo_editar(tid):
     t = db.session.get(TipoMaterial, tid) or abort(404)
-    t.nome = request.form.get("nome", t.nome).strip()
+    t.nome = _mai(request.form.get("nome")) or t.nome
     t.ativo = request.form.get("ativo") == "1"
     db.session.commit()
     flash("Tipo atualizado.", "success")
@@ -565,7 +686,7 @@ def tipo_editar(tid):
 @admin_required
 def cidades():
     if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
+        nome = _mai(request.form.get("nome"))
         if nome:
             db.session.add(Cidade(nome=nome, uf=(request.form.get("uf", "").strip().upper()[:2] or None)))
             db.session.commit()
@@ -578,7 +699,7 @@ def cidades():
 @admin_required
 def cidade_editar(cid):
     c = db.session.get(Cidade, cid) or abort(404)
-    c.nome = request.form.get("nome", c.nome).strip()
+    c.nome = _mai(request.form.get("nome")) or c.nome
     c.uf = request.form.get("uf", "").strip().upper()[:2] or None
     c.ativo = request.form.get("ativo") == "1"
     db.session.commit()
@@ -596,7 +717,7 @@ def transportadoras():
 @admin_required
 def transportadora_editar(tid):
     t = db.session.get(Transportadora, tid) or abort(404)
-    t.nome = request.form.get("nome", t.nome).strip()
+    t.nome = _mai(request.form.get("nome")) or t.nome
     t.ativo = request.form.get("ativo") == "1"
     db.session.commit()
     flash("Transportadora atualizada.", "success")
@@ -613,7 +734,7 @@ def empresas():
 @admin_required
 def empresa_editar(eid):
     e = db.session.get(Empresa, eid) or abort(404)
-    e.nome = request.form.get("nome", e.nome).strip()
+    e.nome = _mai(request.form.get("nome")) or e.nome
     e.ativo = request.form.get("ativo") == "1"
     db.session.commit()
     flash("Empresa atualizada.", "success")
@@ -621,11 +742,11 @@ def empresa_editar(eid):
 
 
 def _aplicar_fornecedor(f):
-    f.razao_social = request.form.get("razao_social", "").strip()
-    f.nome_fantasia = request.form.get("nome_fantasia", "").strip()
+    f.razao_social = _mai(request.form.get("razao_social"))
+    f.nome_fantasia = _mai(request.form.get("nome_fantasia"))
     f.email = request.form.get("email", "").strip()
     f.usa_email = request.form.get("usa_email") == "1"
-    f.contato_nome = request.form.get("contato_nome", "").strip()
+    f.contato_nome = _mai(request.form.get("contato_nome"))
     e164, exib = normalizar_telefone_br(request.form.get("telefone", "").strip())
     f.telefone = exib or request.form.get("telefone", "").strip()
     f.telefone_e164 = e164
@@ -756,7 +877,7 @@ def atividades():
 @admin_required
 def atividade_editar(aid):
     a = db.session.get(Atividade, aid) or abort(404)
-    a.nome = request.form.get("nome", a.nome).strip()
+    a.nome = _mai(request.form.get("nome")) or a.nome
     a.ativo = request.form.get("ativo") == "1"
     db.session.commit()
     flash("Atividade atualizada.", "success")
@@ -768,7 +889,7 @@ def atividade_editar(aid):
 @admin_required
 @csrf.exempt
 def api_criar(entidade):
-    nome = (request.json or {}).get("nome", "").strip() if request.is_json else request.form.get("nome", "").strip()
+    nome = ((request.json or {}).get("nome", "") if request.is_json else request.form.get("nome", "")).strip().upper()
     if not nome:
         return jsonify(ok=False, erro="nome vazio"), 400
     mapa = {"tipo": TipoMaterial, "cidade": Cidade, "transportadora": Transportadora,

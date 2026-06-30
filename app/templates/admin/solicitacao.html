@@ -26,6 +26,25 @@
         {% if s.prazo_recebimento %}<dt class="col-4">Prazo receb.</dt><dd class="col-8">{{ s.prazo_recebimento.strftime('%d/%m/%Y') }}</dd>{% endif %}
         {% if s.frete_tipo %}<dt class="col-4">Frete</dt><dd class="col-8">{{ s.frete_tipo }}{% if s.frete_modalidade %} · {{ s.frete_modalidade|capitalize }}{% endif %}{% if s.transportadora %} · {{ s.transportadora.nome }}{% endif %}{% if s.cidade_retirada %} · {{ s.cidade_retirada.rotulo }}{% endif %}</dd>{% endif %}
       </dl>
+      <button class="btn btn-sm btn-outline-secondary mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#editarCampos">Editar tipo / local / fabricante</button>
+      <div class="collapse mt-2" id="editarCampos">
+        <form method="post" action="{{ url_for('admin.editar_campos', sid=s.id) }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-6"><label class="form-label small mb-0">Tipo de material</label>
+            <div class="input-group input-group-sm">
+              <select name="tipo_material_id" id="selTipoEdit" class="form-select">
+                <option value="">— selecione —</option>
+                {% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if s.tipo_material_id==t.id }}>{{ t.nome }}</option>{% endfor %}
+              </select>
+              <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('tipo','selTipoEdit')">+</button>
+            </div></div>
+          <div class="col-md-6"><label class="form-label small mb-0">Fabricante</label>
+            <input name="fabricante" class="form-control form-control-sm" value="{{ s.fabricante or '' }}"></div>
+          <div class="col-12"><label class="form-label small mb-0">Local / frente de serviço</label>
+            <input name="local_servico" class="form-control form-control-sm" value="{{ s.local_servico or '' }}"></div>
+          <div class="col-12"><button class="btn btn-sm btn-primary">Salvar alterações</button></div>
+        </form>
+      </div>
       {% if s.imagens %}<div class="d-flex flex-wrap gap-2 mt-2">{% for img in s.imagens %}<a href="{{ img.url }}" target="_blank"><img src="{{ img.url }}" style="height:70px" class="rounded border"></a>{% endfor %}</div>{% endif %}
     </div></div>
     <div class="card mb-3"><div class="card-body">
@@ -60,11 +79,17 @@
           <button class="btn btn-success btn-sm">Enviar cotação por e-mail (PDF)</button></form>
         <hr><div class="small">Enviar manualmente por fornecedor:</div>
         {% for f in fornecedores %}
-        <div class="d-flex align-items-center gap-1 mb-1 small">
+        <div class="d-flex align-items-center gap-1 mb-1 small flex-wrap">
           <span style="min-width:120px">{{ f.nome }}</span>
+          {% if seqs %}<span class="text-muted">#{{ seqs[f.id] }}</span>{% endif %}
           {% if wa and wa[f.id] %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ wa[f.id] }}">WhatsApp</a>{% endif %}
           {% if mail and mail[f.id] %}<a class="btn btn-sm btn-outline-primary py-0" href="{{ mail[f.id] }}">E-mail</a>{% endif %}
           <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('txt{{ f.id }}')">Copiar texto</button>
+          {% if s.status == 'AGUARDANDO_ENVIO_COTACAO' %}
+          <form method="post" action="{{ url_for('admin.marcar_cotacao_enviada', fid=f.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="ids" value="{{ s.id }}">
+            <button class="btn btn-sm btn-warning py-0" title="Marca como enviada e muda o status">Cotação enviada</button>
+          </form>{% endif %}
           <textarea id="txt{{ f.id }}" class="d-none">{{ txt[f.id] if txt }}</textarea>
         </div>
         {% endfor %}
@@ -98,15 +123,17 @@
           <div class="col-6"><label class="form-label small">Frete</label>
             <select name="frete_tipo" class="form-select form-select-sm" onchange="document.getElementById('fobbox').style.display=this.value=='FOB'?'block':'none'">
               <option value="">— escolher —</option><option value="CIF">CIF (fornecedor entrega)</option><option value="FOB">FOB (retirada)</option></select></div>
-          <div class="col-6"><label class="form-label small">Prazo de recebimento *</label><input type="date" name="prazo_recebimento" class="form-control form-control-sm" required></div>
+          <div class="col-6"><label class="form-label small">Prazo de recebimento *</label><input type="date" name="prazo_recebimento" value="{{ hoje }}" class="form-control form-control-sm" required></div>
         </div>
         <div id="fobbox" style="display:none" class="border rounded p-2 mt-2">
           <select name="frete_modalidade" class="form-select form-select-sm mb-2" onchange="document.getElementById('tbox').style.display=this.value=='TRANSPORTADORA'?'block':'none';document.getElementById('cbox').style.display=this.value=='COLABORADOR'?'block':'none'">
             <option value="">— FOB: como será a retirada? —</option><option value="TRANSPORTADORA">Transportadora</option><option value="COLABORADOR">Colaborador do parque</option></select>
-          <div id="tbox" style="display:none" class="input-group input-group-sm mb-1"><select name="transportadora_id" id="selTransp" class="form-select"><option value="">— transportadora —</option>{% for t in transportadoras %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}</select>
-            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('transportadora','selTransp')">+</button></div>
-          <div id="cbox" style="display:none" class="input-group input-group-sm"><select name="cidade_retirada_id" id="selCidade" class="form-select"><option value="">— cidade de retirada —</option>{% for c in cidades %}<option value="{{ c.id }}">{{ c.rotulo }}</option>{% endfor %}</select>
-            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('cidade','selCidade',true)">+</button></div>
+          <div id="tbox" style="display:none" class="mb-1"><label class="form-label small mb-0">Transportadora</label>
+            <div class="input-group input-group-sm"><select name="transportadora_id" id="selTransp" class="form-select"><option value="">— selecione a transportadora —</option>{% for t in transportadoras %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}</select>
+            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('transportadora','selTransp')">+</button></div></div>
+          <div id="cbox" style="display:none"><label class="form-label small mb-0">Cidade de retirada</label>
+            <div class="input-group input-group-sm"><select name="cidade_retirada_id" id="selCidade" class="form-select"><option value="">— selecione a cidade —</option>{% for c in cidades %}<option value="{{ c.id }}">{{ c.rotulo }}</option>{% endfor %}</select>
+            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('cidade','selCidade',true)">+</button></div></div>
         </div>
         <button class="btn btn-success btn-sm mt-2">Definir e enviar Ordem de Compra</button>
         <div class="form-text">O frete é interno (não vai no e-mail ao fornecedor).</div>

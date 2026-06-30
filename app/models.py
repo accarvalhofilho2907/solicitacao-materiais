@@ -113,7 +113,7 @@ class Solicitacao(db.Model):
     material = db.Column(db.String(200), nullable=False)
     quantidade = db.Column(db.Integer, nullable=False, default=1)
     fabricante = db.Column(db.String(120))
-    link_similar = db.Column(db.String(500))
+    link_similar = db.Column(db.Text)
     local_servico = db.Column(db.String(200))   # local de uso / frente de serviço
     status = db.Column(db.String(40), nullable=False, default="AGUARDANDO_APROVACAO")
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)

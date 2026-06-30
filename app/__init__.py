@@ -25,6 +25,13 @@ def _light_migrate():
         if insp.has_table(table.name) and "ativo" in {c["name"] for c in insp.get_columns(table.name)}:
             db.session.execute(text(f'UPDATE "{table.name}" SET ativo = TRUE WHERE ativo IS NULL'))
     db.session.commit()
+    # Garante que o link aceite URLs longas (ex.: Mercado Livre) no PostgreSQL.
+    if db.engine.dialect.name == "postgresql":
+        try:
+            db.session.execute(text('ALTER TABLE solicitacoes ALTER COLUMN link_similar TYPE TEXT'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def _seed_tipos():

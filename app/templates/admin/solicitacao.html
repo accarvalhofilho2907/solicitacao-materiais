@@ -42,6 +42,14 @@
         <textarea name="texto" class="form-control mb-2" rows="2" placeholder="Mensagem ao solicitante..."></textarea>
         <button class="btn btn-sm btn-primary">Enviar</button></form>
     </div></div>
+    <div class="card mt-3"><div class="card-body">
+      <h6>Histórico</h6>
+      <ul class="list-unstyled small mb-0">
+        {% for l in s.logs %}<li class="border-start ps-2 mb-1" style="border-color:var(--coral)!important;border-width:2px!important;">
+          <span class="text-muted">{{ l.criado_em.strftime('%d/%m/%Y %H:%M') }}</span> — {{ l.evento }}{% if l.autor %} <span class="text-muted">({{ l.autor.nome }})</span>{% endif %}</li>
+        {% else %}<li class="text-muted">Sem registros ainda.</li>{% endfor %}
+      </ul>
+    </div></div>
   </div>
   <div class="col-lg-6">
     <div class="card mb-3"><div class="card-body">
@@ -50,7 +58,16 @@
         <form method="post" action="{{ url_for('admin.enviar_pedido', sid=s.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <textarea name="corpo" class="form-control mb-2" rows="2" placeholder="Corpo do e-mail (opcional; padrão cita 5 dias úteis)."></textarea>
           <button class="btn btn-success btn-sm">Enviar cotação por e-mail (PDF)</button></form>
-        <div class="mt-2 small">WhatsApp: {% for f in fornecedores %}{% if wa and wa[f.id] %}<a class="badge text-bg-success text-decoration-none" target="_blank" href="{{ wa[f.id] }}">{{ f.nome }}</a> {% else %}<span class="badge bg-light text-muted">{{ f.nome }} (sem tel.)</span> {% endif %}{% endfor %}</div>
+        <hr><div class="small">Enviar manualmente por fornecedor:</div>
+        {% for f in fornecedores %}
+        <div class="d-flex align-items-center gap-1 mb-1 small">
+          <span style="min-width:120px">{{ f.nome }}</span>
+          {% if wa and wa[f.id] %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ wa[f.id] }}">WhatsApp</a>{% endif %}
+          {% if mail and mail[f.id] %}<a class="btn btn-sm btn-outline-primary py-0" href="{{ mail[f.id] }}">E-mail</a>{% endif %}
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('txt{{ f.id }}')">Copiar texto</button>
+          <textarea id="txt{{ f.id }}" class="d-none">{{ txt[f.id] if txt }}</textarea>
+        </div>
+        {% endfor %}
       {% else %}<p class="text-warning small mb-0">Defina o tipo de material com fornecedores ativos.</p>{% endif %}
     </div></div>
     <div class="card mb-3"><div class="card-body">

@@ -14,6 +14,7 @@
     .btn-success{ --bs-btn-bg:var(--verde); --bs-btn-border-color:var(--verde); --bs-btn-hover-bg:#28b08b; }
     .btn-outline-primary{ --bs-btn-color:var(--coral); --bs-btn-border-color:var(--coral); --bs-btn-hover-bg:var(--coral); --bs-btn-hover-border-color:var(--coral); }
     a{ color:#d63d33; } .card{ border:none; box-shadow:0 1px 3px rgba(0,0,0,.08); } .badge.bg-secondary{ background:var(--grafite)!important; } .rodape{ font-size:.78rem; color:#9b948c; }
+    .bolha{ background:var(--coral); color:#fff; border-radius:10px; padding:0 7px; font-size:11px; margin-left:3px; }
   </style>
 </head>
 <body>
@@ -23,27 +24,50 @@
   <div class="navbar-nav ms-auto flex-row flex-wrap gap-2 align-items-center">
     {% if current_user.is_admin %}
       <a class="nav-link text-white" href="{{ url_for('admin.dashboard') }}">Painel</a>
-      <a class="nav-link text-white" href="{{ url_for('admin.aprovacoes') }}">Aprovações</a>
+      <a class="nav-link text-white" href="{{ url_for('admin.aprovacoes') }}">Aprovações{% if n_aprovacoes %}<span class="bolha">{{ n_aprovacoes }}</span>{% endif %}</a>
       <div class="dropdown">
-        <a class="nav-link text-white dropdown-toggle" href="#" data-bs-toggle="dropdown">Compras</a>
+        <a class="nav-link text-white dropdown-toggle" href="#" data-bs-toggle="dropdown">Compras{% if n_cotacao %}<span class="bolha">{{ n_cotacao }}</span>{% endif %}</a>
         <ul class="dropdown-menu">
-          <li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">Enviar cotação</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">Enviar cotação {% if n_cotacao %}<span class="badge bg-secondary">{{ n_cotacao }}</span>{% endif %}</a></li>
           <li><a class="dropdown-item" href="{{ url_for('admin.importar_orcamento') }}">Importar orçamento</a></li>
           <li><a class="dropdown-item" href="{{ url_for('admin.comparativo') }}">Comparativo (menor custo)</a></li>
         </ul>
       </div>
       <a class="nav-link text-white" href="{{ url_for('notinhas.index') }}">Notinhas</a>
-      <a class="nav-link text-white" href="{{ url_for('admin.cadastros') }}">Cadastros</a>
-      <a class="nav-link text-white" href="{{ url_for('admin.sugestoes') }}">Sugestões</a>
+      <div class="dropdown">
+        <a class="nav-link text-white dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">
+          <span style="width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">{{ current_user.nome[:2]|upper }}</span>
+          {{ current_user.nome.split()[0] }}
+        </a>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="{{ url_for('admin.cadastros') }}">Cadastros</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.sugestoes') }}">Sugestões</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('geral.faq') }}">FAQ</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('geral.sugerir') }}">Sugerir melhoria</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('geral.novidades') }}">Novidades</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">Sair</a></li>
+        </ul>
+      </div>
     {% else %}
       <a class="nav-link text-white" href="{{ url_for('solicitante.index') }}">Solicitações</a>
       {% if current_user.is_almox %}<a class="nav-link text-white" href="{{ url_for('almox.index') }}">Confirmar chegadas</a>
       <a class="nav-link text-white" href="{{ url_for('notinhas.index') }}">Notinhas</a>{% endif %}
+      <div class="dropdown">
+        <a class="nav-link text-white dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">
+          <span style="width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">{{ current_user.nome[:2]|upper }}</span>
+          {{ current_user.nome.split()[0] }}
+        </a>
+        <ul class="dropdown-menu dropdown-menu-end">
+          {% if current_user.pode_solicitar %}<li><a class="dropdown-item" href="{{ url_for('solicitante.nova') }}">Nova solicitação</a></li>{% endif %}
+          <li><a class="dropdown-item" href="{{ url_for('geral.faq') }}">FAQ</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('geral.sugerir') }}">Sugerir melhoria</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('geral.novidades') }}">Novidades</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">Sair</a></li>
+        </ul>
+      </div>
     {% endif %}
-    <a class="nav-link text-white" href="{{ url_for('geral.faq') }}">FAQ</a>
-    <a class="nav-link text-white" href="{{ url_for('geral.sugerir') }}">Sugerir</a>
-    <span class="text-white-50 small">{{ current_user.nome }}</span>
-    <a class="btn btn-sm btn-outline-light" href="{{ url_for('auth.logout') }}">Sair</a>
   </div>{% endif %}
 </div></nav>
 <div class="container py-4">
@@ -52,7 +76,7 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% if current_user.is_authenticated %}
-<footer class="container text-center pb-4 rodape"><a class="rodape text-decoration-none" href="{{ url_for('geral.novidades') }}">Novidades & atualizações</a> · v1.4</footer>
+<footer class="container text-center pb-4 rodape">v1.6</footer>
 {% endif %}
 <script>
 function cadastrarRapido(entidade, selectId, comUF){
@@ -63,6 +87,7 @@ function cadastrarRapido(entidade, selectId, comUF){
      var sel=document.getElementById(selectId); var op=document.createElement('option'); op.value=d.id; op.textContent=d.nome; op.selected=true; sel.appendChild(op);
    }).catch(function(){ alert('Falha ao cadastrar.'); });
 }
+function copiarTexto(id){ var el=document.getElementById(id); navigator.clipboard.writeText(el.value||el.textContent).then(function(){ alert('Texto copiado!'); }); }
 </script>
 </body>
 </html>

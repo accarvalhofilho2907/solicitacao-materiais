@@ -4,7 +4,8 @@ from flask import (
 from flask_login import login_required, current_user
 
 from .extensions import db
-from .models import Solicitacao, TipoMaterial, Imagem, Comentario
+from datetime import datetime
+from .models import Solicitacao, TipoMaterial, Imagem, Comentario, LogSolicitacao, Usuario, Fornecedor, Orcamento
 from .storage import salvar_imagem
 from .emails import enviar_email
 from .pdf import gerar_pdf_lista
@@ -15,22 +16,39 @@ sol_bp = Blueprint("solicitante", __name__, url_prefix="/solicitante")
 @sol_bp.route("/")
 @login_required
 def index():
-    # Painel de visualização livre: todos veem todas as solicitações
+    # Painel de visualização livre: todos veem todas (filtros avançados como o admin)
     q = Solicitacao.query
-    f_status = request.args.get("status")
+    f_status = request.args.getlist("status")
+    f_sol = request.args.getlist("solicitante")
+    f_forn = request.args.getlist("fornecedor")
     f_tipo = request.args.get("tipo")
     f_busca = (request.args.get("q") or "").strip()
+    f_de = request.args.get("de")
+    f_ate = request.args.get("ate")
     if f_status:
-        q = q.filter_by(status=f_status)
+        q = q.filter(Solicitacao.status.in_(f_status))
+    if f_sol:
+        q = q.filter(Solicitacao.solicitante_id.in_([int(x) for x in f_sol]))
+    if f_forn:
+        ids = [int(x) for x in f_forn]
+        sub = db.session.query(Orcamento.solicitacao_id).filter(Orcamento.fornecedor_id.in_(ids))
+        q = q.filter(db.or_(Solicitacao.fornecedor_definido_id.in_(ids), Solicitacao.id.in_(sub)))
     if f_tipo:
         q = q.filter_by(tipo_material_id=int(f_tipo))
     if f_busca:
         q = q.filter(Solicitacao.material.ilike(f"%{f_busca}%"))
+    if f_de:
+        q = q.filter(Solicitacao.criado_em >= datetime.strptime(f_de, "%Y-%m-%d"))
+    if f_ate:
+        q = q.filter(Solicitacao.criado_em <= datetime.strptime(f_ate, "%Y-%m-%d").replace(hour=23, minute=59))
     pedidos = q.order_by(Solicitacao.atualizado_em.desc()).all()
-    tipos = TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all()
     pode_criar = current_user.is_admin or current_user.pode_solicitar
-    return render_template("solicitante/index.html", pedidos=pedidos, tipos=tipos,
-                           f_status=f_status, f_tipo=f_tipo, f_busca=f_busca, pode_criar=pode_criar)
+    return render_template("solicitante/index.html", pedidos=pedidos,
+        tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),
+        solicitantes=Usuario.query.filter(Usuario.papel.in_(["solicitante", "almoxarifado"])).order_by(Usuario.nome).all(),
+        fornecedores=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(),
+        f_status=f_status, f_sol=[int(x) for x in f_sol], f_forn=[int(x) for x in f_forn],
+        f_tipo=f_tipo, f_busca=f_busca, f_de=f_de, f_ate=f_ate, pode_criar=pode_criar)
 
 
 @sol_bp.route("/nova", methods=["GET", "POST"])
@@ -59,6 +77,8 @@ def nova():
             url = salvar_imagem(f)
             if url:
                 db.session.add(Imagem(solicitacao_id=s.id, url=url))
+        db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=current_user.id,
+                                      evento="Solicitação criada (aguardando aprovação)"))
         db.session.commit()
         enviar_email(current_app.config.get("ADMIN_EMAIL"),
                      f"Nova solicitação Nº {s.id} (aguardando aprovação)",

@@ -401,6 +401,39 @@ Registro de toda alteração pedida após o MVP, com status: ⬜ pendente · �
 53. **✅ Comparativo por produto OU por fornecedor** *(v1.5)* — no Comparativo, oferecer a escolha do tipo de visão: **por produto** (como está hoje) ou **por fornecedor**, onde agrupa tudo o que um determinado fornecedor cotou mais barato. Na visão **por fornecedor**, incluir um botão **"Aprovar tudo desse fornecedor"** — define esse fornecedor como vencedor, de uma só vez, em todos os itens em que ele é o mais barato.
 54. **✅ Nome completo do item do orçamento (obrigatório)** *(v1.5)* — trazer no comparativo o **nome completo do item** como o fornecedor descreveu no orçamento. No painel/detalhe da solicitação, ao lançar orçamento, incluir esse campo (descrição do item do fornecedor) como **obrigatório**.
 
-> **Regra de trabalho (a pedido, 29/06/2026):** todo pedido enviado é **registrado no roadmap e NÃO executado** na hora. Implementação só quando o usuário disser "rodar".
+55. **✅ Botão "Abrir no e-mail" (mailto) por fornecedor + corpo em tabela** — no **Enviar cotação (lote)** e na tela da solicitação, **um botão de e-mail ao lado de cada fornecedor** que abre o Outlook já com destinatário, assunto e corpo preenchidos, para o admin só clicar Enviar (envia da conta real, sem SMTP/TI). Resultado: cada fornecedor terá **3 botões lado a lado — WhatsApp, E-mail e Texto pronto** (ver item 63). O **corpo em formato de tabela/estruturado** (Nº, material, quantidade, fabricante, link). *Limitações do mailto:* texto puro (tabela em colunas alinhadas, não HTML) e **não anexa PDF** automaticamente. **Método oficial de e-mail: mailto/Outlook manual.**
+
+56. **✅ Marcar se o fornecedor usa e-mail** — incluir uma caixa de seleção ao lado do e-mail no cadastro do fornecedor ("usa e-mail"/"contatar por e-mail"), pois há fornecedores com quem o contato não é por e-mail. Quando desmarcado, o fornecedor não entra no envio de cotação por e-mail (fica só WhatsApp / outro meio) e o e-mail deixa de ser obrigatório.
+
+57. **✅ Filtro/busca no cadastro de Fornecedores** — incluir um campo de busca na lista de fornecedores (por nome fantasia, razão social, contato, tipo) para localizar rápido quando houver muitos cadastrados.
+
+58. **✅ Editar e-mail do usuário** — permitir alterar o e-mail no editar do usuário (hoje a edição muda nome, papel, empresa, ativo e senha, mas não o e-mail).
+
+59. **✅ Filtros completos no painel dos demais papéis** — no painel do **Somente visualização** (e também do **Solicitante** e do **Almoxarifado**), usar os mesmos filtros avançados do admin: listas suspensas com seleção (status, solicitante, fornecedor), tipo, busca por material e período (de/até). Hoje esses papéis têm só filtros simples (status, tipo, busca).
+
+60. **✅ Balõezinhos (badges) de pendência no menu** — mostrar contadores no cabeçalho: (a) ao lado de **Aprovações**, a quantidade de solicitações aguardando aprovação; (b) sobre **Compras**, a quantidade aguardando envio de cotação, e ao abrir o menu Compras, o mesmo número sobre **Enviar cotação**. Os balõezinhos somem quando não há nada pendente.
+
+61. **✅ Desativar o anexo de fotos** — ocultar/desativar o campo de upload de imagens na nova solicitação (e demais lugares de upload), por enquanto, para não consumir armazenamento no plano grátis. Manter de forma que dê para reativar depois facilmente.
+
+62. **✅ Editar/excluir notinha** — permitir editar (data, fornecedor, atividade, valor) e excluir uma notinha lançada, para corrigir erros. Os totais por mês/fornecedor recalculam automaticamente.
+
+63. **✅ Botão "Ver/copiar texto" no envio em lote** — ao lado de "Abrir WhatsApp", um botão que abre um **pop-up (modal) com o texto pronto** da cotação e um botão **"Copiar"**, para o admin colar onde quiser, sem abrir uma aba nova do WhatsApp a cada vez.
+64. **✅ Encurtar o link do produto** — gerar um **link curto** para os links gigantes de produto. Recomendado: **redirect interno** (ex.: `…/r/<id>` que redireciona para a URL longa) — grátis, sem depender de terceiros; alternativa é um encurtador externo (TinyURL/is.gd). Usar o link curto nos textos de WhatsApp/e-mail/cotação.
+
+65. **✅ Exportar ficha(s) da solicitação em PDF na tela de Aprovações** — incluir caixa de seleção por item na tela de **Aprovações** e um botão para **exportar em PDF os marcados**. O PDF deve ser a **ficha completa de cada solicitação** (material, quantidade, fabricante, tipo, local/frente, link, solicitante, status, datas — e imagens se houver), **não apenas a tabela resumida**.
+
+66. **✅ Aprovações: editar quantidade + aprovar marcados em lote** — na tela de Aprovações, permitir **editar a quantidade** de cada item (ex.: pedido 100 → ajustar para 50), registrando a alteração no histórico da solicitação. E incluir um botão para **aprovar em lote todos os itens marcados** (usando as caixas de seleção do item 65).
+67. **✅ Histórico/linha do tempo da solicitação (logs)** — guardar todo o histórico de cada solicitação como um conjunto de logs com data/hora: criada, foi para aprovação, aprovada, enviada para cotação, aguardando orçamento, definição de fornecedor, ordem de compra, aguardando chegada, concluída — além de alterações de quantidade, comentários, etc. Exibir como linha do tempo no detalhe.
+
+68. **✅ Menu superior mais clean** — reduzir a poluição do cabeçalho: deixar no topo só os itens principais (Painel, Aprovações, Compras, Notinhas) e agrupar os secundários (Cadastros, Sugestões, FAQ, Sugerir, Novidades, Sair) dentro de um **menu do usuário** (nome/avatar à direita, com dropdown). *Prévia visual APROVADA pelo usuário.*
+
+69. **✅ Melhorias nas Notinhas** —
+    - **Valor:** aceitar só **números e vírgula** (bloquear o ponto ".").
+    - **Obrigatórios:** Data, Fornecedor, Atividade e Valor (hoje Atividade é opcional).
+    - **Competência:** incluir um campo de competência (mês/ano) que o admin possa escolher/editar, podendo ajustar ali os valores do mês corrente.
+    - **Exportar em PDF** as notinhas.
+    - **Filtros** por data, fornecedor e atividade na tela de notinhas.
+
+> **Regra de trabalho (a pedido, 29/06/2026):** todo pedido enviado é **registrado no roadmap e NÃO executado** na hora. Implementação só quando o usuário disser "rodar". **Após cada novo item, informar ao usuário apenas a lista de PENDENTES (não os concluídos).**
 >
 > **Nota técnica:** adicionada uma micro-migração automática de schema (roda ao iniciar o app) que cria colunas novas sem apagar dados — assim mudanças no banco não exigem recriar o `app.db`.

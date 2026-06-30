@@ -8,7 +8,8 @@
     <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-2"><input name="razao_social" class="form-control" placeholder="Razão Social"></div>
       <div class="mb-2"><input name="nome_fantasia" class="form-control" placeholder="Nome Fantasia"></div>
-      <div class="mb-2"><input name="email" type="email" class="form-control" placeholder="E-mail" required></div>
+      <div class="mb-2"><input name="email" type="email" class="form-control" placeholder="E-mail"></div>
+      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="usa_email" value="1" id="ue" checked><label class="form-check-label small" for="ue">Contatar por e-mail (entra no envio de cotação por e-mail)</label></div>
       <div class="mb-2"><input name="contato_nome" class="form-control" placeholder="Nome do contato"></div>
       <div class="mb-2"><input name="telefone" class="form-control" placeholder="Telefone / WhatsApp (ex.: 11 98888-7777)"></div>
       <label class="form-label small">Tipos de material atendidos</label>
@@ -18,10 +19,10 @@
       </div>
       <button class="btn btn-primary">Cadastrar</button></form>
   </div></div></div>
-  <div class="col-md-7"><div class="card"><div class="table-responsive">
+  <div class="col-md-7"><div class="card"><div class="card-body pb-0"><input class="form-control form-control-sm" placeholder="Buscar fornecedor (nome, contato, tipo)..." onkeyup="filtrarForn(this.value)"></div><div class="table-responsive">
     <table class="table mb-0 align-middle"><thead class="table-light"><tr><th>Fornecedor</th><th>Contato</th><th>WhatsApp</th><th>Tipos</th><th></th></tr></thead>
-    <tbody>{% for f in lista %}<tr>
-      <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}<div class="small text-muted">{{ f.email }}</div></td>
+    <tbody id="tabForn">{% for f in lista %}<tr class="lf" data-busca="{{ (f.nome ~ ' ' ~ (f.contato_nome or '') ~ ' ' ~ (f.tipos|map(attribute='nome')|join(' ')))|lower }}">
+      <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}{% if not f.usa_email %} <span class="badge bg-light text-muted">sem e-mail</span>{% endif %}<div class="small text-muted">{{ f.email or '-' }}</div></td>
       <td class="small">{{ f.contato_nome or '-' }}</td><td class="small">{{ f.telefone or '-' }}</td>
       <td>{% for t in f.tipos %}<span class="badge bg-info text-dark">{{ t.nome }}</span> {% endfor %}</td>
       <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.fornecedor_editar', fid=f.id) }}">Editar</a></td></tr>
@@ -30,5 +31,6 @@
 </div>
 <script>
 function filtrarChk(q, boxId){ q=q.toLowerCase(); document.querySelectorAll('#'+boxId+' .chk').forEach(function(d){ d.style.display = d.dataset.nome.indexOf(q)>=0?'':'none'; }); }
+function filtrarForn(q){ q=q.toLowerCase(); document.querySelectorAll('#tabForn tr.lf').forEach(function(r){ r.style.display = r.dataset.busca.indexOf(q)>=0?'':'none'; }); }
 </script>
 {% endblock %}

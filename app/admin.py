@@ -10,7 +10,8 @@ from flask_login import login_required, current_user
 from .extensions import db, csrf
 from .models import (
     Usuario, TipoMaterial, Fornecedor, Solicitacao, Comentario, PedidoCompra, Orcamento,
-    Cidade, Transportadora, Empresa, Sugestao, Atividade, Notinha, STATUS, STATUS_PADRAO,
+    Cidade, Transportadora, Empresa, Sugestao, Atividade, Notinha, LogSolicitacao,
+    STATUS, STATUS_PADRAO,
 )
 from .storage import salvar_imagem
 from .emails import enviar_email
@@ -46,7 +47,7 @@ def _texto_cotacao(itens, contato=None):
         fab = f" — {s.fabricante}" if s.fabricante else ""
         linhas.append(f"• Nº {s.id} | {s.material} (qtd {s.quantidade}){fab}")
         if s.link_similar:
-            linhas.append(f"   Link do produto: {s.link_similar}")
+            linhas.append(f"   Link do produto: {_link_curto(s)}")
     linhas.append(f"Prazo para retorno da cotação: 5 dias úteis (até {prazo}).")
     linhas.append(NOTA_WHATS)
     return "\n".join(linhas)
@@ -54,6 +55,41 @@ def _texto_cotacao(itens, contato=None):
 
 def _wa_link(f, texto):
     return f"https://wa.me/{f.telefone_e164}?text={quote(texto)}" if f.telefone_e164 else None
+
+
+def _log(s, evento):
+    """Registra um evento na linha do tempo da solicitação."""
+    db.session.add(LogSolicitacao(solicitacao_id=s.id, evento=evento,
+                                  autor_id=current_user.id if current_user.is_authenticated else None))
+
+
+def _link_curto(s):
+    """Link curto interno para o produto (redireciona para o link longo)."""
+    base = current_app.config.get("BASE_URL", "").rstrip("/")
+    return f"{base}/r/{s.id}" if s.link_similar else ""
+
+
+def _corpo_cotacao_email(itens):
+    """Corpo do e-mail em 'tabela' (texto alinhado)."""
+    _, prazo = _prazo_cotacao()
+    linhas = ["Prezados, segue solicitação de cotação:", ""]
+    linhas.append(f"{'Nº':<5}{'Material':<34}{'Qtd':<6}{'Fabricante':<18}")
+    linhas.append("-" * 63)
+    for s in itens:
+        linhas.append(f"{s.id:<5}{(s.material or '')[:33]:<34}{s.quantidade:<6}{(s.fabricante or '-')[:17]:<18}")
+        if s.link_similar:
+            linhas.append(f"     Link: {_link_curto(s)}")
+    linhas.append("")
+    linhas.append(f"Prazo para retorno: 5 dias úteis (até {prazo}).")
+    return "\n".join(linhas)
+
+
+def _mailto(fornecedor, itens):
+    if not fornecedor.email:
+        return None
+    assunto = "Solicitação de Cotação"
+    corpo = _corpo_cotacao_email(itens)
+    return f"mailto:{fornecedor.email}?subject={quote(assunto)}&body={quote(corpo)}"
 
 
 # ---------------- Painel ----------------
@@ -115,16 +151,50 @@ def aprovacoes():
     return render_template("admin/aprovacoes.html", pedidos=pedidos)
 
 
+def _aprovar(s):
+    if s.status == "AGUARDANDO_APROVACAO":
+        s.status = "AGUARDANDO_ENVIO_COTACAO"
+        _log(s, "Aprovada (liberada para cotação)")
+        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} aprovada", f"Sua solicitação Nº {s.id} foi aprovada.")
+        return True
+    return False
+
+
 @admin_bp.route("/solicitacao/<int:sid>/aprovar", methods=["POST"])
 @admin_required
 def aprovar(sid):
     s = db.session.get(Solicitacao, sid) or abort(404)
-    if s.status == "AGUARDANDO_APROVACAO":
-        s.status = "AGUARDANDO_ENVIO_COTACAO"
+    if _aprovar(s):
         db.session.commit()
-        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} aprovada", f"Sua solicitação Nº {s.id} foi aprovada.")
         flash(f"Solicitação Nº {s.id} aprovada.", "success")
     return redirect(request.referrer or url_for("admin.aprovacoes"))
+
+
+@admin_bp.route("/aprovacoes/aprovar-lote", methods=["POST"])
+@admin_required
+def aprovar_lote():
+    n = 0
+    for sid in request.form.getlist("ids"):
+        s = db.session.get(Solicitacao, int(sid))
+        if s and _aprovar(s):
+            n += 1
+    db.session.commit()
+    flash(f"{n} solicitação(ões) aprovada(s) em lote.", "success")
+    return redirect(url_for("admin.aprovacoes"))
+
+
+@admin_bp.route("/aprovacoes/exportar", methods=["POST"])
+@admin_required
+def aprovacoes_exportar():
+    from flask import Response
+    from .pdf import gerar_pdf_fichas
+    itens = Solicitacao.query.filter(Solicitacao.id.in_(request.form.getlist("ids"))).order_by(Solicitacao.id).all()
+    if not itens:
+        flash("Marque ao menos uma solicitação para exportar.", "warning")
+        return redirect(url_for("admin.aprovacoes"))
+    pdf = gerar_pdf_fichas(itens)
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename=fichas_solicitacoes.pdf"})
 
 
 @admin_bp.route("/solicitacao/<int:sid>")
@@ -136,8 +206,10 @@ def solicitacao(sid):
     fornecedores = [f for f in s.tipo.fornecedores if f.ativo] if s.tipo else []
     orcamentos = sorted(s.orcamentos, key=lambda o: o.valor_total)
     wa = {f.id: _wa_link(f, _texto_cotacao([s], f.contato_nome)) for f in fornecedores} if fornecedores else None
+    mail = {f.id: _mailto(f, [s]) for f in fornecedores} if fornecedores else None
+    txt = {f.id: _texto_cotacao([s], f.contato_nome) for f in fornecedores} if fornecedores else None
     return render_template("admin/solicitacao.html", s=s, fornecedores=fornecedores, orcamentos=orcamentos,
-        menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa,
+        menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa, mail=mail, txt=txt,
         transportadoras=Transportadora.query.filter_by(ativo=True).order_by(Transportadora.nome).all(),
         cidades=Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all())
 
@@ -149,6 +221,7 @@ def mudar_status(sid):
     novo = request.form.get("status")
     if novo in STATUS:
         s.status = novo
+        _log(s, f"Status alterado para: {s.status_label}")
         db.session.commit()
         enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — status atualizado", f"Status: {s.status_label}.")
         flash("Status atualizado.", "success")
@@ -173,9 +246,9 @@ def comentar(sid):
 @admin_required
 def enviar_pedido(sid):
     s = db.session.get(Solicitacao, sid) or abort(404)
-    fornecedores = [f for f in s.tipo.fornecedores if f.ativo] if s.tipo else []
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.usa_email and f.email] if s.tipo else []
     if not fornecedores:
-        flash("Defina o tipo de material com fornecedores ativos.", "warning")
+        flash("Nenhum fornecedor ativo com e-mail para este tipo (verifique o 'usa e-mail').", "warning")
         return redirect(url_for("admin.solicitacao", sid=s.id))
     _, prazo = _prazo_cotacao()
     corpo = request.form.get("corpo", "").strip() or (
@@ -186,6 +259,7 @@ def enviar_pedido(sid):
     enviar_email(emails, f"Solicitação de Cotação Nº {s.id}", corpo, anexo_bytes=pdf, anexo_nome=f"cotacao_{s.id}.pdf")
     db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id, destinatarios=", ".join(emails)))
     s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+    _log(s, f"Cotação enviada por e-mail ({len(emails)} fornecedor(es))")
     db.session.commit()
     flash(f"Cotação enviada por e-mail para {len(emails)} fornecedor(es).", "success")
     return redirect(url_for("admin.solicitacao", sid=s.id))
@@ -206,9 +280,12 @@ def _agrupar(status):
 @admin_required
 def enviar_lote():
     itens, grupos = _agrupar("AGUARDANDO_ENVIO_COTACAO")
-    lista = [{"fornecedor": g["fornecedor"], "itens": g["itens"],
-              "wa": _wa_link(g["fornecedor"], _texto_cotacao(g["itens"], g["fornecedor"].contato_nome))}
-             for g in grupos.values()]
+    lista = []
+    for g in grupos.values():
+        f = g["fornecedor"]
+        texto = _texto_cotacao(g["itens"], f.contato_nome)
+        lista.append({"fornecedor": f, "itens": g["itens"], "wa": _wa_link(f, texto),
+                      "mail": _mailto(f, g["itens"]), "texto": texto})
     return render_template("admin/enviar_lote.html", itens=itens, grupos=lista)
 
 
@@ -224,6 +301,8 @@ def enviar_lote_confirmar():
     enviadas = {}
     for g in grupos.values():
         f = g["fornecedor"]
+        if not (f.usa_email and f.email):
+            continue  # fornecedor sem e-mail: contato por WhatsApp/outro meio
         corpo = corpo_base or ("Prezados, segue solicitação de cotação em anexo. Por favor, retornem com "
             f"valor, prazo e condições de pagamento em até 5 dias úteis (até {prazo}).")
         pdf = gerar_pdf_pedido_lote(f.nome, g["itens"])
@@ -234,6 +313,7 @@ def enviar_lote_confirmar():
         s = db.session.get(Solicitacao, sid)
         db.session.add(PedidoCompra(solicitacao_id=sid, enviado_por=current_user.id, destinatarios=", ".join(sorted(emails))))
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+        _log(s, "Cotação enviada por e-mail (lote)")
     db.session.commit()
     flash(f"Cotação enviada: {len(grupos)} fornecedor(es), {len(enviadas)} solicitação(ões).", "success")
     return redirect(url_for("admin.dashboard"))
@@ -262,6 +342,7 @@ def lancar_orcamento(sid):
         prazo_entrega=request.form.get("prazo_entrega", "").strip(), item_fornecedor=item,
         observacoes=request.form.get("observacoes", "").strip(), anexo_url=anexo, registrado_por=current_user.id))
     _apos_orcamento(s)
+    _log(s, f"Orçamento lançado: {item} — R$ {valor:.2f}")
     db.session.commit()
     flash("Orçamento lançado.", "success")
     return redirect(url_for("admin.solicitacao", sid=s.id))
@@ -309,6 +390,7 @@ def definir_fornecedor(sid):
     s.cidade_retirada_id = int(cidade) if cidade else None
     s.prazo_recebimento = datetime.strptime(prazo, "%Y-%m-%d").date()
     s.status = "AGUARDANDO_CHEGADA"
+    _log(s, f"Fornecedor definido: {o.fornecedor.nome} (R$ {float(o.valor_total):.2f}) · frete {ft} · OC enviada")
     pdf = gerar_pdf_pedido(s)
     enviar_email(o.fornecedor.email, f"Ordem de Compra Nº {s.id}",
                  f"Prezados, confirmamos a compra do item da solicitação Nº {s.id}. Segue OC em anexo.",
@@ -332,14 +414,16 @@ def alterar_quantidade(sid):
     elif nova != s.quantidade:
         if s.quantidade_original is None:
             s.quantidade_original = s.quantidade
+        anterior = s.quantidade
         s.quantidade = nova
         s.quantidade_alterada_por = current_user.id
         s.quantidade_alterada_em = datetime.utcnow()
+        _log(s, f"Quantidade alterada de {anterior} para {nova}")
         db.session.commit()
         enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — quantidade ajustada",
                      f"A quantidade foi ajustada para {nova} pelo administrador.")
         flash("Quantidade atualizada.", "success")
-    return redirect(url_for("admin.solicitacao", sid=s.id))
+    return redirect(request.referrer or url_for("admin.solicitacao", sid=s.id))
 
 
 @admin_bp.route("/importar-orcamento", methods=["GET", "POST"])
@@ -425,6 +509,12 @@ def usuarios():
 @admin_required
 def usuario_editar(uid):
     u = db.session.get(Usuario, uid) or abort(404)
+    novo_email = request.form.get("email", "").strip().lower()
+    if novo_email and novo_email != u.email:
+        if Usuario.query.filter(Usuario.email == novo_email, Usuario.id != u.id).first():
+            flash("Já existe usuário com esse e-mail.", "warning")
+            return redirect(url_for("admin.usuarios"))
+        u.email = novo_email
     u.nome = request.form.get("nome", u.nome).strip()
     u.papel = request.form.get("papel", u.papel)
     u.empresa_id = request.form.get("empresa_id") or None
@@ -534,6 +624,7 @@ def _aplicar_fornecedor(f):
     f.razao_social = request.form.get("razao_social", "").strip()
     f.nome_fantasia = request.form.get("nome_fantasia", "").strip()
     f.email = request.form.get("email", "").strip()
+    f.usa_email = request.form.get("usa_email") == "1"
     f.contato_nome = request.form.get("contato_nome", "").strip()
     e164, exib = normalizar_telefone_br(request.form.get("telefone", "").strip())
     f.telefone = exib or request.form.get("telefone", "").strip()
@@ -635,6 +726,7 @@ def aprovar_fornecedor():
         s.frete_tipo = ft
         s.prazo_recebimento = prazo_d
         s.status = "AGUARDANDO_CHEGADA"
+        _log(s, f"Fornecedor definido em lote: {o.fornecedor.nome} (R$ {float(o.valor_total):.2f}) · OC enviada")
         pdf = gerar_pdf_pedido(s)
         enviar_email(o.fornecedor.email, f"Ordem de Compra Nº {s.id}",
                      f"Prezados, confirmamos a compra do item da solicitação Nº {s.id}. Segue OC em anexo.",

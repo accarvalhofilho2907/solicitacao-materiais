@@ -28,7 +28,8 @@
       <tr class="collapse" id="u{{ u.id }}"><td colspan="3">
         <form method="post" action="{{ url_for('admin.usuario_editar', uid=u.id) }}" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="col-md-4"><input name="nome" class="form-control form-control-sm" value="{{ u.nome }}"></div>
+          <div class="col-md-4"><input name="nome" class="form-control form-control-sm" value="{{ u.nome }}" placeholder="Nome"></div>
+          <div class="col-md-4"><input name="email" type="email" class="form-control form-control-sm" value="{{ u.email }}" placeholder="E-mail"></div>
           <div class="col-md-3"><select name="papel" class="form-select form-select-sm">
             {% for pp in ['solicitante','almoxarifado','visualizador','admin'] %}<option value="{{ pp }}" {{ 'selected' if u.papel==pp }}>{{ pp }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><select name="empresa_id" class="form-select form-select-sm"><option value="">— empresa —</option>

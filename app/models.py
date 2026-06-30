@@ -98,6 +98,7 @@ class Fornecedor(db.Model):
     contato_nome = db.Column(db.String(120))
     telefone = db.Column(db.String(40))
     telefone_e164 = db.Column(db.String(20))
+    usa_email = db.Column(db.Boolean, default=True)   # se o contato é por e-mail
     ativo = db.Column(db.Boolean, default=True)
     tipos = db.relationship("TipoMaterial", secondary=fornecedor_tipo, back_populates="fornecedores")
 
@@ -140,6 +141,8 @@ class Solicitacao(db.Model):
     imagens = db.relationship("Imagem", backref="solicitacao", lazy=True, cascade="all, delete-orphan")
     comentarios = db.relationship("Comentario", backref="solicitacao", lazy=True, cascade="all, delete-orphan")
     orcamentos = db.relationship("Orcamento", backref="solicitacao", lazy=True, cascade="all, delete-orphan")
+    logs = db.relationship("LogSolicitacao", backref="solicitacao", lazy=True, cascade="all, delete-orphan",
+                           order_by="LogSolicitacao.criado_em")
 
     @property
     def status_label(self): return STATUS_LABEL.get(self.status, self.status)
@@ -195,6 +198,7 @@ class Notinha(db.Model):
     __tablename__ = "notinhas"
     id = db.Column(db.Integer, primary_key=True)
     data = db.Column(db.Date, nullable=False)
+    competencia = db.Column(db.String(7))   # "AAAA-MM" (mês de referência)
     fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"), nullable=False)
     atividade_id = db.Column(db.ForeignKey("atividades.id"))
     valor = db.Column(db.Numeric(12, 2), nullable=False)
@@ -203,6 +207,17 @@ class Notinha(db.Model):
 
     fornecedor = db.relationship("Fornecedor")
     atividade = db.relationship("Atividade")
+
+
+class LogSolicitacao(db.Model):
+    __tablename__ = "logs_solicitacao"
+    id = db.Column(db.Integer, primary_key=True)
+    solicitacao_id = db.Column(db.ForeignKey("solicitacoes.id"), nullable=False)
+    evento = db.Column(db.String(300), nullable=False)
+    autor_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    autor = db.relationship("Usuario")
 
 
 class Sugestao(db.Model):

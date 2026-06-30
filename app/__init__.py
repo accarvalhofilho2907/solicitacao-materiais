@@ -77,11 +77,24 @@ def create_app():
     def uploads(nome):
         return send_from_directory(app.config["UPLOAD_FOLDER"], nome)
 
-    from .models import STATUS, STATUS_LABEL
+    from flask import redirect, abort
+    from .models import STATUS, STATUS_LABEL, Solicitacao
+
+    @app.route("/r/<int:sid>")
+    def link_curto(sid):
+        s = db.session.get(Solicitacao, sid)
+        if not s or not s.link_similar:
+            abort(404)
+        return redirect(s.link_similar)
 
     @app.context_processor
     def inject_status():
-        return {"STATUS": STATUS, "STATUS_LABEL": STATUS_LABEL}
+        ctx = {"STATUS": STATUS, "STATUS_LABEL": STATUS_LABEL}
+        from flask_login import current_user
+        if current_user.is_authenticated and current_user.is_admin:
+            ctx["n_aprovacoes"] = Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").count()
+            ctx["n_cotacao"] = Solicitacao.query.filter_by(status="AGUARDANDO_ENVIO_COTACAO").count()
+        return ctx
 
     with app.app_context():
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)

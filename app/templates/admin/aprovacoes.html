@@ -1,29 +1,50 @@
 {% extends "base.html" %}
 {% block content %}
 <h4 class="mb-3">Aprovações pendentes</h4>
-<p class="text-muted small">Tudo que precisa da sua aprovação. Aprove para liberar o envio de cotação, ou abra para editar antes.</p>
+<p class="text-muted small">Marque as solicitações para <strong>aprovar em lote</strong> ou <strong>exportar as fichas em PDF</strong>. Você também pode ajustar a quantidade antes de aprovar.</p>
+<div class="d-flex gap-2 mb-2">
+  <button class="btn btn-sm btn-success" onclick="enviarSel('{{ url_for('admin.aprovar_lote') }}')">Aprovar marcados</button>
+  <button class="btn btn-sm btn-outline-primary" onclick="enviarSel('{{ url_for('admin.aprovacoes_exportar') }}')">Exportar fichas (PDF)</button>
+</div>
 <div class="card"><div class="table-responsive">
 <table class="table table-hover mb-0 align-middle">
-  <thead class="table-light"><tr><th>Nº</th><th>Material</th><th>Qtd</th><th>Solicitante</th><th>Tipo</th><th>Aberta em</th><th></th></tr></thead>
+  <thead class="table-light"><tr><th><input type="checkbox" id="selTodos" checked onclick="document.querySelectorAll('.cbItem').forEach(c=>c.checked=this.checked)"></th><th>Nº</th><th>Material</th><th>Qtd</th><th>Solicitante</th><th>Tipo</th><th>Aberta</th><th></th></tr></thead>
   <tbody>
     {% for p in pedidos %}
     <tr>
+      <td><input type="checkbox" class="cbItem" value="{{ p.id }}" checked></td>
       <td>{{ p.id }}</td>
       <td>{{ p.material }}</td>
-      <td>{{ p.quantidade }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.alterar_quantidade', sid=p.id) }}" class="d-inline-flex gap-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input name="quantidade" type="number" min="1" value="{{ p.quantidade }}" class="form-control form-control-sm" style="width:70px">
+          <button class="btn btn-sm btn-outline-secondary" title="Salvar quantidade">✓</button>
+        </form>
+      </td>
       <td class="small">{{ p.solicitante.nome }}</td>
       <td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td>
       <td class="small text-muted">{{ p.criado_em.strftime('%d/%m %H:%M') }}</td>
       <td class="text-nowrap">
-        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.solicitacao', sid=p.id) }}">Abrir / editar</a>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.solicitacao', sid=p.id) }}">Abrir</a>
         <form method="post" action="{{ url_for('admin.aprovar', sid=p.id) }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-sm btn-success">Aprovar</button>
         </form>
       </td>
     </tr>
-    {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nada pendente de aprovação. 🎉</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="8" class="text-center text-muted py-4">Nada pendente de aprovação. 🎉</td></tr>{% endfor %}
   </tbody>
 </table>
 </div></div>
+<script>
+function enviarSel(action){
+  var ids=[].slice.call(document.querySelectorAll('.cbItem:checked')).map(c=>c.value);
+  if(!ids.length){ alert('Marque ao menos uma solicitação.'); return; }
+  var f=document.createElement('form'); f.method='post'; f.action=action;
+  var t=document.createElement('input'); t.type='hidden'; t.name='csrf_token'; t.value='{{ csrf_token() }}'; f.appendChild(t);
+  ids.forEach(function(v){ var i=document.createElement('input'); i.type='hidden'; i.name='ids'; i.value=v; f.appendChild(i); });
+  document.body.appendChild(f); f.submit();
+}
+</script>
 {% endblock %}

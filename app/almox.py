@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, abort, flash, c
 from flask_login import login_required, current_user
 
 from .extensions import db
-from .models import Solicitacao
+from .models import Solicitacao, LogSolicitacao
 from .emails import enviar_email
 
 almox_bp = Blueprint("almox", __name__, url_prefix="/almoxarifado")
@@ -39,6 +39,8 @@ def marcar_chegada(sid):
         s.status = "CONCLUIDO"
         s.chegada_confirmada_por = current_user.id
         s.chegada_em = datetime.utcnow()
+        db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=current_user.id,
+                                      evento="Chegada confirmada — Concluído"))
         db.session.commit()
         enviar_email([s.solicitante.email, current_app.config.get("ADMIN_EMAIL")],
                      f"Solicitação Nº {s.id} — material recebido",

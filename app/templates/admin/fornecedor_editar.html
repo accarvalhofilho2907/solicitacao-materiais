@@ -6,7 +6,8 @@
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="mb-2"><label class="form-label">Razão Social</label><input name="razao_social" class="form-control" value="{{ f.razao_social or '' }}"></div>
     <div class="mb-2"><label class="form-label">Nome Fantasia</label><input name="nome_fantasia" class="form-control" value="{{ f.nome_fantasia or '' }}"></div>
-    <div class="mb-2"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" value="{{ f.email }}" required></div>
+    <div class="mb-2"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" value="{{ f.email }}"></div>
+    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="usa_email" value="1" id="ue" {{ 'checked' if f.usa_email }}><label class="form-check-label small" for="ue">Contatar por e-mail (entra no envio de cotação por e-mail)</label></div>
     <div class="mb-2"><label class="form-label">Nome do contato</label><input name="contato_nome" class="form-control" value="{{ f.contato_nome or '' }}"></div>
     <div class="mb-2"><label class="form-label">Telefone / WhatsApp</label><input name="telefone" class="form-control" value="{{ f.telefone or '' }}">
       {% if f.telefone_e164 %}<div class="form-text">WhatsApp: {{ f.telefone_e164 }}</div>{% endif %}</div>

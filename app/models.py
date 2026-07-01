@@ -125,6 +125,7 @@ class Solicitacao(db.Model):
     quantidade_alterada_em = db.Column(db.DateTime)
     quantidade_recebida = db.Column(db.Integer, default=0)   # chegada parcial acumulada
 
+    prazo_cotacao = db.Column(db.Date)   # data-limite p/ retorno da cotação (item 93)
     fornecedor_definido_id = db.Column(db.ForeignKey("fornecedores.id"))
     frete_tipo = db.Column(db.String(10))
     frete_modalidade = db.Column(db.String(20))
@@ -147,6 +148,12 @@ class Solicitacao(db.Model):
 
     @property
     def status_label(self): return STATUS_LABEL.get(self.status, self.status)
+
+    @property
+    def cotacao_vencida(self):
+        from datetime import date as _d
+        return bool(self.status == "AGUARDANDO_RECEBIMENTO_COTACAO"
+                    and self.prazo_cotacao and self.prazo_cotacao < _d.today())
 
 
 class Imagem(db.Model):

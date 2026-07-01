@@ -485,6 +485,14 @@ Registro de toda alteração pedida após o MVP, com status: ⬜ pendente · �
 
 89. **✅ Filtro por valor nas Notinhas** *(v1.7)* — incluir, junto aos filtros das Notinhas (data, fornecedor, atividade), um filtro por **valor** — faixa **mínimo/máximo** (R$ de / até). Recalcula os totais conforme o filtro.
 
+90. **✅ Cancelar o recebimento de cotação de um fornecedor específico** *(v1.8)* — na tela da solicitação, junto aos orçamentos lançados (área de "Orçamentos" / lançar orçamento), incluir a opção de **cancelar/excluir o orçamento de um fornecedor específico** (ex.: lançado por engano ou o fornecedor desistiu). Remove aquele orçamento sem afetar os demais e registra no histórico/log. *(Se era o fornecedor definido, reverter a definição.)*
+
+91. **✅ WhatsApp/Texto pronto sem o quadro de CNPJs** *(v1.8)* — no **WhatsApp** e no **Texto pronto** (copiar), **não incluir** o quadro "Dados para Cotação" (tabela de SPEs/CNPJs). Esse bloco fica **somente no e-mail**. O WhatsApp/Texto mantém saudação, condições, tabela de produtos, prazo e assinatura. Atualiza os itens 73/77.
+
+92. **✅ Manter o filtro ao abrir um item e voltar** *(v1.8)* — hoje, ao aplicar um filtro no painel, abrir uma solicitação e voltar, o filtro é **perdido**. Passar a **preservar o filtro** ao entrar no item e retornar (o botão "Abrir"/"Voltar ao painel" carrega os mesmos filtros). Só **voltar ao padrão** quando o usuário **muda de aba/seção** (clica em outro item do menu). Aplicar no painel do admin e nos demais papéis.
+
+93. **✅ Alerta de prazo de cotação vencido** *(v1.8)* — registrar a **data-limite de retorno da cotação** (5 dias úteis) no momento do envio/marcação e exibir um **local/indicador** das solicitações cujo **prazo já venceu** (status "Aguardando recebimento da cotação" com data-limite < hoje). Objetivo: o admin consegue **fechar o processo** e seguir para a definição de fornecedor/compra mesmo sem todas as cotações. *(Ex.: badge "prazo vencido" + filtro/lista dedicada; sugestão técnica: campo `prazo_cotacao` na solicitação.)*
+
 > **Regra de trabalho (a pedido, 29/06/2026):** todo pedido enviado é **registrado no roadmap e NÃO executado** na hora. Implementação só quando o usuário disser "rodar". **Após cada novo item, informar ao usuário apenas a lista de PENDENTES (não os concluídos).**
 >
 > **Nota técnica:** adicionada uma micro-migração automática de schema (roda ao iniciar o app) que cria colunas novas sem apagar dados — assim mudanças no banco não exigem recriar o `app.db`.

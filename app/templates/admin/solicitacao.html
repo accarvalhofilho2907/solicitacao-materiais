@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<a href="{{ url_for('admin.dashboard') }}" class="small">&larr; Voltar ao painel</a>
+<a href="{{ voltar_url or url_for('admin.dashboard') }}" class="small">&larr; Voltar ao painel</a>
+{% if s.cotacao_vencida %}<div class="alert alert-danger py-2 mt-2 mb-0 small">Prazo de cotação vencido{% if s.prazo_cotacao %} (limite: {{ s.prazo_cotacao.strftime('%d/%m/%Y') }}){% endif %}. Você já pode fechar o processo e definir o fornecedor com o que chegou.</div>{% endif %}
 <div class="d-flex justify-content-between align-items-center mt-2 mb-3">
   <h4 class="mb-0">Solicitação Nº {{ s.id }}</h4>
   <span class="badge bg-secondary fs-6">{{ s.status_label }}</span>
@@ -97,12 +98,13 @@
     </div></div>
     <div class="card mb-3"><div class="card-body">
       <h6>Orçamentos</h6>
-      {% if orcamentos %}<table class="table table-sm align-middle"><thead class="table-light"><tr><th>Fornecedor</th><th>Item</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>
+      {% if orcamentos %}<table class="table table-sm align-middle"><thead class="table-light"><tr><th>Fornecedor</th><th>Item</th><th>Valor</th><th>Prazo</th><th></th></tr></thead><tbody>
         {% for o in orcamentos %}<tr class="{{ 'table-success' if o.escolhido else ('table-warning' if o.valor_total==menor_valor) }}">
           <td>{{ o.fornecedor.nome }}{% if o.escolhido %} <span class="badge bg-success">definido</span>{% endif %}</td>
           <td class="small">{{ o.item_fornecedor or '-' }}</td>
           <td>R$ {{ '%.2f'|format(o.valor_total) }}{% if o.valor_total==menor_valor %} <span class="badge bg-warning text-dark">menor</span>{% endif %}</td>
-          <td class="small">{{ o.prazo_entrega or '-' }}</td></tr>{% endfor %}</tbody></table>
+          <td class="small">{{ o.prazo_entrega or '-' }}</td>
+          <td><form method="post" action="{{ url_for('admin.excluir_orcamento', oid=o.id) }}" onsubmit="return confirm('Cancelar o orçamento de {{ o.fornecedor.nome }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger py-0" title="Cancelar recebimento da cotação deste fornecedor">✕</button></form></td></tr>{% endfor %}</tbody></table>
       {% else %}<p class="text-muted small">Nenhum orçamento ainda.</p>{% endif %}
       <hr>
       <form method="post" action="{{ url_for('admin.lancar_orcamento', sid=s.id) }}" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

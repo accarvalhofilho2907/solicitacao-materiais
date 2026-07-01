@@ -108,7 +108,10 @@ def detalhe(sid):
             flash("Comentário enviado.", "success")
         return redirect(url_for("solicitante.detalhe", sid=s.id))
     pode_criar = current_user.is_admin or current_user.pode_solicitar
-    return render_template("solicitante/detalhe.html", s=s, leitura=not pode_comentar, pode_criar=pode_criar)
+    voltar = request.args.get("voltar", "")
+    voltar_url = url_for("solicitante.index") + (("?" + voltar) if voltar else "")
+    return render_template("solicitante/detalhe.html", s=s, leitura=not pode_comentar,
+                           pode_criar=pode_criar, voltar_url=voltar_url)
 
 
 @sol_bp.route("/exportar", methods=["POST"])

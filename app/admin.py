@@ -114,8 +114,12 @@ def _tabela_texto(cabecalhos, linhas, larguras):
     return "\n".join([fmt(cabecalhos), sep] + [fmt(l) for l in linhas])
 
 
-def _corpo_cotacao(fornecedor, itens):
-    """Corpo padrão do e-mail/WhatsApp/texto de cotação (itens 73/75/77)."""
+def _corpo_cotacao(fornecedor, itens, incluir_spe=True):
+    """Corpo padrão do e-mail/WhatsApp/texto de cotação (itens 73/75/77/91).
+
+    incluir_spe=True  -> e-mail (com o quadro 'Dados para Cotação' / SPEs)
+    incluir_spe=False -> WhatsApp / Texto pronto (sem o quadro de CNPJs).
+    """
     _, prazo = _prazo_cotacao()
     contato = (fornecedor.contato_nome or "").strip()
     saud = f"Olá, {contato}, tudo bem?" if contato else "Olá, tudo bem?"
@@ -123,11 +127,13 @@ def _corpo_cotacao(fornecedor, itens):
          "Poderia enviar a cotação do material abaixo considerando:",
          "i. Frete CIF",
          "ii. Pagamento 30 DDL",
-         "iii. Material com finalidade de Uso e Consumo",
-         "", "Dados para Cotação:"]
-    spe_linhas = [(spe, cnpj, ie, end) for (spe, end, cnpj, ie) in SPES_COTACAO]
-    L.append(_tabela_texto(["SPE", "CNPJ", "I.E.", "Endereço"], spe_linhas, [26, 20, 13, 60]))
-    L += ["", "Produtos:"]
+         "iii. Material com finalidade de Uso e Consumo", ""]
+    if incluir_spe:
+        L.append("Dados para Cotação:")
+        spe_linhas = [(spe, cnpj, ie, end) for (spe, end, cnpj, ie) in SPES_COTACAO]
+        L.append(_tabela_texto(["SPE", "CNPJ", "I.E.", "Endereço"], spe_linhas, [26, 20, 13, 60]))
+        L.append("")
+    L += ["Produtos:"]
     prod = [[f"#{s.id}#", (s.material or ""), (s.fabricante or "N/D"), s.quantidade, _link_curto(s) or "-"]
             for s in itens]
     L.append(_tabela_texto(["Nº", "Produto", "Fabricante/Marca", "Qtd", "Link"], prod, [7, 30, 20, 5, 40]))
@@ -160,10 +166,14 @@ def dashboard():
     f_forn = request.args.getlist("fornecedor")
     f_de = request.args.get("de")
     f_ate = request.args.get("ate")
+    f_vencidos = request.args.get("vencidos")
     aplicou = bool(request.args)
     if not f_status and not aplicou:
         f_status = STATUS_PADRAO[:]  # padrão: tudo menos Concluído/Cancelada
-    if f_status:
+    if f_vencidos:
+        q = q.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
+                     Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today())
+    elif f_status:
         q = q.filter(Solicitacao.status.in_(f_status))
     if f_sol:
         q = q.filter(Solicitacao.solicitante_id.in_([int(x) for x in f_sol]))
@@ -196,6 +206,9 @@ def dashboard():
         atividades=Atividade.query.filter_by(ativo=True).order_by(Atividade.nome).all(),
         total_notinhas_mes=total_notinhas_mes, f_ativ=f_ativ,
         pendentes=Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").count(),
+        n_vencidos=Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
+            Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today()).count(),
+        f_vencidos=f_vencidos,
         f_status=f_status, f_tipo=f_tipo, f_sol=[int(x) for x in f_sol],
         f_forn=[int(x) for x in f_forn], f_busca=f_busca, f_de=f_de, f_ate=f_ate)
 
@@ -263,12 +276,14 @@ def solicitacao(sid):
     orcamentos = sorted(s.orcamentos, key=lambda o: o.valor_total)
     base = _proximo_num_cotacao()
     seqs = {f.id: _seq_str(base + i) for i, f in enumerate(fornecedores)}
-    wa = {f.id: _wa_link(f, _corpo_cotacao(f, [s])) for f in fornecedores} if fornecedores else None
+    wa = {f.id: _wa_link(f, _corpo_cotacao(f, [s], incluir_spe=False)) for f in fornecedores} if fornecedores else None
     mail = {f.id: _mailto(f, [s], seqs[f.id]) for f in fornecedores} if fornecedores else None
-    txt = {f.id: _corpo_cotacao(f, [s]) for f in fornecedores} if fornecedores else None
+    txt = {f.id: _corpo_cotacao(f, [s], incluir_spe=False) for f in fornecedores} if fornecedores else None
+    voltar = request.args.get("voltar", "")
+    voltar_url = url_for("admin.dashboard") + (("?" + voltar) if voltar else "")
     return render_template("admin/solicitacao.html", s=s, fornecedores=fornecedores, orcamentos=orcamentos,
         menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa, mail=mail, txt=txt, seqs=seqs,
-        hoje=date.today().isoformat(),
+        hoje=date.today().isoformat(), voltar_url=voltar_url,
         tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),
         transportadoras=Transportadora.query.filter_by(ativo=True).order_by(Transportadora.nome).all(),
         cidades=Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all())
@@ -319,6 +334,7 @@ def enviar_pedido(sid):
     enviar_email(emails, f"Solicitação de Cotação Nº {s.id}", corpo, anexo_bytes=pdf, anexo_nome=f"cotacao_{s.id}.pdf")
     db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id, destinatarios=", ".join(emails)))
     s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+    s.prazo_cotacao = _prazo_cotacao()[0]
     _log(s, f"Cotação enviada por e-mail ({len(emails)} fornecedor(es))")
     db.session.commit()
     flash(f"Cotação enviada por e-mail para {len(emails)} fornecedor(es).", "success")
@@ -345,7 +361,7 @@ def enviar_lote():
     for i, g in enumerate(grupos.values()):
         f = g["fornecedor"]
         seq = _seq_str(base + i)
-        texto = _corpo_cotacao(f, g["itens"])
+        texto = _corpo_cotacao(f, g["itens"], incluir_spe=False)   # WhatsApp/Texto sem o quadro de CNPJs (item 91)
         lista.append({"fornecedor": f, "itens": g["itens"], "seq": seq, "wa": _wa_link(f, texto),
                       "mail": _mailto(f, g["itens"], seq), "assunto": _assunto_cotacao(f, seq), "texto": texto})
     return render_template("admin/enviar_lote.html", itens=itens, grupos=lista)
@@ -373,11 +389,13 @@ def enviar_lote_confirmar():
         for s in g["itens"]:
             enviadas.setdefault(s.id, set()).add(f.email)
             seqs.setdefault(s.id, seq)
+    prazo_d, _ = _prazo_cotacao()
     for sid, emails in enviadas.items():
         s = db.session.get(Solicitacao, sid)
         db.session.add(PedidoCompra(solicitacao_id=sid, enviado_por=current_user.id,
                                     destinatarios=", ".join(sorted(emails)), cotacao_seq=seqs.get(sid)))
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+        s.prazo_cotacao = prazo_d
         _log(s, f"Cotação {seqs.get(sid)} enviada por e-mail (lote)")
     db.session.commit()
     flash(f"Cotação enviada: {len(grupos)} fornecedor(es), {len(enviadas)} solicitação(ões).", "success")
@@ -465,6 +483,30 @@ def definir_fornecedor(sid):
     return redirect(url_for("admin.solicitacao", sid=s.id))
 
 
+@admin_bp.route("/orcamento/<int:oid>/excluir", methods=["POST"])
+@admin_required
+def excluir_orcamento(oid):
+    """Cancela/exclui o orçamento de um fornecedor específico (item 90)."""
+    o = db.session.get(Orcamento, oid) or abort(404)
+    sid = o.solicitacao_id
+    s = db.session.get(Solicitacao, sid)
+    nome = o.fornecedor.nome if o.fornecedor else "fornecedor"
+    era_definido = bool(s and (o.escolhido or s.fornecedor_definido_id == o.fornecedor_id))
+    db.session.delete(o)
+    db.session.flush()
+    if s:
+        if era_definido and s.status in ("AGUARDANDO_CHEGADA", "AGUARDANDO_DEFINICAO_FORNECEDOR"):
+            s.fornecedor_definido_id = None
+            s.frete_tipo = s.frete_modalidade = None
+            s.transportadora_id = s.cidade_retirada_id = None
+            s.status = "AGUARDANDO_DEFINICAO_FORNECEDOR" if s.orcamentos else "AGUARDANDO_RECEBIMENTO_COTACAO"
+            _log(s, f"Definição de fornecedor revertida (orçamento de {nome} cancelado)")
+        _log(s, f"Orçamento de {nome} cancelado/excluído")
+    db.session.commit()
+    flash(f"Orçamento de {nome} cancelado.", "success")
+    return redirect(url_for("admin.solicitacao", sid=sid))
+
+
 @admin_bp.route("/solicitacao/<int:sid>/quantidade", methods=["POST"])
 @admin_required
 def alterar_quantidade(sid):
@@ -537,10 +579,12 @@ def marcar_cotacao_enviada(fid):
         flash("Nenhuma solicitação pendente de cotação para este fornecedor.", "warning")
         return redirect(request.referrer or url_for("admin.enviar_lote"))
     seq = _seq_str(_proximo_num_cotacao())
+    prazo_d, _ = _prazo_cotacao()
     for s in itens:
         db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
                                     destinatarios=(f.email or f.nome), cotacao_seq=seq))
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+        s.prazo_cotacao = prazo_d
         _log(s, f"Cotação {seq} marcada como enviada para {f.nome}")
     db.session.commit()
     flash(f"Cotação {seq} marcada como enviada para {f.nome} ({len(itens)} item(ns)).", "success")

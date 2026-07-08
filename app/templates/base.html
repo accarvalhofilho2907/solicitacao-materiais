@@ -2,42 +2,132 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Solicitação de Materiais{% endblock %}</title>
+  <title>{% block title %}Almoxarifado{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root{ --coral:#FF5246; --grafite:#4B4B4B; --verde:#32CAA0; }
-    body{ background:#F4F1ED; color:var(--grafite); font-family:'Poppins',system-ui,sans-serif; }
-    h1,h2,h3,h4,h5,h6,.navbar-brand{ font-family:'Poppins',sans-serif; font-weight:600; }
-    .topbar{ background:var(--grafite); } .topbar .brand-mark{ width:26px;height:26px;border-radius:7px;background:var(--coral);display:inline-block; }
-    .btn-primary{ --bs-btn-bg:var(--coral); --bs-btn-border-color:var(--coral); --bs-btn-hover-bg:#e8463b; --bs-btn-hover-border-color:#e8463b; }
+    :root{
+      --coral:#FF5246; --coral-dark:#E8463B; --verde:#32CAA0;
+      --bg:#1B1B1B; --bg-elevado:#242424; --card-bg:#232323;
+      --texto:#EDEAE6; --texto-2:#A9A49D; --linha:#333333;
+    }
+    body{ background:var(--bg); color:var(--texto); font-family:'Poppins',system-ui,sans-serif; }
+    h1,h2,h3,h4,h5,h6,.navbar-brand{ font-family:'Poppins',sans-serif; font-weight:600; color:var(--texto); }
+    a{ color:var(--coral); }
+    a:hover{ color:var(--coral-dark); }
+
+    /* topbar */
+    .topbar{ background:#141414; border-bottom:1px solid var(--linha); }
+    .topbar .brand-mark{ width:26px;height:26px;border-radius:7px;background:var(--coral);display:inline-block; }
+    .topbar .navbar-brand{ color:var(--texto)!important; }
+
+    .nav-link{ color:var(--texto-2)!important; }
+    .nav-link:hover, .nav-link.active{ color:#fff!important; }
+    .nav-link.active{ border-bottom:2px solid var(--coral); }
+
+    .dropdown-menu{ background:var(--bg-elevado); border:1px solid var(--linha); }
+    .dropdown-item{ color:var(--texto); }
+    .dropdown-item:hover, .dropdown-item:focus{ background:#2E2E2E; color:#fff; }
+    .dropdown-item.text-danger{ color:#ff6b60!important; }
+    .dropdown-divider{ border-color:var(--linha); }
+    .dropdown-header{ color:var(--texto-2); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+
+    /* cards / tabelas / forms adaptados ao escuro */
+    .card{ background:var(--card-bg); border:1px solid var(--linha); box-shadow:0 1px 3px rgba(0,0,0,.4); color:var(--texto); }
+    .card .text-muted{ color:var(--texto-2)!important; }
+    .table{ color:var(--texto); }
+    .table-light, thead.table-light{ background:#2A2A2A; color:var(--texto); }
+    .table>:not(caption)>*>*{ background-color:transparent; border-bottom-color:var(--linha); color:var(--texto); }
+    .table-striped>tbody>tr:nth-of-type(odd)>*{ background-color:#262626; }
+    .table-success{ --bs-table-bg:#1E3B32; }
+    .table-warning{ --bs-table-bg:#3B331E; }
+    .form-control, .form-select{ background:#1E1E1E; border-color:var(--linha); color:var(--texto); }
+    .form-control:focus, .form-select:focus{ background:#1E1E1E; color:var(--texto); border-color:var(--coral); box-shadow:0 0 0 .2rem rgba(255,82,70,.2); }
+    .form-control::placeholder{ color:var(--texto-2); }
+    .form-control:disabled, .form-select:disabled{ background:#161616; color:var(--texto-2); }
+    .modal-content{ background:var(--card-bg); color:var(--texto); }
+    .alert{ border:1px solid var(--linha); }
+    hr{ border-color:var(--linha); }
+    .badge.bg-light{ background:#2E2E2E!important; color:var(--texto)!important; }
+    .btn-outline-secondary{ --bs-btn-color:var(--texto-2); --bs-btn-border-color:var(--linha); --bs-btn-hover-bg:#2E2E2E; --bs-btn-hover-color:#fff; }
+    .btn-close{ filter:invert(1); }
+
+    /* nav-tabs (abas) no escuro */
+    .nav-tabs{ border-bottom-color:var(--linha); }
+    .nav-tabs .nav-link{ color:var(--texto-2); border:1px solid transparent; }
+    .nav-tabs .nav-link:hover{ border-color:var(--linha); color:#fff; }
+    .nav-tabs .nav-link.active{ background:var(--card-bg); color:#fff; border-color:var(--linha) var(--linha) var(--card-bg); }
+
+    /* texto secundário legível no escuro */
+    .text-muted{ color:var(--texto-2)!important; }
+    .form-text{ color:var(--texto-2); }
+    .form-label{ color:var(--texto); }
+    label{ color:var(--texto); }
+    .alert-secondary{ background:#2A2A2A; color:var(--texto); border-color:var(--linha); }
+
+    .btn-primary{ --bs-btn-bg:var(--coral); --bs-btn-border-color:var(--coral); --bs-btn-hover-bg:var(--coral-dark); --bs-btn-hover-border-color:var(--coral-dark); }
     .btn-success{ --bs-btn-bg:var(--verde); --bs-btn-border-color:var(--verde); --bs-btn-hover-bg:#28b08b; }
     .btn-outline-primary{ --bs-btn-color:var(--coral); --bs-btn-border-color:var(--coral); --bs-btn-hover-bg:var(--coral); --bs-btn-hover-border-color:var(--coral); }
-    a{ color:#d63d33; } .card{ border:none; box-shadow:0 1px 3px rgba(0,0,0,.08); } .badge.bg-secondary{ background:var(--grafite)!important; } .rodape{ font-size:.78rem; color:#9b948c; }
+    .badge.bg-secondary{ background:#4B4B4B!important; }
+    .rodape{ font-size:.78rem; color:#6B6660; }
     .bolha{ background:var(--coral); color:#fff; border-radius:10px; padding:0 7px; font-size:11px; margin-left:3px; }
+
+    .bell-wrap{ position:relative; }
+    .bell-wrap .bolha{ position:absolute; top:2px; right:2px; margin:0; }
   </style>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
-<nav class="navbar navbar-expand-lg topbar navbar-dark"><div class="container">
+<nav class="navbar navbar-expand-lg topbar navbar-dark"><div class="container-fluid px-3">
   {% set _papeis = {'admin':'Administrador','almoxarifado':'Almoxarifado','solicitante':'Solicitante','visualizador':'Visualização'} %}
-  <a class="navbar-brand d-flex align-items-center gap-2" href="/"><span class="brand-mark"></span> {% if current_user.is_authenticated %}{{ _papeis.get(current_user.papel, 'Solicitação de Materiais') }}{% else %}Solicitação de Materiais{% endif %}</a>
+  <a class="navbar-brand d-flex align-items-center gap-2" href="/"><span class="brand-mark"></span> ALMOXARIFADO</a>
   {% if current_user.is_authenticated %}
-  <div class="navbar-nav ms-auto flex-row flex-wrap gap-2 align-items-center">
+  <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nv"><span class="navbar-toggler-icon"></span></button>
+  <div class="collapse navbar-collapse" id="nv">
+  <div class="navbar-nav flex-row flex-wrap gap-1 align-items-center">
     {% if current_user.is_admin %}
-      <a class="nav-link text-white" href="{{ url_for('admin.dashboard') }}">Painel</a>
-      <a class="nav-link text-white" href="{{ url_for('admin.aprovacoes') }}">Aprovações{% if n_aprovacoes %}<span class="bolha">{{ n_aprovacoes }}</span>{% endif %}</a>
-      <a class="nav-link text-white" href="{{ url_for('almox.index') }}">Chegadas</a>
+      <a class="nav-link {{ 'active' if request.endpoint=='admin.dashboard' }}" href="{{ url_for('admin.dashboard') }}">🏠 Início</a>
+
       <div class="dropdown">
-        <a class="nav-link text-white dropdown-toggle" href="#" data-bs-toggle="dropdown">Compras{% if n_cotacao %}<span class="bolha">{{ n_cotacao }}</span>{% endif %}</a>
+        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Operação{% if n_aprovacoes or n_cotacao %}<span class="bolha">{{ (n_aprovacoes or 0) + (n_cotacao or 0) }}</span>{% endif %}</a>
         <ul class="dropdown-menu">
-          <li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">Enviar cotação {% if n_cotacao %}<span class="badge bg-secondary">{{ n_cotacao }}</span>{% endif %}</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('admin.importar_orcamento') }}">Importar orçamento</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('admin.comparativo') }}">Comparativo (menor custo)</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.aprovacoes') }}">📋 Aprovações {% if n_aprovacoes %}<span class="badge bg-secondary">{{ n_aprovacoes }}</span>{% endif %}</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('almox.index') }}">📦 Chegadas</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Compras</h6></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">💬 Enviar cotação {% if n_cotacao %}<span class="badge bg-secondary">{{ n_cotacao }}</span>{% endif %}</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.importar_orcamento') }}">📥 Importar orçamento</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.comparativo') }}">⚖️ Comparativo (menor custo)</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.precos') }}">💲 Histórico de preços</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('notinhas.index') }}">🧾 Notinhas</a></li>
         </ul>
       </div>
-      <a class="nav-link text-white" href="{{ url_for('notinhas.index') }}">Notinhas</a>
+
       <div class="dropdown">
-        <a class="nav-link text-white dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">
+        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Relatórios e Impressões</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="{{ url_for('relatorios.etiquetas') }}">🏷️ Geração de etiquetas</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='recebimento') }}">📑 Relatório de recebimento</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='envio') }}">📤 Relatório de envio</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.backup') }}">💾 Baixar backup (.sql)</a></li>
+        </ul>
+      </div>
+
+      <div class="dropdown bell-wrap">
+        <a class="nav-link" href="#" data-bs-toggle="dropdown" title="Notificações">
+          🔔{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}
+        </a>
+        <ul class="dropdown-menu dropdown-menu-end" style="min-width:260px;">
+          <li><h6 class="dropdown-header">Pendências com você</h6></li>
+          {% if n_aprovacoes %}<li><a class="dropdown-item" href="{{ url_for('admin.aprovacoes') }}">📋 {{ n_aprovacoes }} aprovação(ões) pendente(s)</a></li>{% endif %}
+          {% if n_cotacao %}<li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">💬 {{ n_cotacao }} cotação(ões) para enviar</a></li>{% endif %}
+          {% if not n_aprovacoes and not n_cotacao %}<li><span class="dropdown-item-text text-muted small">Nenhuma pendência agora 🎉</span></li>{% endif %}
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <a class="nav-link dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">
           <span style="width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">{{ current_user.nome[:2]|upper }}</span>
           {{ current_user.nome.split()[0] }}
         </a>
@@ -52,11 +142,26 @@
         </ul>
       </div>
     {% else %}
-      <a class="nav-link text-white" href="{{ url_for('solicitante.index') }}">Solicitações</a>
-      {% if current_user.is_almox %}<a class="nav-link text-white" href="{{ url_for('almox.index') }}">Confirmar chegadas</a>
-      <a class="nav-link text-white" href="{{ url_for('notinhas.index') }}">Notinhas</a>{% endif %}
+      <a class="nav-link {{ 'active' if request.endpoint=='solicitante.index' }}" href="{{ url_for('solicitante.index') }}">🏠 Início</a>
+      {% if current_user.is_almox %}
+        <div class="dropdown">
+          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Operação</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{{ url_for('almox.index') }}">📦 Confirmar chegadas</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('notinhas.index') }}">🧾 Notinhas</a></li>
+          </ul>
+        </div>
+        <div class="dropdown">
+          <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Relatórios e Impressões</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{{ url_for('relatorios.etiquetas') }}">🏷️ Geração de etiquetas</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='recebimento') }}">📑 Relatório de recebimento</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='envio') }}">📤 Relatório de envio</a></li>
+          </ul>
+        </div>
+      {% endif %}
       <div class="dropdown">
-        <a class="nav-link text-white dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">
+        <a class="nav-link dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">
           <span style="width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">{{ current_user.nome[:2]|upper }}</span>
           {{ current_user.nome.split()[0] }}
         </a>
@@ -70,7 +175,9 @@
         </ul>
       </div>
     {% endif %}
-  </div>{% endif %}
+  </div>
+  </div>
+  {% endif %}
 </div></nav>
 <div class="container py-4">
   {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }}">{{ msg }}</div>{% endfor %}{% endwith %}
@@ -78,7 +185,7 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% if current_user.is_authenticated %}
-<footer class="container text-center pb-4 rodape">v1.8</footer>
+<footer class="container text-center pb-4 rodape">v1.10</footer>
 {% endif %}
 <script>
 function cadastrarRapido(entidade, selectId, comUF){
@@ -100,5 +207,6 @@ function filtraDrop(inp){
   });
 }
 </script>
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

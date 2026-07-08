@@ -167,12 +167,16 @@ def dashboard():
     f_de = request.args.get("de")
     f_ate = request.args.get("ate")
     f_vencidos = request.args.get("vencidos")
+    f_atrasadas = request.args.get("atrasadas")
     aplicou = bool(request.args)
     if not f_status and not aplicou:
         f_status = STATUS_PADRAO[:]  # padrão: tudo menos Concluído/Cancelada
     if f_vencidos:
         q = q.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
                      Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today())
+    elif f_atrasadas:
+        q = q.filter(Solicitacao.status == "AGUARDANDO_CHEGADA",
+                     Solicitacao.prazo_recebimento.isnot(None), Solicitacao.prazo_recebimento < date.today())
     elif f_status:
         q = q.filter(Solicitacao.status.in_(f_status))
     if f_sol:
@@ -206,8 +210,12 @@ def dashboard():
         atividades=Atividade.query.filter_by(ativo=True).order_by(Atividade.nome).all(),
         total_notinhas_mes=total_notinhas_mes, f_ativ=f_ativ,
         pendentes=Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").count(),
+        n_envio=Solicitacao.query.filter_by(status="AGUARDANDO_ENVIO_COTACAO").count(),
+        n_chegada=Solicitacao.query.filter_by(status="AGUARDANDO_CHEGADA").count(),
         n_vencidos=Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
             Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today()).count(),
+        n_atrasadas=Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_CHEGADA",
+            Solicitacao.prazo_recebimento.isnot(None), Solicitacao.prazo_recebimento < date.today()).count(),
         f_vencidos=f_vencidos,
         f_status=f_status, f_tipo=f_tipo, f_sol=[int(x) for x in f_sol],
         f_forn=[int(x) for x in f_forn], f_busca=f_busca, f_de=f_de, f_ate=f_ate)
@@ -272,17 +280,26 @@ def solicitacao(sid):
     s = db.session.get(Solicitacao, sid)
     if not s:
         abort(404)
-    fornecedores = [f for f in s.tipo.fornecedores if f.ativo] if s.tipo else []
+    excluidos = list(s.fornecedores_excluidos)
+    excluidos_ids = {f.id for f in excluidos}
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.id not in excluidos_ids] if s.tipo else []
     orcamentos = sorted(s.orcamentos, key=lambda o: o.valor_total)
     base = _proximo_num_cotacao()
     seqs = {f.id: _seq_str(base + i) for i, f in enumerate(fornecedores)}
     wa = {f.id: _wa_link(f, _corpo_cotacao(f, [s], incluir_spe=False)) for f in fornecedores} if fornecedores else None
     mail = {f.id: _mailto(f, [s], seqs[f.id]) for f in fornecedores} if fornecedores else None
     txt = {f.id: _corpo_cotacao(f, [s], incluir_spe=False) for f in fornecedores} if fornecedores else None
+    # Histórico de preços do mesmo tipo de material (item 100)
+    historico_precos = []
+    if s.tipo_material_id:
+        historico_precos = (Orcamento.query.join(Solicitacao, Orcamento.solicitacao_id == Solicitacao.id)
+            .filter(Solicitacao.tipo_material_id == s.tipo_material_id, Orcamento.solicitacao_id != s.id)
+            .order_by(Orcamento.recebido_em.desc()).limit(8).all())
     voltar = request.args.get("voltar", "")
     voltar_url = url_for("admin.dashboard") + (("?" + voltar) if voltar else "")
     return render_template("admin/solicitacao.html", s=s, fornecedores=fornecedores, orcamentos=orcamentos,
         menor_valor=orcamentos[0].valor_total if orcamentos else None, wa=wa, mail=mail, txt=txt, seqs=seqs,
+        excluidos=excluidos, historico_precos=historico_precos,
         hoje=date.today().isoformat(), voltar_url=voltar_url,
         tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),
         transportadoras=Transportadora.query.filter_by(ativo=True).order_by(Transportadora.nome).all(),
@@ -321,7 +338,8 @@ def comentar(sid):
 @admin_required
 def enviar_pedido(sid):
     s = db.session.get(Solicitacao, sid) or abort(404)
-    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.usa_email and f.email] if s.tipo else []
+    _excl = {f.id for f in s.fornecedores_excluidos}
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.usa_email and f.email and f.id not in _excl] if s.tipo else []
     if not fornecedores:
         flash("Nenhum fornecedor ativo com e-mail para este tipo (verifique o 'usa e-mail').", "warning")
         return redirect(url_for("admin.solicitacao", sid=s.id))
@@ -346,8 +364,9 @@ def _agrupar(status):
              .order_by(Solicitacao.id).all())
     grupos = {}
     for s in itens:
+        excluidos = {f.id for f in s.fornecedores_excluidos}
         for f in s.tipo.fornecedores:
-            if f.ativo:
+            if f.ativo and f.id not in excluidos:
                 grupos.setdefault(f.id, {"fornecedor": f, "itens": []})["itens"].append(s)
     return itens, grupos
 
@@ -483,28 +502,94 @@ def definir_fornecedor(sid):
     return redirect(url_for("admin.solicitacao", sid=s.id))
 
 
-@admin_bp.route("/orcamento/<int:oid>/excluir", methods=["POST"])
+@admin_bp.route("/solicitacao/<int:sid>/remover-fornecedor/<int:fid>", methods=["POST"])
 @admin_required
-def excluir_orcamento(oid):
-    """Cancela/exclui o orçamento de um fornecedor específico (item 90)."""
-    o = db.session.get(Orcamento, oid) or abort(404)
-    sid = o.solicitacao_id
-    s = db.session.get(Solicitacao, sid)
-    nome = o.fornecedor.nome if o.fornecedor else "fornecedor"
-    era_definido = bool(s and (o.escolhido or s.fornecedor_definido_id == o.fornecedor_id))
-    db.session.delete(o)
-    db.session.flush()
-    if s:
-        if era_definido and s.status in ("AGUARDANDO_CHEGADA", "AGUARDANDO_DEFINICAO_FORNECEDOR"):
-            s.fornecedor_definido_id = None
-            s.frete_tipo = s.frete_modalidade = None
-            s.transportadora_id = s.cidade_retirada_id = None
-            s.status = "AGUARDANDO_DEFINICAO_FORNECEDOR" if s.orcamentos else "AGUARDANDO_RECEBIMENTO_COTACAO"
-            _log(s, f"Definição de fornecedor revertida (orçamento de {nome} cancelado)")
-        _log(s, f"Orçamento de {nome} cancelado/excluído")
-    db.session.commit()
-    flash(f"Orçamento de {nome} cancelado.", "success")
+def remover_fornecedor(sid, fid):
+    """Fornecedor não tem o item: remove-o da cotação desta solicitação (item 90)."""
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    if f not in s.fornecedores_excluidos:
+        s.fornecedores_excluidos.append(f)
+        _log(s, f"Fornecedor {f.nome} removido da cotação (sem o item)")
+        db.session.commit()
+        flash(f"{f.nome} removido desta solicitação.", "success")
     return redirect(url_for("admin.solicitacao", sid=sid))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/restaurar-fornecedor/<int:fid>", methods=["POST"])
+@admin_required
+def restaurar_fornecedor(sid, fid):
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    if f in s.fornecedores_excluidos:
+        s.fornecedores_excluidos.remove(f)
+        _log(s, f"Fornecedor {f.nome} devolvido à cotação")
+        db.session.commit()
+        flash(f"{f.nome} devolvido à solicitação.", "success")
+    return redirect(url_for("admin.solicitacao", sid=sid))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/reenviar-cotacao", methods=["POST"])
+@admin_required
+def reenviar_cotacao(sid):
+    """Reenvio de cotação: renova o prazo e registra (item 99)."""
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    s.prazo_cotacao = _prazo_cotacao()[0]
+    if s.status == "AGUARDANDO_ENVIO_COTACAO":
+        s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+    _log(s, "Cotação reenviada (prazo renovado)")
+    db.session.commit()
+    flash("Cotação marcada como reenviada e prazo renovado (5 dias úteis).", "success")
+    return redirect(url_for("admin.solicitacao", sid=sid))
+
+
+@admin_bp.route("/solicitacao/<int:sid>/duplicar", methods=["POST"])
+@admin_required
+def duplicar(sid):
+    """Cria uma nova solicitação copiando os dados (item 106)."""
+    s = db.session.get(Solicitacao, sid) or abort(404)
+    nova = Solicitacao(solicitante_id=current_user.id, tipo_material_id=s.tipo_material_id,
+                       material=s.material, quantidade=s.quantidade, fabricante=s.fabricante,
+                       link_similar=s.link_similar, local_servico=s.local_servico,
+                       status="AGUARDANDO_APROVACAO")
+    db.session.add(nova)
+    db.session.flush()
+    _log(nova, f"Solicitação criada (duplicada da Nº {s.id})")
+    db.session.commit()
+    flash(f"Solicitação duplicada — nova Nº {nova.id} (aguardando aprovação).", "success")
+    return redirect(url_for("admin.solicitacao", sid=nova.id))
+
+
+@admin_bp.route("/pendencias")
+@admin_required
+def pendencias():
+    """O que precisa de mim hoje (item 98)."""
+    aprovar = Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").order_by(Solicitacao.criado_em).all()
+    vencidas = (Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
+                Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today())
+                .order_by(Solicitacao.prazo_cotacao).all())
+    atrasadas = (Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_CHEGADA",
+                 Solicitacao.prazo_recebimento.isnot(None), Solicitacao.prazo_recebimento < date.today())
+                 .order_by(Solicitacao.prazo_recebimento).all())
+    return render_template("admin/pendencias.html", aprovar=aprovar, vencidas=vencidas, atrasadas=atrasadas)
+
+
+@admin_bp.route("/precos")
+@admin_required
+def precos():
+    """Histórico de preços por fornecedor (item 107)."""
+    fid = request.args.get("fornecedor")
+    q = Orcamento.query
+    if fid:
+        q = q.filter_by(fornecedor_id=int(fid))
+    orcs = q.order_by(Orcamento.recebido_em.desc()).limit(300).all()
+    grupos = {}
+    for o in orcs:
+        g = grupos.setdefault(o.fornecedor_id, {"fornecedor": o.fornecedor, "itens": []})
+        g["itens"].append(o)
+    return render_template("admin/precos.html",
+        grupos=sorted(grupos.values(), key=lambda g: (g["fornecedor"].nome if g["fornecedor"] else "")),
+        fornecedores=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(), f_forn=fid)
 
 
 @admin_bp.route("/solicitacao/<int:sid>/quantidade", methods=["POST"])
@@ -643,6 +728,50 @@ def confirmar_orcamento_pdf():
 
 
 # ---------------- Cadastros ----------------
+@admin_bp.route("/backup")
+@admin_required
+def backup():
+    """Baixar backup (item 108) — gera um dump .sql lógico (INSERT statements)
+    a partir das tabelas do banco atual (SQLite local ou Postgres/Neon em produção).
+    Não depende de pg_dump/binários externos."""
+    from io import BytesIO
+    from datetime import datetime as _dt
+    from sqlalchemy import inspect as _inspect, text as _text
+
+    insp = _inspect(db.engine)
+    linhas = [f"-- Backup gerado em {_dt.now():%d/%m/%Y %H:%M:%S}",
+              "-- Sistema de Solicitação de Materiais / Almoxarifado — Cluster Delta MA",
+              "-- Dump lógico (INSERT statements), gerado pela própria aplicação.", ""]
+
+    for table in db.metadata.sorted_tables:
+        if not insp.has_table(table.name):
+            continue
+        colunas = [c["name"] for c in insp.get_columns(table.name)]
+        linhas.append(f"-- Tabela: {table.name}")
+        resultado = db.session.execute(_text(f'SELECT {", ".join(colunas)} FROM "{table.name}"'))
+        for row in resultado:
+            valores = []
+            for v in row:
+                if v is None:
+                    valores.append("NULL")
+                elif isinstance(v, (int, float)):
+                    valores.append(str(v))
+                else:
+                    escapado = str(v).replace("'", "''")
+                    valores.append(f"'{escapado}'")
+            cols_sql = ", ".join(colunas)
+            vals_sql = ", ".join(valores)
+            linhas.append(f'INSERT INTO "{table.name}" ({cols_sql}) VALUES ({vals_sql});')
+        linhas.append("")
+
+    conteudo = "\n".join(linhas)
+    buf = BytesIO(conteudo.encode("utf-8"))
+    nome_arquivo = f"backup_{_dt.now():%Y%m%d_%H%M}.sql"
+    return current_app.response_class(
+        buf.getvalue(), mimetype="application/sql",
+        headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"})
+
+
 @admin_bp.route("/cadastros")
 @admin_required
 def cadastros():

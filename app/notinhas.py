@@ -45,7 +45,7 @@ def _filtra(q):
     f_de = request.args.get("de")
     f_ate = request.args.get("ate")
     f_forn = request.args.get("fornecedor")
-    f_ativ = request.args.get("atividade")
+    f_ativ = request.args.getlist("atividade")   # múltipla seleção (item 94)
     f_vmin = request.args.get("valor_min")
     f_vmax = request.args.get("valor_max")
     if f_de:
@@ -55,7 +55,7 @@ def _filtra(q):
     if f_forn:
         q = q.filter_by(fornecedor_id=int(f_forn))
     if f_ativ:
-        q = q.filter_by(atividade_id=int(f_ativ))
+        q = q.filter(Notinha.atividade_id.in_([int(x) for x in f_ativ]))
     vmin = _parse_valor_filtro(f_vmin)
     vmax = _parse_valor_filtro(f_vmax)
     if vmin is not None:

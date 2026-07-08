@@ -19,6 +19,11 @@ fornecedor_tipo = db.Table("fornecedor_tipo",
     db.Column("fornecedor_id", db.ForeignKey("fornecedores.id"), primary_key=True),
     db.Column("tipo_material_id", db.ForeignKey("tipos_material.id"), primary_key=True))
 
+# Fornecedores removidos de uma solicitação específica (ex.: "não tem o item") — item 90
+solicitacao_fornecedor_excluido = db.Table("solicitacao_fornecedor_excluido",
+    db.Column("solicitacao_id", db.ForeignKey("solicitacoes.id"), primary_key=True),
+    db.Column("fornecedor_id", db.ForeignKey("fornecedores.id"), primary_key=True))
+
 
 class Empresa(db.Model):
     __tablename__ = "empresas"
@@ -145,6 +150,7 @@ class Solicitacao(db.Model):
     orcamentos = db.relationship("Orcamento", backref="solicitacao", lazy=True, cascade="all, delete-orphan")
     logs = db.relationship("LogSolicitacao", backref="solicitacao", lazy=True, cascade="all, delete-orphan",
                            order_by="LogSolicitacao.criado_em")
+    fornecedores_excluidos = db.relationship("Fornecedor", secondary=solicitacao_fornecedor_excluido)
 
     @property
     def status_label(self): return STATUS_LABEL.get(self.status, self.status)
@@ -154,6 +160,12 @@ class Solicitacao(db.Model):
         from datetime import date as _d
         return bool(self.status == "AGUARDANDO_RECEBIMENTO_COTACAO"
                     and self.prazo_cotacao and self.prazo_cotacao < _d.today())
+
+    @property
+    def chegada_atrasada(self):
+        from datetime import date as _d
+        return bool(self.status == "AGUARDANDO_CHEGADA"
+                    and self.prazo_recebimento and self.prazo_recebimento < _d.today())
 
 
 class Imagem(db.Model):

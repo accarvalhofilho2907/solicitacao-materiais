@@ -485,13 +485,85 @@ Registro de toda alteração pedida após o MVP, com status: ⬜ pendente · �
 
 89. **✅ Filtro por valor nas Notinhas** *(v1.7)* — incluir, junto aos filtros das Notinhas (data, fornecedor, atividade), um filtro por **valor** — faixa **mínimo/máximo** (R$ de / até). Recalcula os totais conforme o filtro.
 
-90. **✅ Cancelar o recebimento de cotação de um fornecedor específico** *(v1.8)* — na tela da solicitação, junto aos orçamentos lançados (área de "Orçamentos" / lançar orçamento), incluir a opção de **cancelar/excluir o orçamento de um fornecedor específico** (ex.: lançado por engano ou o fornecedor desistiu). Remove aquele orçamento sem afetar os demais e registra no histórico/log. *(Se era o fornecedor definido, reverter a definição.)*
+90. **✅ Remover um fornecedor da cotação de uma solicitação (fornecedor não tem o item)** *(v1.9)* — *(CORRIGIDO 30/06/2026 — interpretação anterior estava errada)* Na tela da solicitação, poder **marcar que um fornecedor específico não tem o item / recusou** aquela solicitação e **removê-lo da lista de fornecedores** daquela solicitação (some dos botões WhatsApp/E-mail/Texto e do agrupamento de envio em lote). É por **solicitação** (não desativa o fornecedor no cadastro). Registrar no histórico/log ("Fornecedor X removido — sem o item"). Poder também **reverter** (voltar o fornecedor à lista). *(Sugestão técnica: tabela de exclusão solicitação×fornecedor.)* **✅ Item 90-extra RESOLVIDO (08/07/2026, rodado):** botão extra de cancelar/excluir orçamento já lançado foi **removido** (rota `excluir_orcamento` e coluna do botão na tela); ficou só "Não tem" (remover fornecedor da cotação).
 
 91. **✅ WhatsApp/Texto pronto sem o quadro de CNPJs** *(v1.8)* — no **WhatsApp** e no **Texto pronto** (copiar), **não incluir** o quadro "Dados para Cotação" (tabela de SPEs/CNPJs). Esse bloco fica **somente no e-mail**. O WhatsApp/Texto mantém saudação, condições, tabela de produtos, prazo e assinatura. Atualiza os itens 73/77.
 
 92. **✅ Manter o filtro ao abrir um item e voltar** *(v1.8)* — hoje, ao aplicar um filtro no painel, abrir uma solicitação e voltar, o filtro é **perdido**. Passar a **preservar o filtro** ao entrar no item e retornar (o botão "Abrir"/"Voltar ao painel" carrega os mesmos filtros). Só **voltar ao padrão** quando o usuário **muda de aba/seção** (clica em outro item do menu). Aplicar no painel do admin e nos demais papéis.
 
 93. **✅ Alerta de prazo de cotação vencido** *(v1.8)* — registrar a **data-limite de retorno da cotação** (5 dias úteis) no momento do envio/marcação e exibir um **local/indicador** das solicitações cujo **prazo já venceu** (status "Aguardando recebimento da cotação" com data-limite < hoje). Objetivo: o admin consegue **fechar o processo** e seguir para a definição de fornecedor/compra mesmo sem todas as cotações. *(Ex.: badge "prazo vencido" + filtro/lista dedicada; sugestão técnica: campo `prazo_cotacao` na solicitação.)*
+
+94. **✅ Filtro de Atividade nas Notinhas com múltipla seleção** *(v1.9)* — no filtro de **Atividade** das Notinhas, permitir **escolher mais de uma atividade** ao mesmo tempo (multi-seleção, no padrão de lista suspensa com caixas de seleção dos outros filtros). Os totais (do filtro e por fornecedor) **somam** todas as atividades selecionadas. Aplicar também no resumo de atividade do painel do admin, se fizer sentido.
+
+95. **✅ Enxugar os filtros (Solicitações e Notinhas)** *(v1.9)* — reduzir a **largura dos campos De/Até** (estão largos demais) e **remover o texto** "Por padrão mostra tudo menos Concluído e Cancelada" no painel de Solicitações. Aplicar o mesmo enxugamento no filtro das Notinhas.
+
+96. **✅ Deixar as telas de cadastro mais organizadas/bonitas** *(v1.9 — polida a home de Cadastros; telas já em cards)* — padronizar visualmente **todas as telas de Cadastro** (Tipos, Fornecedores, Cidades, Transportadoras, Atividades, Empresas, Usuários): alinhamento dos formulários, espaçamentos, largura de campos, tabelas mais limpas e consistência entre elas.
+
+97. **✅ Dashboard com cartões no topo** *(v1.9)* — cartões clicáveis com os contadores: aguardando aprovação, aguardando envio de cotação, cotação vencida, aguardando chegada. Cada cartão leva ao painel já filtrado.
+
+98. **✅ Painel "O que precisa de mim hoje"** *(v1.9)* — uma tela consolidada juntando: aprovações pendentes + cotações com prazo vencido + chegadas atrasadas.
+
+99. **✅ Reenviar cotação com 1 clique** *(v1.9)* — para solicitações aguardando recebimento da cotação, botão para **reenviar** a um fornecedor (regera WhatsApp/E-mail/Texto), registra o reenvio no histórico e renova o prazo (5 dias úteis).
+
+100. **✅ Último preço ao lançar orçamento** *(v1.9)* — ao lançar orçamento na solicitação, mostrar o **histórico de preços** recentes daquele material (fornecedor, valor, data) como referência.
+
+101. **✅ Badge de chegada atrasada** *(v1.9)* — quando o `prazo_recebimento` já passou e o item ainda está "Aguardando chegada", mostrar um indicador "chegada atrasada" (painel e tela de chegadas), com contador.
+
+106. **✅ Duplicar solicitação** *(v1.9)* — botão para criar uma nova solicitação copiando material, tipo, fabricante, quantidade, link e local (para compras recorrentes). Nasce em "Aguardando aprovação".
+
+107. **✅ Histórico de preços por fornecedor** *(v1.9)* — página que lista, por fornecedor, os orçamentos já lançados (item, valor, data, solicitação), como apoio à negociação.
+
+108. **✅ Backup para baixar** *(v1.10, rodado 08/07/2026)* — botão "Baixar backup (.sql)" no menu Relatórios e Impressões (`admin.backup`), gera **dump lógico `.sql`** (INSERT statements de todas as tabelas) direto pela aplicação — funciona tanto no SQLite local quanto no Postgres/Neon em produção, sem depender de `pg_dump` externo.
+
+### 08/07/2026 — Geração de Etiquetas (Almoxarifado) (a implementar)
+
+109. **✅ Campo "Geração de Etiquetas"** *(v1.10, rodado 08/07/2026)* — dentro do menu "Relatórios e Impressões". Visível para **Almoxarifado e Admin**. Permite gerar etiquetas de diversos tipos e tamanhos preenchendo dados em tela, sempre pensando no **layout impresso em folha A4**.
+    - **Tipos de etiqueta:** **"Envio de Material"** (detalhado abaixo, 1ª fase) e **"Identificação de Item"** (liberado junto, a especificar — etiqueta simples para prateleira/caixa do estoque interno; layout e campos a definir antes de rodar). *(O tipo "Devolução", cogitado antes, foi **retirado** do escopo — 08/07/2026.)*
+    - **Fluxo da etiqueta "Envio de Material":**
+      1. **Remetente** — dropdown com as **Deltas da Serena Energia** (lista fixa, análoga às SPEs do `referencia_cotacao.md`/`SPES_COTACAO`). Ao escolher, preenche automaticamente: nome da Delta, endereço completo e CNPJ. Contato do remetente é sempre fixo: **Antonio Carlos Carvalho / (86) 99939-9872 / antonio.carvalho@srna.co**.
+         - **Lista de Deltas (Remetente) fornecida pelo usuário — usar como fonte fixa, mesmo padrão do bloco de SPEs:**
+           | Delta | Endereço | CNPJ | I.E. |
+           |---|---|---|---|
+           | Delta 3 I Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.517/0002-00 | 124895123 |
+           | Delta 3 II Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.858/0002-86 | 124897193 |
+           | Delta 3 III Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.847/0002-04 | 124897070 |
+           | Delta 3 IV Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.842/0002-73 | 124897029 |
+           | Delta 3 V Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.829/0002-14 | 124897134 |
+           | Delta 3 VI Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.831/0002-93 | 124896995 |
+           | Delta 3 VII Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 23.598.844/0002-62 | 124897100 |
+           | Delta 3 VIII Energia S.A. | Rua Rio Novo, 47 - Centro - Paulino Neves/MA - 65585-000 | 15.190.472/0002-02 | 12.512653-0 |
+           | Delta 5 I Energia S.A. | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 5, Zona Rural - Paulino Neves/MA - 65585-000 | 29.296.171/0002-72 | 12.556889-4 |
+           | Delta 5 II Energia S.A. | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 5, Zona Rural - Paulino Neves/MA - 65585-000 | 29.303.897/0002-95 | 12.556898-3 |
+           | Delta 6 I Energia S.A. | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 6, Zona Rural - Paulino Neves/MA - 65585-000 | 29.296.141/0002-66 | 12.556908-4 |
+           | Delta 6 II Energia S.A. | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 6, Zona Rural - Paulino Neves/MA - 65585-000 | 29.296.975/0002-71 | 12.556887-8 |
+           | Delta 7 I Energia S.A | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 7, Zona Rural - Paulino Neves/MA - 65585-000 | 30.866.542/0002-93 | 12.583428-4 |
+           | Delta 7 II Energia S.A | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 7, Zona Rural - Paulino Neves/MA - 65585-000 | 30.905.225/0002-39 | 12.583447-0 |
+           | Delta 8 I Energia S.A. | Rodovia MA-315, s/n, Vias Internas do Complexo Eólico Delta 8, Zona Rural - Paulino Neves/MA - 65585-000 | 30.866.547/0002-16 | 12.583436-5 |
+      2. **Destinatário** — dropdown com os **Fornecedores já cadastrados** no sistema (mesma base de cadastro usada na cotação). Ao escolher, preenche automaticamente endereço completo, CNPJ, contato, telefone e e-mail do fornecedor — mas **todos esses campos ficam editáveis na hora** (contato pode ser trocado; telefone e e-mail podem ser incluídos/alterados na tela, sem precisar editar o cadastro do fornecedor).
+      3. **Quantidade de volumes** — o sistema pergunta quantos volumes serão enviados, para saber **quantas etiquetas gerar** (1 etiqueta por volume, numeradas ex. "Volume 1/3", "Volume 2/3"...).
+      4. **Layout/tamanho da etiqueta** — antes de gerar, oferecer opção de **quantas etiquetas por folha A4**: **02, 04, 06 ou 08** etiquetas iguais por folha (grid de tamanhos proporcionais à folha A4, maior quando menos etiquetas por folha).
+      5. Gerar o **PDF pronto para impressão** em A4, com o grid escolhido, repetindo o layout de etiqueta (remetente, destinatário, volume X/Y) conforme a quantidade de volumes/etiquetas.
+    - **Pendências técnicas a decidir antes de rodar:** desenho exato do layout de cada etiqueta (quais campos aparecem e em que posição/tamanho de fonte); se haverá algum código/QR vinculando ao Nº da solicitação (ver item 13 do resumo — chave comum com o futuro módulo de Almoxarifado/estoque); layout e campos da etiqueta "Identificação de Item".
+
+### 08/07/2026 — Reestruturação do menu + Relatório de carga (RODADO)
+
+110. **✅ Reestruturar o menu principal** *(v1.10, rodado 08/07/2026)* — novo agrupamento, substituindo o menu antigo:
+    - **i. "Início"** (era "Painel") — ícone de casa 🏠.
+    - **ii. "Operação"** — agrupa: Aprovações, Chegadas, Compras (enviar cotação/importar orçamento/comparativo/histórico de preços) e **Notinhas** (agora dentro do grupo Compras). **Sino de notificações** 🔔 no topo mostrando pendências do usuário logado (aprovações + cotações a enviar, reaproveitando os contadores já existentes).
+    - **iii. "Relatórios e Impressões"** — visível **somente para Almoxarifado e Admin**. Agrupa: **Geração de Etiquetas** (item 109) e o **Relatório de Recebimento / Relatório de Envio** (item 111), além do link de Backup (.sql, item 108).
+    - FAQ, Sugestões, Novidades e Cadastros continuam no menu do usuário (avatar), como já era.
+
+111. **✅ Relatório de Recebimento e Envio de Materiais** *(v1.10, rodado 08/07/2026)* — dentro de "Relatórios e Impressões". **São duas telas/rotas distintas** (`/relatorios/carga/recebimento` e `/relatorios/carga/envio`), acessíveis só por **Almoxarifado e Admin**. Cada um só gera o PDF na hora para imprimir — **não fica salvo nem gera histórico no sistema** (decisão do usuário, 08/07/2026).
+    - **Cabeçalho do PDF fiel ao modelo em foto** ("Relatório de Carga Almoxarifado Delta MA"): faixa colorida com título + selo de status ("Recebido"/"Enviado"), Data, Responsável, Razão Social, CNPJ, Inscrição Estadual, Endereço, bloco "Dados da Carga" (Nota Fiscal, Série, OC, Valor da NF, Natureza da operação, CT-e, Valor do CT-e) e Observações.
+    - Data vem pré-preenchida com hoje e Responsável com o nome do usuário logado (editáveis).
+    - **Não** foi implementado (fica para depois, se o usuário quiser): puxar Razão Social/CNPJ/IE/Endereço automaticamente de um cadastro de fornecedor — hoje é preenchido à mão, pois o cadastro de Fornecedor não tem esses campos ainda.
+
+112. **✅ Tema escuro (dark mode) em todo o sistema + renomear para "ALMOXARIFADO"** *(v1.10, rodado 08/07/2026)* — fundo escuro (#1B1B1B / cards #232323) em todas as telas, mantendo Coral (#FF5246) como cor de destaque e Verde (#32CAA0) como cor de sucesso. O nome exibido no topo (e no título das páginas) mudou de "Solicitação de Materiais" para **"ALMOXARIFADO"** em todo o app.
+
+102. **❌ Nº de Ordem de Compra sequencial — DESCARTADO** (30/06/2026).
+103. **❌ Exportar Excel de solicitações/notinhas — DESCARTADO** (30/06/2026).
+104. **❌ Relatório de gastos por período/fornecedor/atividade — DESCARTADO** (30/06/2026).
+105. **❌ Anexar orçamento do fornecedor como comprovante — DESCARTADO** (30/06/2026).
 
 > **Regra de trabalho (a pedido, 29/06/2026):** todo pedido enviado é **registrado no roadmap e NÃO executado** na hora. Implementação só quando o usuário disser "rodar". **Após cada novo item, informar ao usuário apenas a lista de PENDENTES (não os concluídos).**
 >

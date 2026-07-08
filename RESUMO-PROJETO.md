@@ -1,0 +1,94 @@
+# RESUMO DO PROJETO — Sistema de Solicitação de Materiais (para continuar em outro chat)
+
+> Este documento é um **handoff completo**. Se você subir o projeto zipado em um novo chat, leia este arquivo primeiro: ele explica o que é, como roda, o que já foi feito e o que falta.
+
+---
+
+## 1. O que é
+Plataforma web onde **colaboradores (Solicitantes)** pedem materiais e o **Administrador** gerencia, cota com fornecedores e fecha a compra. Fornecedores **não acessam** o sistema — só recebem o contato (e-mail/WhatsApp). Empresa: Serena Energia / Cluster Delta MA (comprador: Antonio Carlos Carvalho).
+
+## 2. Tecnologia
+- **Backend:** Python + **Flask** (padrão _app factory_), Flask-SQLAlchemy, Flask-Login, Flask-WTF (CSRF), Flask-Migrate.
+- **Banco:** **PostgreSQL** em produção (**Neon**, grátis, persistente); **SQLite** local para dev.
+- **Servidor:** **Gunicorn** (`gunicorn wsgi:app`).
+- **Front:** Bootstrap 5 + fonte Poppins, tema Coral #FF5246 / Grafite #4B4B4B / Verde #32CAA0 (sem exibir o nome da empresa).
+- **E-mail:** SMTP **não configurado** — os envios são "simulados" (log). Método oficial = **mailto/Outlook manual** + **WhatsApp (wa.me)** + **"copiar texto"**.
+- **Imagens:** upload **desativado** (item 61) para poupar armazenamento no plano grátis.
+
+## 3. REGRA DE TRABALHO (importante!)
+Todo pedido do usuário é **registrado no `Plano-Tecnico.md` (changelog, item numerado ⬜) e NÃO executado na hora**. Só implementar quando o usuário disser **"rodar"**. Após cada novo item, mostrar ao usuário **apenas a lista de PENDENTES**. Está na memória do projeto também.
+
+## 4. Papéis e acesso
+- **solicitante:** cria solicitação, vê o painel (todos veem tudo), comenta.
+- **almoxarifado:** = solicitante + **confirma chegada** (inclusive parcial).
+- **visualizador:** só leitura.
+- **admin:** faz **tudo** (inclui aprovar, cotar, definir fornecedor, confirmar chegada, cadastros).
+- Sem autocadastro: admin cria os usuários (e-mail + senha). Troca de senha obrigatória no 1º acesso.
+- Admin único definido em `definir_admin.py` (antonio.carvalho@srna.co, senha provisória `Trocar@123`).
+
+## 5. Fluxo de status (solicitação)
+`AGUARDANDO_APROVACAO` → `AGUARDANDO_ENVIO_COTACAO` → `AGUARDANDO_RECEBIMENTO_COTACAO` → `AGUARDANDO_DEFINICAO_FORNECEDOR` → `AGUARDANDO_CHEGADA` → `CONCLUIDO` (+ `CANCELADA`). Labels/lista em `app/models.py` (STATUS, STATUS_LABEL, STATUS_PADRAO).
+
+## 6. Mapa de arquivos
+- `wsgi.py` — entrada do Gunicorn (`app`).
+- `config.py` — lê variáveis de ambiente (DATABASE_URL, BASE_URL, SECRET_KEY, ADMIN_EMAIL, MAIL_*, CLOUDINARY_URL).
+- `app/__init__.py` — `create_app`, `_light_migrate` (migração automática no boot: cria colunas/tabelas novas, define `ativo=TRUE`, converte cadastros p/ MAIÚSCULAS), `_seed_tipos` (32 tipos padrão), rota pública `/r/<id>` (link curto → redireciona pro link do produto), context_processor (badges/contadores).
+- `app/models.py` — modelos: Usuario, Empresa, TipoMaterial, Atividade, Cidade, Transportadora, Fornecedor, **Solicitacao**, Imagem, Comentario, PedidoCompra, Orcamento, Notinha, LogSolicitacao, Sugestao + tabelas N×N (`fornecedor_tipo`, `solicitacao_fornecedor_excluido`).
+- `app/auth.py` — login, troca de senha no 1º acesso.
+- `app/solicitante.py` — painel (livre p/ todos, filtros avançados), nova solicitação (sem foto), detalhe, exportar PDF.
+- `app/admin.py` — **o maior**: painel/filtros, cartões, aprovações (lote + PDF de fichas), cotação (WhatsApp/E-mail/Texto por fornecedor, marcar enviada, reenviar), definir fornecedor + OC + frete, orçamentos (lançar/cancelar), comparativo, remover/devolver fornecedor da cotação, duplicar, pendências, histórico de preços, cadastros (CRUD), cadastro inline (JSON).
+- `app/almox.py` — confirmar chegada (parcial e total).
+- `app/notinhas.py` — lançamento de notas (data, fornecedor, atividade, valor; competência automática da data; filtros; atividade inline; export PDF).
+- `app/geral.py` — FAQ, novidades, sugerir melhoria.
+- `app/pdf.py`, `app/pdf_orcamento.py` — geração de PDFs e leitura de orçamento em PDF (texto; **sem OCR**).
+- `app/util.py` — telefone BR (E.164) e dias úteis.
+- `app/emails.py`, `app/storage.py`, `app/extensions.py`, `app/seed_data.py` — auxiliares.
+- `app/templates/` — base.html (menu, tema, JS de filtros/cópia) + telas admin/solicitante/almox/notinhas/geral.
+- `Plano-Tecnico.md` — **roadmap/changelog** (fonte da verdade do que foi feito; itens 1–108).
+- `referencia_cotacao.md` — modelo do e-mail de cotação + **tabela fixa das 15 SPEs Delta (SPE, Endereço, CNPJ, I.E.)** + assinatura. Os mesmos dados estão em `SPES_COTACAO` no `app/admin.py`.
+- `DEPLOY.md`, `iniciar.bat` — guia de deploy e atalho local.
+
+## 7. Modelo do e-mail de cotação (itens 73/75/76/77/91)
+- **Assunto:** `SRNA | <Nome Fantasia>: Cotação de material #COT-AAAA-000` (sequencial por ano).
+- **Corpo:** saudação + condições (i. Frete CIF; ii. Pagamento 30 DDL; iii. Uso e Consumo) + **tabela de produtos** (`#nº#`, produto, fabricante ou "N/D", qtd, link curto) + prazo 5 dias úteis + assinatura.
+- **Tabela de SPEs/CNPJs:** só no **e-mail** (não vai no WhatsApp/Texto pronto).
+- Colunas alinhadas em texto puro (mailto/WhatsApp).
+
+## 8. Como rodar LOCAL (Windows)
+1. `python -m venv .venv` → `.\.venv\Scripts\Activate.ps1` (se bloquear: `Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process`).
+2. `python -m pip install -r requirements.txt`.
+3. `python wsgi.py` (ou `iniciar.bat`). Abre em `http://localhost:5000` com SQLite (`app.db`).
+   - Local, o link curto sai como `localhost` (normal — só abre no seu PC).
+
+## 9. Deploy (produção) — fluxo GitHub Desktop → Render
+1. Editar na pasta do projeto e **copiar `app/` + arquivos alterados** para a pasta do **repositório clonado** (GitHub Desktop).
+2. **Commit** + **Push** para `main` → **Render** publica sozinho.
+3. **Neon:** banco PostgreSQL (string vai na env `DATABASE_URL`, terminando em `?sslmode=require`).
+4. **Render — variáveis de ambiente:** `DATABASE_URL`, `SECRET_KEY`, `BASE_URL=https://<seu-app>.onrender.com`, `ADMIN_EMAIL`. (MAIL_* e CLOUDINARY_URL opcionais.)
+5. **Start Command:** `gunicorn wsgi:app`. Python fixado em `3.12.7` (`.python-version`).
+6. A **migração roda sozinha no boot** (cria colunas/tabelas novas e maiusculiza cadastros antigos) — **não apaga dados**.
+- Observações do plano grátis: o Render **"dorme"** após 15 min ocioso (primeiro acesso demora ~30s); 750h/mês; sem disco persistente (por isso banco no Neon).
+
+## 10. O que já foi entregue (resumo por versão)
+- **v1.0–1.3:** MVP, papéis, status, fornecedores (razão social/fantasia/contato/WhatsApp/tipos), frete CIF/FOB, cadastros, brandbook, aprovações, cotação, OC, PDF, FAQ/novidades/sugestões, senha 1º acesso.
+- **v1.4–1.5:** painel livre, menu Compras, comparativo (produto/fornecedor), filtros dropdown, notinhas + atividades, leitor de orçamento PDF, admin também solicita, ativar todos tipos.
+- **v1.6:** menu clean, badges, botões WhatsApp/E-mail/Texto por fornecedor, link curto `/r/<id>`, editar e-mail do usuário, aprovar em lote + PDF de fichas, editar quantidade + logs/histórico, notinhas melhoradas, fotos desativadas.
+- **v1.7:** link curto automático (host), novo modelo de e-mail (SPEs, sequencial, N/D, assinatura), botão "cotação enviada" por fornecedor, chegada parcial, admin com tudo, **cadastros em MAIÚSCULAS** (+ backfill), cadastro inline de tipo (admin) e atividade (notinhas), editar tipo/local/fabricante, competência automática, filtro por valor, prazo hoje, cidade FOB clara, cabeçalho com papel, busca nos dropdowns.
+- **v1.8:** cancelar orçamento de fornecedor, WhatsApp/Texto sem CNPJs, filtro preservado ao abrir/voltar, **prazo de cotação vencido** (badge + filtro).
+- **v1.9:** **remover fornecedor da cotação** ("não tem o item") + devolver, **duplicar** solicitação, **reenviar cotação** (renova prazo), **último preço** ao lançar orçamento, **histórico de preços** por fornecedor, **cartões** no painel, painel **"O que precisa de mim hoje"**, **chegada atrasada** (badge/filtro), filtro de **atividade múltiplo** nas notinhas, filtros enxutos, home de cadastros repaginada.
+- **v1.10 (08/07/2026):** **tema escuro** em todo o sistema + nome trocado para **ALMOXARIFADO**; menu reestruturado em **Início / Operação / Relatórios e Impressões** (com sino de notificações); **Geração de Etiquetas** (Envio de Material com as 15 Deltas + Identificação de Item com moldura/faixa Serena), ambas em PDF A4 com 2/4/6/8 por folha; **Relatório de Recebimento** e **Relatório de Envio** de materiais em PDF (modelo "Relatório de Carga Almoxarifado Delta MA", não salva histórico); **backup .sql** para baixar; removido o botão extra de cancelar orçamento (ficou só "remover fornecedor sem o item").
+
+## 11. PENDENTES (não rodados)
+Nenhum pendente no momento. Últimos itens rodados (08/07/2026, v1.10): tema escuro + renome para ALMOXARIFADO (item 112), remoção do botão extra de cancelar orçamento (item 90-extra), backup .sql (item 108), Geração de Etiquetas (item 109), reestruturação do menu (item 110) e Relatório de Recebimento/Envio de Materiais (item 111). Detalhes completos no `Plano-Tecnico.md`.
+
+## 12. Descartados
+Importação de fornecedores por planilha (70), OCR de orçamento por imagem (85), Nº de OC sequencial (102), exportar Excel de solicitações/notinhas (103), relatório de gastos (104), anexar orçamento como comprovante (105).
+
+## 13. Próximo grande passo combinado
+O usuário está montando **em HTML** a base de um **módulo de Almoxarifado (estoque)** em outro chat. Quando tiver o HTML, o plano é **encaixar como módulo dentro deste mesmo app** (mesmo login, banco e layout) — recomendado em vez de app separado. Chave comum de ligação: o **Nº da solicitação**.
+
+## 14. Convenções / cuidados
+- Cadastros salvos sempre em **MAIÚSCULAS** (exceto e-mail/senha).
+- Nunca expor caminhos internos; instrução da organização: **não incluir PII de clientes**. Os CNPJs das SPEs são dados do **próprio comprador** (ok usar na cotação).
+- Senha do banco (Neon) é secreta — se vazar, resetar em Neon → Settings.
+- Testes rápidos: há scripts `test_v1x.py` de referência (rodados em sandbox com SQLite temporário e e-mails mockados).

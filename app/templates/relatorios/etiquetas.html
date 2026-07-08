@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Geração de etiquetas — Almoxarifado{% endblock %}
+{% block content %}
+<h4 class="mb-1">🏷️ Geração de etiquetas</h4>
+<p class="text-muted small">Monte a etiqueta e gere o PDF pronto para imprimir em folha A4. Visível só para Almoxarifado e Admin.</p>
+
+<ul class="nav nav-tabs mb-3" id="tabTipo" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-envio" type="button">Envio de material</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-id" type="button">Identificação de item</button></li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ===== ENVIO DE MATERIAL ===== -->
+  <div class="tab-pane fade show active" id="tab-envio">
+    <form method="post" action="{{ url_for('relatorios.etiquetas_envio_gerar') }}" target="_blank">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-lg-7">
+
+          <div class="card mb-3"><div class="card-body">
+            <h6>1. Remetente</h6>
+            <p class="text-muted small mb-2">Selecione a Delta que está enviando o material.</p>
+            <select name="delta_nome" class="form-select form-select-sm" required>
+              {% for d in deltas %}<option value="{{ d[0] }}">{{ d[0] }}</option>{% endfor %}
+            </select>
+            <div class="form-text">Endereço e CNPJ vão automaticamente no PDF.</div>
+            <div class="alert alert-secondary small mt-2 mb-0 py-2">
+              Contato do remetente é sempre fixo: <b>{{ remetente_fixo.nome }}</b> · {{ remetente_fixo.telefone }} · {{ remetente_fixo.email }}
+            </div>
+          </div></div>
+
+          <div class="card mb-3"><div class="card-body">
+            <h6>2. Destinatário</h6>
+            <p class="text-muted small mb-2">Escolha o fornecedor. Ajuste contato/telefone/e-mail se precisar — não altera o cadastro.</p>
+            <select id="selFornecedor" class="form-select form-select-sm mb-2" onchange="preencherFornecedor(this)">
+              <option value="">— selecionar fornecedor cadastrado (opcional) —</option>
+              {% for fo in fornecedores %}
+              <option value="{{ fo.id }}"
+                      data-nome="{{ fo.nome }}"
+                      data-contato="{{ fo.contato_nome or '' }}"
+                      data-telefone="{{ fo.telefone or '' }}"
+                      data-email="{{ fo.email or '' }}">{{ fo.nome }}</option>
+              {% endfor %}
+            </select>
+            <div class="row g-2">
+              <div class="col-12"><input name="dest_nome" id="dest_nome" class="form-control form-control-sm" placeholder="Nome / Razão social do destinatário *" required></div>
+              <div class="col-12"><input name="dest_endereco" id="dest_endereco" class="form-control form-control-sm" placeholder="Endereço completo"></div>
+              <div class="col-6"><input name="dest_cnpj" id="dest_cnpj" class="form-control form-control-sm" placeholder="CNPJ"></div>
+              <div class="col-6"><input name="dest_contato" id="dest_contato" class="form-control form-control-sm" placeholder="Contato"></div>
+              <div class="col-6"><input name="dest_telefone" id="dest_telefone" class="form-control form-control-sm" placeholder="Telefone"></div>
+              <div class="col-6"><input name="dest_email" id="dest_email" class="form-control form-control-sm" placeholder="E-mail"></div>
+            </div>
+          </div></div>
+
+          <div class="card mb-3"><div class="card-body">
+            <h6>3. Volumes</h6>
+            <p class="text-muted small mb-2">Uma etiqueta é gerada para cada volume, numerada automaticamente.</p>
+            <input type="number" name="volumes" min="1" value="1" class="form-control form-control-sm" style="max-width:120px">
+          </div></div>
+
+          <div class="card mb-3"><div class="card-body">
+            <h6>4. Etiquetas por folha A4</h6>
+            <div class="btn-group" role="group">
+              {% for n in [2,4,6,8] %}
+              <input type="radio" class="btn-check" name="por_folha" id="pf{{ n }}" value="{{ n }}" {% if n==4 %}checked{% endif %} autocomplete="off">
+              <label class="btn btn-outline-primary btn-sm" for="pf{{ n }}">{{ '%02d'|format(n) }} por folha</label>
+              {% endfor %}
+            </div>
+          </div></div>
+
+        </div>
+        <div class="col-lg-5">
+          <div class="card"><div class="card-body">
+            <h6>Resumo</h6>
+            <p class="text-muted small">O PDF abre em nova aba, pronto para imprimir. Nada é salvo no sistema.</p>
+            <button class="btn btn-primary w-100" type="submit">Gerar PDF para impressão</button>
+          </div></div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- ===== IDENTIFICAÇÃO DE ITEM ===== -->
+  <div class="tab-pane fade" id="tab-id">
+    <form method="post" action="{{ url_for('relatorios.etiquetas_identificacao_gerar') }}" target="_blank">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="card mb-3"><div class="card-body">
+            <h6>Texto da etiqueta</h6>
+            <p class="text-muted small mb-2">Campo livre — escreva o que precisar identificar (prateleira, caixa, item). A etiqueta sai com moldura e faixa nas cores da Serena.</p>
+            <textarea name="texto_livre" class="form-control form-control-sm" rows="3" placeholder="Ex.: CONECTOR PARAFUSO FENDIDO 95-185mm² — PRATELEIRA B3" required></textarea>
+          </div></div>
+          <div class="card mb-3"><div class="card-body">
+            <h6>Quantidade de etiquetas</h6>
+            <input type="number" name="quantidade" min="1" value="1" class="form-control form-control-sm" style="max-width:120px">
+          </div></div>
+          <div class="card mb-3"><div class="card-body">
+            <h6>Etiquetas por folha A4</h6>
+            <div class="btn-group" role="group">
+              {% for n in [2,4,6,8] %}
+              <input type="radio" class="btn-check" name="por_folha" id="pfi{{ n }}" value="{{ n }}" {% if n==4 %}checked{% endif %} autocomplete="off">
+              <label class="btn btn-outline-primary btn-sm" for="pfi{{ n }}">{{ '%02d'|format(n) }} por folha</label>
+              {% endfor %}
+            </div>
+          </div></div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card"><div class="card-body">
+            <h6>Resumo</h6>
+            <p class="text-muted small">O PDF abre em nova aba, pronto para imprimir. Nada é salvo no sistema.</p>
+            <button class="btn btn-primary w-100" type="submit">Gerar PDF para impressão</button>
+          </div></div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<script>
+function preencherFornecedor(sel){
+  var opt = sel.options[sel.selectedIndex];
+  if(!opt.value) return;
+  document.getElementById('dest_nome').value = opt.dataset.nome || '';
+  document.getElementById('dest_contato').value = opt.dataset.contato || '';
+  document.getElementById('dest_telefone').value = opt.dataset.telefone || '';
+  document.getElementById('dest_email').value = opt.dataset.email || '';
+}
+</script>
+{% endblock %}

@@ -94,6 +94,7 @@ def create_app():
     from .almox import almox_bp
     from .geral import geral_bp
     from .notinhas import notinhas_bp
+    from .relatorios import relatorios_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(sol_bp)
@@ -101,6 +102,7 @@ def create_app():
     app.register_blueprint(almox_bp)
     app.register_blueprint(geral_bp)
     app.register_blueprint(notinhas_bp)
+    app.register_blueprint(relatorios_bp)
 
     @app.route("/uploads/<path:nome>")
     def uploads(nome):

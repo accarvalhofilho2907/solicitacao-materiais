@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card mb-3" style="background:#F1EFE8;"><div class="card-body py-2">
+<div class="card mb-3"><div class="card-body py-2">
   <form method="get" action="{{ url_for('admin.dashboard') }}" class="d-flex flex-wrap align-items-center gap-3">
     <div class="d-flex flex-column">
       <span class="small text-muted">Notinhas — total no mês corrente</span>
@@ -16,11 +16,24 @@
     </div>
   </form>
 </div></div>
+<div class="row g-2 mb-3">
+  {% set cards = [
+    ('Aprovar', pendentes, 'warning', url_for('admin.dashboard', status='AGUARDANDO_APROVACAO')),
+    ('Enviar cotação', n_envio, 'secondary', url_for('admin.dashboard', status='AGUARDANDO_ENVIO_COTACAO')),
+    ('Cotação vencida', n_vencidos, 'danger', url_for('admin.dashboard', vencidos=1)),
+    ('Aguardando chegada', n_chegada, 'secondary', url_for('admin.dashboard', status='AGUARDANDO_CHEGADA')),
+    ('Chegada atrasada', n_atrasadas, 'danger', url_for('admin.dashboard', atrasadas=1)) ] %}
+  {% for titulo, n, cor, link in cards %}
+  <div class="col-6 col-md"><a href="{{ link }}" class="text-decoration-none">
+    <div class="card card-body py-2 text-center border-start border-4 border-{{ cor }}">
+      <div style="font-size:22px;font-weight:600;">{{ n }}</div><div class="small text-muted">{{ titulo }}</div>
+    </div></a></div>
+  {% endfor %}
+</div>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0">Solicitações</h4>
   <div>
-    {% if pendentes %}<a class="btn btn-sm btn-success" href="{{ url_for('admin.aprovacoes') }}">{{ pendentes }} aguardando aprovação</a>{% endif %}
-    {% if n_vencidos %}<a class="btn btn-sm btn-danger" href="{{ url_for('admin.dashboard', vencidos=1) }}">{{ n_vencidos }} com prazo de cotação vencido</a>{% endif %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.pendencias') }}">O que precisa de mim hoje</a>
     <a class="btn btn-sm btn-primary" href="{{ url_for('solicitante.nova') }}">+ Nova solicitação</a>
   </div>
 </div>
@@ -46,10 +59,10 @@
   <div class="col-md-2"><label class="form-label small mb-0">Tipo</label>
     <select name="tipo" class="form-select form-select-sm"><option value="">Todos</option>{% for t in tipos %}<option value="{{ t.id }}" {{ 'selected' if f_tipo==t.id|string }}>{{ t.nome }}</option>{% endfor %}</select></div>
   <div class="col-md-4"><label class="form-label small mb-0">Buscar material</label><input name="q" value="{{ f_busca }}" class="form-control form-control-sm"></div>
-  <div class="col-md-3"><label class="form-label small mb-0">De</label><input type="date" name="de" value="{{ f_de or '' }}" class="form-control form-control-sm"></div>
-  <div class="col-md-3"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
-  <div class="col-md-6 text-end"><button class="btn btn-sm btn-primary">Filtrar</button> <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.dashboard') }}?status=">Ver todos</a></div>
-</div><div class="form-text">Por padrão mostra tudo menos Concluído e Cancelada.</div></form>
+  <div class="col-6 col-md-2"><label class="form-label small mb-0">De</label><input type="date" name="de" value="{{ f_de or '' }}" class="form-control form-control-sm"></div>
+  <div class="col-6 col-md-2"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
+  <div class="col-md-3 text-end ms-auto"><button class="btn btn-sm btn-primary">Filtrar</button> <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.dashboard') }}?status=">Ver todos</a></div>
+</div></form>
 <form method="post" action="{{ url_for('solicitante.exportar') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="d-flex justify-content-end mb-2"><button class="btn btn-sm btn-outline-primary">Exportar selecionadas em PDF</button></div>
   <div class="card"><div class="table-responsive"><table class="table table-hover mb-0 align-middle">
@@ -57,7 +70,7 @@
     <tbody>{% for p in pedidos %}<tr>
       <td><input type="checkbox" class="cbItem" name="ids" value="{{ p.id }}" checked></td>
       <td>{{ p.id }}</td><td>{{ p.material }} <span class="text-muted small">(x{{ p.quantidade }})</span></td>
-      <td class="small">{{ p.solicitante.nome }}</td><td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span>{% if p.cotacao_vencida %} <span class="badge bg-danger">prazo vencido</span>{% endif %}</td>
+      <td class="small">{{ p.solicitante.nome }}</td><td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span>{% if p.cotacao_vencida %} <span class="badge bg-danger">prazo vencido</span>{% endif %}{% if p.chegada_atrasada %} <span class="badge bg-danger">chegada atrasada</span>{% endif %}</td>
       <td class="text-nowrap">{% if p.status == 'AGUARDANDO_APROVACAO' %}<span class="badge bg-warning text-dark">aprovar</span> {% endif %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.solicitacao', sid=p.id, voltar=request.query_string.decode()) }}">Abrir</a></td></tr>
     {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nada encontrado.</td></tr>{% endfor %}</tbody>
   </table></div></div>

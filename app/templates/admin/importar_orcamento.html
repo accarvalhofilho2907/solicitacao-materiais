@@ -18,9 +18,22 @@
     </div>
     <div class="mb-3">
       <label class="form-label">Arquivo PDF do orçamento</label>
-      <input type="file" name="pdf" accept="application/pdf" class="form-control" required>
+      <div id="dropZone" class="border rounded p-4 text-center" style="border-style:dashed!important;cursor:pointer;background:var(--input-bg);"
+           ondragover="event.preventDefault(); this.style.borderColor='var(--coral)';"
+           ondragleave="this.style.borderColor='';"
+           ondrop="event.preventDefault(); this.style.borderColor=''; document.getElementById('inputPdf').files = event.dataTransfer.files; atualizarNomeArquivo();"
+           onclick="document.getElementById('inputPdf').click();">
+        <div id="dropZoneTexto" class="text-muted small">📄 Arraste o PDF aqui, ou clique para escolher o arquivo</div>
+      </div>
+      <input type="file" name="pdf" id="inputPdf" accept="application/pdf" class="d-none" required onchange="atualizarNomeArquivo();">
     </div>
     <button class="btn btn-primary">Ler PDF</button>
   </form>
 </div></div>
+<script>
+function atualizarNomeArquivo(){
+  var arq = document.getElementById('inputPdf').files[0];
+  document.getElementById('dropZoneTexto').textContent = arq ? ('📄 ' + arq.name) : '📄 Arraste o PDF aqui, ou clique para escolher o arquivo';
+}
+</script>
 {% endblock %}

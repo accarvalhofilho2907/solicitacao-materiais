@@ -5,26 +5,32 @@
 <p class="text-muted small">Monte a etiqueta e gere o PDF pronto para imprimir em folha A4. Visível só para Almoxarifado e Admin.</p>
 
 <ul class="nav nav-tabs mb-3" id="tabTipo" role="tablist">
-  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-envio" type="button">Envio de material</button></li>
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-envio" type="button">Etiqueta de caixas/embalagens</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-id" type="button">Identificação de item</button></li>
 </ul>
 
 <div class="tab-content">
 
-  <!-- ===== ENVIO DE MATERIAL ===== -->
+  <!-- ===== ETIQUETA DE CAIXAS/EMBALAGENS (era "Envio de Material") ===== -->
   <div class="tab-pane fade show active" id="tab-envio">
-    <form method="post" action="{{ url_for('relatorios.etiquetas_envio_gerar') }}" target="_blank">
+    <form method="post" action="{{ url_for('relatorios.etiquetas_envio_gerar') }}" target="_blank" id="formEnvio">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row g-3">
         <div class="col-lg-7">
 
           <div class="card mb-3"><div class="card-body">
             <h6>1. Remetente</h6>
-            <p class="text-muted small mb-2">Selecione a Delta que está enviando o material.</p>
-            <select name="delta_nome" class="form-select form-select-sm" required>
+            <p class="text-muted small mb-2">Selecione a Delta que está enviando o material, ou "Outro" para digitar manualmente.</p>
+            <select name="delta_nome" id="selDelta" class="form-select form-select-sm mb-2" onchange="document.getElementById('boxOutroRemetente').style.display = this.value==='OUTRO' ? '' : 'none';">
               {% for d in deltas %}<option value="{{ d[0] }}">{{ d[0] }}</option>{% endfor %}
+              <option value="OUTRO">Outro (digitar manualmente)</option>
             </select>
-            <div class="form-text">Endereço e CNPJ vão automaticamente no PDF.</div>
+            <div id="boxOutroRemetente" style="display:none;" class="row g-2 mb-2">
+              <div class="col-12"><input name="outro_nome" class="form-control form-control-sm" placeholder="Nome do remetente"></div>
+              <div class="col-12"><input name="outro_endereco" class="form-control form-control-sm" placeholder="Endereço completo"></div>
+              <div class="col-12"><input name="outro_cnpj" class="form-control form-control-sm" placeholder="CNPJ (opcional)"></div>
+            </div>
+            <div class="form-text">Endereço e CNPJ vão automaticamente no PDF (Deltas) ou como digitado (Outro).</div>
             <div class="alert alert-secondary small mt-2 mb-0 py-2">
               Contato do remetente é sempre fixo: <b>{{ remetente_fixo.nome }}</b> · {{ remetente_fixo.telefone }} · {{ remetente_fixo.email }}
             </div>
@@ -60,12 +66,37 @@
           </div></div>
 
           <div class="card mb-3"><div class="card-body">
-            <h6>4. Etiquetas por folha A4</h6>
-            <div class="btn-group" role="group">
-              {% for n in [2,4,6,8] %}
-              <input type="radio" class="btn-check" name="por_folha" id="pf{{ n }}" value="{{ n }}" {% if n==4 %}checked{% endif %} autocomplete="off">
-              <label class="btn btn-outline-primary btn-sm" for="pf{{ n }}">{{ '%02d'|format(n) }} por folha</label>
+            <h6>4. Nota Fiscal (opcional)</h6>
+            <input name="nota_fiscal" class="form-control form-control-sm" style="max-width:220px" placeholder="Nº da NF">
+          </div></div>
+
+          <div class="card mb-3"><div class="card-body">
+            <h6>5. Natureza da carga (opcional)</h6>
+            <div class="d-flex flex-wrap gap-3">
+              {% for valor, label in selos %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="selos" value="{{ valor }}" id="selo{{ valor }}">
+                <label class="form-check-label small" for="selo{{ valor }}">{{ label }}</label>
+              </div>
               {% endfor %}
+            </div>
+          </div></div>
+
+          <div class="card mb-3"><div class="card-body">
+            <h6>6. Etiquetas por folha A4</h6>
+            <div class="row g-3 align-items-center">
+              <div class="col-auto">
+                <div class="btn-group" role="group">
+                  {% for n in [2,4,6,8] %}
+                  <input type="radio" class="btn-check" name="por_folha" id="pf{{ n }}" value="{{ n }}" {% if n==4 %}checked{% endif %} autocomplete="off" onchange="atualizarPreview({{ n }})">
+                  <label class="btn btn-outline-primary btn-sm" for="pf{{ n }}">{{ '%02d'|format(n) }} por folha</label>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="col-auto">
+                <div id="previewGrid" style="width:60px;height:85px;background:var(--bg-elevado);border:1px solid var(--linha);border-radius:2px;display:grid;gap:2px;padding:3px;"></div>
+              </div>
+              <div class="col-auto text-muted small" id="previewLabel">4 etiquetas iguais por folha</div>
             </div>
           </div></div>
 
@@ -74,7 +105,11 @@
           <div class="card"><div class="card-body">
             <h6>Resumo</h6>
             <p class="text-muted small">O PDF abre em nova aba, pronto para imprimir. Nada é salvo no sistema.</p>
-            <button class="btn btn-primary w-100" type="submit">Gerar PDF para impressão</button>
+            <button class="btn btn-primary w-100 mb-2" type="submit">Gerar PDF para impressão</button>
+            <button class="btn btn-outline-primary w-100" type="submit" formaction="{{ url_for('relatorios.etiquetas_envio_gerar_email') }}">
+              Gerar PDF para anexar ao e-mail
+            </button>
+            <div class="form-text mt-1">Baixa o PDF; depois é só anexar manualmente no seu e-mail (navegadores não permitem anexar automaticamente por link).</div>
           </div></div>
         </div>
       </div>
@@ -98,11 +133,19 @@
           </div></div>
           <div class="card mb-3"><div class="card-body">
             <h6>Etiquetas por folha A4</h6>
-            <div class="btn-group" role="group">
-              {% for n in [2,4,6,8] %}
-              <input type="radio" class="btn-check" name="por_folha" id="pfi{{ n }}" value="{{ n }}" {% if n==4 %}checked{% endif %} autocomplete="off">
-              <label class="btn btn-outline-primary btn-sm" for="pfi{{ n }}">{{ '%02d'|format(n) }} por folha</label>
-              {% endfor %}
+            <div class="row g-3 align-items-center">
+              <div class="col-auto">
+                <div class="btn-group" role="group">
+                  {% for n in [2,4,6,8] %}
+                  <input type="radio" class="btn-check" name="por_folha" id="pfi{{ n }}" value="{{ n }}" {% if n==4 %}checked{% endif %} autocomplete="off" onchange="atualizarPreview({{ n }}, 'previewGrid2', 'previewLabel2')">
+                  <label class="btn btn-outline-primary btn-sm" for="pfi{{ n }}">{{ '%02d'|format(n) }} por folha</label>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="col-auto">
+                <div id="previewGrid2" style="width:60px;height:85px;background:var(--bg-elevado);border:1px solid var(--linha);border-radius:2px;display:grid;gap:2px;padding:3px;"></div>
+              </div>
+              <div class="col-auto text-muted small" id="previewLabel2">4 etiquetas iguais por folha</div>
             </div>
           </div></div>
         </div>
@@ -128,5 +171,33 @@ function preencherFornecedor(sel){
   document.getElementById('dest_telefone').value = opt.dataset.telefone || '';
   document.getElementById('dest_email').value = opt.dataset.email || '';
 }
+
+var GRIDS = {2:[1,2], 4:[2,2], 6:[2,3], 8:[2,4]};
+function atualizarPreview(n, gridId, labelId){
+  gridId = gridId || 'previewGrid'; labelId = labelId || 'previewLabel';
+  var g = GRIDS[n];
+  var cols = g[0], rows = g[1];
+  var el = document.getElementById(gridId);
+  el.style.display = 'flex';
+  el.style.flexWrap = 'wrap';
+  el.style.alignContent = 'stretch';
+  el.innerHTML = '';
+  var cellWpct = (100 / cols);
+  var cellHpct = (100 / rows);
+  for (var i=0;i<n;i++){
+    var cell = document.createElement('div');
+    cell.style.width = 'calc(' + cellWpct + '% - 2px)';
+    cell.style.height = 'calc(' + cellHpct + '% - 2px)';
+    cell.style.margin = '1px';
+    cell.style.background = 'var(--coral)';
+    cell.style.opacity = '0.45';
+    cell.style.borderRadius = '1px';
+    cell.style.boxSizing = 'border-box';
+    el.appendChild(cell);
+  }
+  document.getElementById(labelId).textContent = n + ' etiquetas iguais por folha';
+}
+atualizarPreview(4);
+atualizarPreview(4, 'previewGrid2', 'previewLabel2');
 </script>
 {% endblock %}

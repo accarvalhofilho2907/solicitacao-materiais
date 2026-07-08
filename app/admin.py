@@ -114,11 +114,13 @@ def _tabela_texto(cabecalhos, linhas, larguras):
     return "\n".join([fmt(cabecalhos), sep] + [fmt(l) for l in linhas])
 
 
-def _corpo_cotacao(fornecedor, itens, incluir_spe=True):
-    """Corpo padrão do e-mail/WhatsApp/texto de cotação (itens 73/75/77/91).
+def _corpo_cotacao(fornecedor, itens, incluir_spe=True, spe_escolhida=None):
+    """Corpo padrão do e-mail/WhatsApp/texto de cotação (itens 73/75/77/91/117/120).
 
     incluir_spe=True  -> e-mail (com o quadro 'Dados para Cotação' / SPEs)
     incluir_spe=False -> WhatsApp / Texto pronto (sem o quadro de CNPJs).
+    spe_escolhida=nome da Delta selecionada no pop-up (item 120); se informado,
+    mostra só essa SPE na tabela em vez das 15.
     """
     _, prazo = _prazo_cotacao()
     contato = (fornecedor.contato_nome or "").strip()
@@ -130,11 +132,15 @@ def _corpo_cotacao(fornecedor, itens, incluir_spe=True):
          "iii. Material com finalidade de Uso e Consumo", ""]
     if incluir_spe:
         L.append("Dados para Cotação:")
-        spe_linhas = [(spe, cnpj, ie, end) for (spe, end, cnpj, ie) in SPES_COTACAO]
+        fonte_spes = SPES_COTACAO
+        if spe_escolhida:
+            fonte_spes = [d for d in SPES_COTACAO if d[0] == spe_escolhida] or SPES_COTACAO
+        spe_linhas = [(spe, cnpj, ie, end) for (spe, end, cnpj, ie) in fonte_spes]
         L.append(_tabela_texto(["SPE", "CNPJ", "I.E.", "Endereço"], spe_linhas, [26, 20, 13, 60]))
         L.append("")
     L += ["Produtos:"]
-    prod = [[f"#{s.id}#", (s.material or ""), (s.fabricante or "N/D"), s.quantidade, _link_curto(s) or "-"]
+    prod = [[f"#{s.id}#", (s.material or "") + (f" ({s.unidade_medida})" if s.unidade_medida else ""),
+             (s.fabricante or "N/D"), s.quantidade, _link_curto(s) or "-"]
             for s in itens]
     L.append(_tabela_texto(["Nº", "Produto", "Fabricante/Marca", "Qtd", "Link"], prod, [7, 30, 20, 5, 40]))
     L += ["", f"Prazo para retorno: 5 dias úteis (Até {prazo}).", "",
@@ -146,11 +152,11 @@ def _wa_link(f, texto):
     return f"https://wa.me/{f.telefone_e164}?text={quote(texto)}" if f.telefone_e164 else None
 
 
-def _mailto(fornecedor, itens, seq):
+def _mailto(fornecedor, itens, seq, spe_escolhida=None):
     if not fornecedor.email:
         return None
     assunto = _assunto_cotacao(fornecedor, seq)
-    corpo = _corpo_cotacao(fornecedor, itens)
+    corpo = _corpo_cotacao(fornecedor, itens, spe_escolhida=spe_escolhida)
     return f"mailto:{fornecedor.email}?subject={quote(assunto)}&body={quote(corpo)}"
 
 
@@ -359,12 +365,30 @@ def enviar_pedido(sid):
     return redirect(url_for("admin.solicitacao", sid=s.id))
 
 
-def _agrupar(status):
-    itens = (Solicitacao.query.filter_by(status=status).filter(Solicitacao.tipo_material_id.isnot(None))
-             .order_by(Solicitacao.id).all())
+def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
+    """Agrupa solicitações por fornecedor para a tela de Enviar Cotação.
+    expandir=True -> considera qualquer status (exceto Concluído/Cancelada), não só o status pedido (item 122).
+    busca -> filtra por nome de empresa(fornecedor)/tipo de material/produto (item 122).
+    excluir_fornecedores -> ids de fornecedor para pular nesta tela (item 123, sessão/temporário)."""
+    query = Solicitacao.query.filter(Solicitacao.tipo_material_id.isnot(None))
+    if expandir:
+        query = query.filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
+    else:
+        query = query.filter_by(status=status)
+    itens = query.order_by(Solicitacao.id).all()
+
+    if busca:
+        b = busca.strip().lower()
+        def _bate(s):
+            campos = [s.material or "", s.tipo.nome if s.tipo else "",
+                     " ".join(f.nome for f in s.tipo.fornecedores) if s.tipo else ""]
+            return any(b in c.lower() for c in campos)
+        itens = [s for s in itens if _bate(s)]
+
+    excluir_fornecedores = excluir_fornecedores or set()
     grupos = {}
     for s in itens:
-        excluidos = {f.id for f in s.fornecedores_excluidos}
+        excluidos = {f.id for f in s.fornecedores_excluidos} | excluir_fornecedores
         for f in s.tipo.fornecedores:
             if f.ativo and f.id not in excluidos:
                 grupos.setdefault(f.id, {"fornecedor": f, "itens": []})["itens"].append(s)
@@ -374,7 +398,12 @@ def _agrupar(status):
 @admin_bp.route("/enviar-lote")
 @admin_required
 def enviar_lote():
-    itens, grupos = _agrupar("AGUARDANDO_ENVIO_COTACAO")
+    expandir = request.args.get("expandir") == "1"
+    busca = request.args.get("q", "").strip()
+    excl_raw = request.args.get("excluir_fornecedores", "")
+    excluir_fornecedores = {int(x) for x in excl_raw.split(",") if x.isdigit()}
+    itens, grupos = _agrupar("AGUARDANDO_ENVIO_COTACAO", expandir=expandir, busca=busca or None,
+                             excluir_fornecedores=excluir_fornecedores)
     base = _proximo_num_cotacao()
     lista = []
     for i, g in enumerate(grupos.values()):
@@ -382,8 +411,39 @@ def enviar_lote():
         seq = _seq_str(base + i)
         texto = _corpo_cotacao(f, g["itens"], incluir_spe=False)   # WhatsApp/Texto sem o quadro de CNPJs (item 91)
         lista.append({"fornecedor": f, "itens": g["itens"], "seq": seq, "wa": _wa_link(f, texto),
-                      "mail": _mailto(f, g["itens"], seq), "assunto": _assunto_cotacao(f, seq), "texto": texto})
-    return render_template("admin/enviar_lote.html", itens=itens, grupos=lista)
+                      "assunto": _assunto_cotacao(f, seq), "texto": texto})
+    return render_template("admin/enviar_lote.html", itens=itens, grupos=lista, expandir=expandir,
+                           busca=busca, spes=SPES_COTACAO, excluir_fornecedores=excl_raw,
+                           todos_fornecedores=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all())
+
+
+@admin_bp.route("/enviar-lote/email", methods=["POST"])
+@admin_required
+def enviar_lote_email():
+    """Envia cotação por e-mail para 1 fornecedor específico, já com a SPE escolhida no pop-up (item 120)."""
+    fid = int(request.form.get("fornecedor_id"))
+    spe = request.form.get("spe_nome") or None
+    ids = request.form.getlist("ids")
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    itens = [db.session.get(Solicitacao, int(i)) for i in ids]
+    itens = [s for s in itens if s]
+    if not itens or not (f.usa_email and f.email):
+        flash("Fornecedor sem e-mail ou nenhum item selecionado.", "warning")
+        return redirect(url_for("admin.enviar_lote"))
+    seq = _seq_str(_proximo_num_cotacao())
+    corpo = _corpo_cotacao(f, itens, spe_escolhida=spe)
+    enviar_email(f.email, _assunto_cotacao(f, seq), corpo)
+    prazo_d, _ = _prazo_cotacao()
+    for s in itens:
+        db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
+                                    destinatarios=f.email, cotacao_seq=seq))
+        s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+        s.prazo_cotacao = prazo_d
+        spe_txt = f" (SPE: {spe})" if spe else ""
+        _log(s, f"Cotação {seq} enviada por e-mail para {f.nome}{spe_txt}")
+    db.session.commit()
+    flash(f"Cotação {seq} enviada por e-mail para {f.nome} ({len(itens)} item(ns)).", "success")
+    return redirect(url_for("admin.enviar_lote"))
 
 
 @admin_bp.route("/enviar-lote/confirmar", methods=["POST"])
@@ -651,7 +711,10 @@ def editar_campos(sid):
 @admin_bp.route("/cotacao/marcar-enviada/<int:fid>", methods=["POST"])
 @admin_required
 def marcar_cotacao_enviada(fid):
-    """Marca a cotação como enviada para um fornecedor e avança o status (item 72)."""
+    """Marca a cotação como enviada para um fornecedor (item 72), com o novo fluxo
+    de pop-up (item 119): 'finalizar=1' muda o status; 'finalizar=0' só grava no
+    histórico da solicitação e mantém a tela aberta para continuar marcando outros
+    fornecedores antes de fechar o processo."""
     f = db.session.get(Fornecedor, fid) or abort(404)
     base = (Solicitacao.query.filter_by(status="AGUARDANDO_ENVIO_COTACAO")
             .filter(Solicitacao.tipo_material_id.isnot(None)).all())
@@ -663,16 +726,24 @@ def marcar_cotacao_enviada(fid):
     if not itens:
         flash("Nenhuma solicitação pendente de cotação para este fornecedor.", "warning")
         return redirect(request.referrer or url_for("admin.enviar_lote"))
+
+    finalizar = request.form.get("finalizar") == "1"
     seq = _seq_str(_proximo_num_cotacao())
     prazo_d, _ = _prazo_cotacao()
     for s in itens:
         db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
                                     destinatarios=(f.email or f.nome), cotacao_seq=seq))
-        s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
-        s.prazo_cotacao = prazo_d
-        _log(s, f"Cotação {seq} marcada como enviada para {f.nome}")
+        if finalizar:
+            s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
+            s.prazo_cotacao = prazo_d
+            _log(s, f"Cotação {seq} marcada como enviada para {f.nome} (processo finalizado)")
+        else:
+            _log(s, f"Cotação {seq} marcada como enviada para {f.nome} (aguardando enviar a mais fornecedores)")
     db.session.commit()
-    flash(f"Cotação {seq} marcada como enviada para {f.nome} ({len(itens)} item(ns)).", "success")
+    if finalizar:
+        flash(f"Cotação {seq} enviada para {f.nome} e status atualizado ({len(itens)} item(ns)).", "success")
+    else:
+        flash(f"Registrado no histórico: cotação {seq} enviada para {f.nome}. Continue marcando outros fornecedores.", "success")
     return redirect(request.referrer or url_for("admin.enviar_lote"))
 
 
@@ -841,15 +912,29 @@ def _cad_simples(model, template, label, extra=None):
 @admin_bp.route("/tipos", methods=["GET", "POST"])
 @admin_required
 def tipos():
-    return _cad_simples(TipoMaterial, "admin/tipos.html", "Tipo")
+    if request.method == "POST":
+        nome = _mai(request.form.get("nome"))
+        if nome and not TipoMaterial.query.filter_by(nome=nome).first():
+            db.session.add(TipoMaterial(nome=nome, ativo=True))
+            db.session.commit()
+            flash("Tipo cadastrado.", "success")
+        return redirect(url_for("admin.tipos"))
+    return render_template("admin/tipos.html", lista=TipoMaterial.query.order_by(TipoMaterial.nome).all(),
+                           fornecedores=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all())
 
 
 @admin_bp.route("/tipos/<int:tid>", methods=["POST"])
 @admin_required
 def tipo_editar(tid):
     t = db.session.get(TipoMaterial, tid) or abort(404)
-    t.nome = _mai(request.form.get("nome")) or t.nome
-    t.ativo = request.form.get("ativo") == "1"
+    ids_fornecedores = {int(x) for x in request.form.getlist("fornecedores")}
+    novo_nome = _mai(request.form.get("nome")) or t.nome
+    novo_ativo = request.form.get("ativo") == "1"
+    with db.session.no_autoflush:
+        novos_fornecedores = Fornecedor.query.filter(Fornecedor.id.in_(ids_fornecedores)).all() if ids_fornecedores else []
+        t.fornecedores = novos_fornecedores
+    t.nome = novo_nome
+    t.ativo = novo_ativo
     db.session.commit()
     flash("Tipo atualizado.", "success")
     return redirect(url_for("admin.tipos"))
@@ -954,6 +1039,41 @@ def fornecedor_editar(fid):
         flash("Fornecedor atualizado.", "success")
         return redirect(url_for("admin.fornecedores"))
     return render_template("admin/fornecedor_editar.html", f=f, tipos=tipos, tipos_ids={t.id for t in f.tipos})
+
+
+@admin_bp.route("/fornecedores/<int:fid>/toggle-ativo", methods=["POST"])
+@admin_required
+def fornecedor_toggle_ativo(fid):
+    """Ativar/desativar fornecedor com 1 clique na listagem (item 124)."""
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    f.ativo = not f.ativo
+    db.session.commit()
+    flash(f"{f.nome} {'ativado' if f.ativo else 'desativado'}.", "success")
+    return redirect(url_for("admin.fornecedores"))
+
+
+@admin_bp.route("/coletas-proprias")
+@admin_required
+def coletas_proprias():
+    """Lista solicitações com frete FOB/retirada por colaborador, agrupadas por
+    cidade, com texto pronto para colar no grupo do motorista (item 125)."""
+    itens = (Solicitacao.query
+             .filter_by(frete_tipo="FOB", frete_modalidade="COLABORADOR")
+             .filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
+             .order_by(Solicitacao.cidade_retirada_id, Solicitacao.id).all())
+    grupos = {}
+    for s in itens:
+        cidade = s.cidade_retirada.rotulo if s.cidade_retirada else "Sem cidade definida"
+        grupos.setdefault(cidade, []).append(s)
+
+    textos = {}
+    for cidade, lista in grupos.items():
+        linhas = [f"🚚 Coleta em {cidade}", ""]
+        for s in lista:
+            forn = s.fornecedor_definido.nome if s.fornecedor_definido else "-"
+            linhas.append(f"#{s.id} — {s.material} (x{s.quantidade}) — Fornecedor: {forn}")
+        textos[cidade] = "\n".join(linhas)
+    return render_template("admin/coletas_proprias.html", grupos=grupos, textos=textos)
 
 
 @admin_bp.route("/sugestoes")

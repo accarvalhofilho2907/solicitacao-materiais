@@ -55,6 +55,18 @@ def trocar_senha():
     return render_template("trocar_senha.html")
 
 
+@auth_bp.route("/trocar-tema", methods=["POST"])
+@login_required
+def trocar_tema():
+    novo = request.form.get("tema")
+    if novo not in ("claro", "escuro"):
+        novo = "escuro" if current_user.tema_preferido == "claro" else "claro"
+    current_user.tema_preferido = novo
+    db.session.commit()
+    destino = request.form.get("voltar") or request.referrer or url_for("auth.index")
+    return redirect(destino)
+
+
 @auth_bp.route("/logout")
 @login_required
 def logout():

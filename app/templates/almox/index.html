@@ -12,18 +12,29 @@
       <td>{{ p.id }}</td><td>{{ p.material }}</td><td>{{ p.quantidade }}</td>
       <td class="small">{{ ja }} de {{ p.quantidade }}{% if ja > 0 and ja < p.quantidade %} <span class="badge bg-warning text-dark">parcial</span>{% endif %}</td>
       <td class="small">{{ p.prazo_recebimento.strftime('%d/%m/%Y') if p.prazo_recebimento else '-' }}</td>
-      <td><form method="post" action="{{ url_for('almox.marcar_chegada', sid=p.id) }}" class="input-group input-group-sm" style="max-width:230px">
+      <td><form method="post" action="{{ url_for('almox.marcar_chegada', sid=p.id) }}" class="d-flex gap-1 flex-wrap align-items-center" style="max-width:360px">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <span class="input-group-text">Qtd</span>
-        <input type="number" name="qtd_recebida" min="1" max="{{ restante }}" value="{{ restante }}" class="form-control" title="Quantas chegaram">
-        <button class="btn btn-success">Confirmar</button></form>
-        <div class="form-text">Faltam {{ restante }}. Informe quantas chegaram (parcial é aceito).</div></td></tr>
+        <div class="input-group input-group-sm" style="max-width:110px">
+          <span class="input-group-text">Qtd</span>
+          <input type="number" name="qtd_recebida" min="1" max="{{ restante }}" value="{{ restante }}" class="form-control" title="Quantas chegaram">
+        </div>
+        <input type="date" name="data_chegada" class="form-control form-control-sm" style="max-width:145px" title="Data da chegada (padrão: hoje)">
+        <button class="btn btn-sm btn-success">Confirmar</button></form>
+        <div class="form-text">Faltam {{ restante }}. Informe quantas chegaram (parcial é aceito) e, se precisar, a data real da chegada.</div></td></tr>
     {% else %}<tr><td colspan="6" class="text-center text-muted py-4">Nada aguardando chegada.</td></tr>{% endfor %}
   </tbody>
 </table>
 </div></div>
 {% if recentes %}
 <h6 class="text-muted">Recebidos recentemente</h6>
-<ul class="small text-muted">{% for p in recentes %}<li>Nº {{ p.id }} — {{ p.material }} ({{ p.chegada_em.strftime('%d/%m/%Y') if p.chegada_em else '' }})</li>{% endfor %}</ul>
+<ul class="small text-muted">{% for p in recentes %}<li class="d-flex align-items-center gap-2 mb-1">
+  <span>Nº {{ p.id }} — {{ p.material }} ({{ p.chegada_em.strftime('%d/%m/%Y') if p.chegada_em else '' }})</span>
+  <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-bs-toggle="collapse" data-bs-target="#editaData{{ p.id }}">Corrigir data</button>
+  <form method="post" action="{{ url_for('almox.editar_data_chegada', sid=p.id) }}" class="collapse d-flex gap-1" id="editaData{{ p.id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="date" name="nova_data" class="form-control form-control-sm" style="max-width:150px">
+    <button class="btn btn-sm btn-outline-primary py-0">Salvar</button>
+  </form>
+</li>{% endfor %}</ul>
 {% endif %}
 {% endblock %}

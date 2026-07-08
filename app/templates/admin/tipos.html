@@ -18,12 +18,25 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-md-7"><input name="nome" class="form-control form-control-sm" value="{{ t.nome }}"></div>
           <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if t.ativo }}><label class="form-check-label small">Ativo</label></div></div>
-          <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
+          <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div>
+          <div class="col-12">
+            <label class="form-label small mb-1">Fornecedores que atendem este tipo</label>
+            <input class="form-control form-control-sm mb-1" placeholder="Buscar fornecedor..." onkeyup="filtrarChk(this.value,'boxForn{{ t.id }}')">
+            <div class="border rounded p-2" id="boxForn{{ t.id }}" style="max-height:160px;overflow:auto">
+              {% set ids_vinculados = t.fornecedores|map(attribute='id')|list %}
+              {% for f in fornecedores %}<div class="form-check chk" data-nome="{{ f.nome|lower }}">
+                <input class="form-check-input" type="checkbox" name="fornecedores" value="{{ f.id }}" id="tf{{ t.id }}_{{ f.id }}" {{ 'checked' if f.id in ids_vinculados }}>
+                <label class="form-check-label small" for="tf{{ t.id }}_{{ f.id }}">{{ f.nome }}</label>
+              </div>{% else %}<span class="text-muted small">Cadastre fornecedores primeiro.</span>{% endfor %}
+            </div>
+          </div>
+        </form></td></tr>
       {% endfor %}</tbody>
     </table></div>
   </div></div></div>
 </div>
 <script>
 function filtrarTipos(q){ q=q.toLowerCase(); document.querySelectorAll('#tabTipos tr.lt').forEach(function(r){ r.style.display = r.dataset.nome.indexOf(q)>=0?'':'none'; }); }
+function filtrarChk(q, boxId){ q=q.toLowerCase(); document.querySelectorAll('#'+boxId+' .chk').forEach(function(d){ d.style.display = d.dataset.nome.indexOf(q)>=0?'':'none'; }); }
 </script>
 {% endblock %}

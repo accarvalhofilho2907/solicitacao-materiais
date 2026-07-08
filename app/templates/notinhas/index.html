@@ -1,28 +1,43 @@
 {% extends "base.html" %}
 {% block content %}
-<h4 class="mb-3">Notinhas</h4>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Notinhas</h4>
+  <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalNovaNotinha">+ Adicionar nova notinha</button>
+</div>
 
-<div class="card mb-3"><div class="card-body">
-  <h6 class="mb-2">Nova notinha</h6>
-  <form method="post" action="{{ url_for('notinhas.nova') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-2"><label class="form-label small mb-0">Data *</label><input type="date" name="data" value="{{ hoje }}" class="form-control form-control-sm" required></div>
-      <div class="col-md-3"><label class="form-label small mb-0">Fornecedor *</label>
-        <select name="fornecedor_id" class="form-select form-select-sm" required><option value="">— selecione —</option>{% for f in fornecedores %}<option value="{{ f.id }}">{{ f.nome }}</option>{% endfor %}</select></div>
-      <div class="col-md-4"><label class="form-label small mb-0">Atividade *</label>
-        <div class="input-group input-group-sm">
-          <select name="atividade_id" id="selAtivNova" class="form-select selAtividade" required><option value="">— selecione —</option>{% for a in atividades %}<option value="{{ a.id }}">{{ a.nome }}</option>{% endfor %}</select>
-          <button type="button" class="btn btn-outline-secondary" title="Cadastrar nova atividade" onclick="addAtividade('selAtivNova')">+</button>
-        </div></div>
-      <div class="col-md-3"><label class="form-label small mb-0">Valor (R$) *</label><input name="valor" class="form-control form-control-sm valorBR" placeholder="0,00" inputmode="decimal" required></div>
+<!-- Pop-up: Adicionar nova notinha (item 132) -->
+<div class="modal fade" id="modalNovaNotinha" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('notinhas.nova') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header"><h5 class="modal-title">Adicionar nova notinha</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="row g-2">
+            <div class="col-md-6"><label class="form-label small mb-0">Data *</label><input type="date" name="data" value="{{ hoje }}" class="form-control form-control-sm" required></div>
+            <div class="col-md-6"><label class="form-label small mb-0">Valor (R$) *</label><input name="valor" class="form-control form-control-sm valorBR" placeholder="0,00" inputmode="decimal" required></div>
+            <div class="col-12"><label class="form-label small mb-0">Fornecedor *</label>
+              <select name="fornecedor_id" class="form-select form-select-sm" required><option value="">— selecione —</option>{% for f in fornecedores %}<option value="{{ f.id }}">{{ f.nome }}</option>{% endfor %}</select></div>
+            <div class="col-12"><label class="form-label small mb-0">Atividade *</label>
+              <div class="input-group input-group-sm">
+                <select name="atividade_id" id="selAtivNova" class="form-select selAtividade" required><option value="">— selecione —</option>{% for a in atividades %}<option value="{{ a.id }}">{{ a.nome }}</option>{% endfor %}</select>
+                <button type="button" class="btn btn-outline-secondary" title="Cadastrar nova atividade" onclick="addAtividade('selAtivNova')">+</button>
+              </div></div>
+          </div>
+          <span class="form-text">Use só números e vírgula (ex.: 1234,50). A competência é definida automaticamente pela data.</span>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-primary">Adicionar</button>
+        </div>
+      </form>
     </div>
-    <button class="btn btn-primary btn-sm mt-2">Adicionar</button>
-    <span class="form-text">Use só números e vírgula (ex.: 1234,50). A competência é definida automaticamente pela data.</span>
-  </form>
-</div></div>
+  </div>
+</div>
 
 <form class="card card-body mb-3" method="get"><div class="row g-2 align-items-end">
+  <div class="col-12 mb-1"><span class="fw-bold small">Filtros</span></div>
   <div class="col-md-2"><label class="form-label small mb-0">De</label><input type="date" name="de" value="{{ f_de or '' }}" class="form-control form-control-sm"></div>
   <div class="col-md-2"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
   <div class="col-md-3"><label class="form-label small mb-0">Fornecedor</label><select name="fornecedor" class="form-select form-select-sm"><option value="">Todos</option>{% for f in fornecedores %}<option value="{{ f.id }}" {{ 'selected' if f_forn==f.id|string }}>{{ f.nome }}</option>{% endfor %}</select></div>

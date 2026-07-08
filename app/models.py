@@ -15,6 +15,9 @@ STATUS_LABEL = {
 # Padrão do painel: tudo menos finalizados
 STATUS_PADRAO = [s for s in STATUS if s not in ("CONCLUIDO", "CANCELADA")]
 
+# Unidades de medida (item 117) — lista fixa, sem necessidade de cadastro.
+UNIDADES_MEDIDA = ["UN", "KG", "G", "L", "ML", "M", "M²", "M³", "CX", "PAR", "ROLO", "PCT", "SC", "CJ"]
+
 fornecedor_tipo = db.Table("fornecedor_tipo",
     db.Column("fornecedor_id", db.ForeignKey("fornecedores.id"), primary_key=True),
     db.Column("tipo_material_id", db.ForeignKey("tipos_material.id"), primary_key=True))
@@ -42,6 +45,7 @@ class Usuario(UserMixin, db.Model):
     empresa_id = db.Column(db.ForeignKey("empresas.id"))
     senha_temporaria = db.Column(db.Boolean, default=False)
     ativo = db.Column(db.Boolean, default=True)
+    tema_preferido = db.Column(db.String(10), default="escuro")   # 'claro' | 'escuro' — item 113
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     empresa = db.relationship("Empresa")
@@ -118,6 +122,7 @@ class Solicitacao(db.Model):
     tipo_material_id = db.Column(db.ForeignKey("tipos_material.id"))
     material = db.Column(db.String(200), nullable=False)
     quantidade = db.Column(db.Integer, nullable=False, default=1)
+    unidade_medida = db.Column(db.String(10))   # item 117 — lista fixa em UNIDADES_MEDIDA
     fabricante = db.Column(db.String(120))
     link_similar = db.Column(db.Text)
     local_servico = db.Column(db.String(200))   # local de uso / frente de serviço

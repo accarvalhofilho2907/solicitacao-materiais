@@ -1,15 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Relatório de {{ 'recebimento' if modo=='recebimento' else 'envio' }} — Almoxarifado{% endblock %}
+{% block title %}Relatório de Carga — Almoxarifado{% endblock %}
 {% block content %}
-{% set titulo = 'Relatório de Recebimento' if modo=='recebimento' else 'Relatório de Envio' %}
-{% set status_label = 'Recebido' if modo=='recebimento' else 'Enviado' %}
-<h4 class="mb-1">📑 {{ titulo }} de Materiais</h4>
+<h4 class="mb-1">📑 Relatório de Recebimento / Envio de Materiais</h4>
 <p class="text-muted small">
   Preencha os dados abaixo para gerar o PDF (modelo "Relatório de Carga Almoxarifado Delta MA").
   Visível só para Almoxarifado e Admin. <b>Este relatório não é salvo no sistema</b> — só gera o documento.
+  Escolha em <b>Status</b> se é um Recebimento ou um Envio.
 </p>
 
-<form method="post" action="{{ url_for('relatorios.carga_gerar', modo=modo) }}" target="_blank">
+<form method="post" action="{{ url_for('relatorios.carga_gerar') }}" target="_blank">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="card mb-3"><div class="card-body">
@@ -18,14 +17,19 @@
       <div class="col-md-3"><label class="form-label small mb-0">Data</label>
         <input type="date" name="data" class="form-control form-control-sm" value="{{ hoje }}"></div>
       <div class="col-md-5"><label class="form-label small mb-0">Responsável</label>
-        <input name="responsavel" class="form-control form-control-sm" value="{{ nome_usuario }}"></div>
+        <select name="responsavel_id" class="form-select form-select-sm">
+          {% for u in usuarios %}<option value="{{ u.id }}" {{ 'selected' if u.id==usuario_atual_id }}>{{ u.nome }}</option>{% endfor %}
+        </select></div>
       <div class="col-md-4"><label class="form-label small mb-0">Status</label>
-        <input class="form-control form-control-sm" value="{{ status_label }}" disabled></div>
+        <select name="status" class="form-select form-select-sm">
+          <option value="Recebido">Recebimento</option>
+          <option value="Enviado">Envio</option>
+        </select></div>
     </div>
   </div></div>
 
   <div class="card mb-3"><div class="card-body">
-    <h6>{{ 'Fornecedor (quem enviou a carga)' if modo=='recebimento' else 'Destinatário (para quem estamos enviando)' }}</h6>
+    <h6>Fornecedor / Destinatário</h6>
     <div class="row g-2">
       <div class="col-12"><label class="form-label small mb-0">Razão Social</label>
         <input name="razao_social" class="form-control form-control-sm" required></div>
@@ -42,11 +46,16 @@
     <h6>Dados da carga</h6>
     <div class="row g-2">
       <div class="col-md-4"><label class="form-label small mb-0">Nota Fiscal</label>
-        <input name="nota_fiscal" class="form-control form-control-sm"></div>
+        <input name="nota_fiscal" class="form-control form-control-sm" id="campoNF" onkeyup="mostrarFoto('campoNF','fotoNF')"></div>
       <div class="col-md-4"><label class="form-label small mb-0">Série</label>
         <input name="serie" class="form-control form-control-sm"></div>
       <div class="col-md-4"><label class="form-label small mb-0">OC (se informado)</label>
         <input name="oc" class="form-control form-control-sm"></div>
+
+      <div class="col-12" id="fotoNF" style="display:none;">
+        <label class="form-label small mb-0">Foto da Nota Fiscal</label>
+        <input type="file" accept="image/*" class="form-control form-control-sm" onchange="adicionarFotos(this)">
+      </div>
 
       <div class="col-md-6"><label class="form-label small mb-0">Valor da NF (R$)</label>
         <input name="valor_nf" class="form-control form-control-sm" placeholder="0,00"></div>
@@ -54,17 +63,79 @@
         <input name="natureza_operacao" class="form-control form-control-sm" placeholder="Ex.: VENDA DE MERCADORIA"></div>
 
       <div class="col-md-6"><label class="form-label small mb-0">CT-e</label>
-        <input name="cte" class="form-control form-control-sm"></div>
+        <input name="cte" class="form-control form-control-sm" id="campoCTe" onkeyup="mostrarFoto('campoCTe','fotoCTe')"></div>
       <div class="col-md-6"><label class="form-label small mb-0">Valor CT-e (R$)</label>
         <input name="valor_cte" class="form-control form-control-sm" placeholder="0,00"></div>
+
+      <div class="col-12" id="fotoCTe" style="display:none;">
+        <label class="form-label small mb-0">Foto do CT-e</label>
+        <input type="file" accept="image/*" class="form-control form-control-sm" onchange="adicionarFotos(this)">
+      </div>
     </div>
   </div></div>
 
   <div class="card mb-3"><div class="card-body">
-    <h6>Observações</h6>
+    <h6>Fotos da carga</h6>
+    <p class="text-muted small mb-2">Anexe uma a uma ou várias de uma vez direto da galeria. Marque "Avariado?" se a foto mostrar algum problema — isso não aparece na foto do relatório, mas gera um aviso no cabeçalho do PDF e exige uma observação explicando a avaria.</p>
+    <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" onchange="adicionarFotos(this)">
+    <div id="listaFotosCarga" class="row g-2"></div>
+  </div></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <h6>Observações gerais</h6>
     <textarea name="observacoes" class="form-control form-control-sm" rows="3" placeholder="S/ observações"></textarea>
   </div></div>
 
-  <button class="btn btn-primary" type="submit">Gerar PDF</button>
+  <button class="btn btn-primary" type="submit" onclick="return validarAvarias()">Gerar PDF</button>
 </form>
+
+<script>
+function mostrarFoto(campoId, boxId){
+  var v = document.getElementById(campoId).value.trim();
+  document.getElementById(boxId).style.display = v ? '' : 'none';
+}
+
+var _fotoContador = 0;
+function adicionarFotos(input){
+  var lista = document.getElementById('listaFotosCarga');
+  Array.from(input.files).forEach(function(file){
+    _fotoContador++;
+    var id = 'foto_' + _fotoContador;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var col = document.createElement('div');
+      col.className = 'col-md-3';
+      col.id = id;
+      col.innerHTML =
+        '<div class="border rounded p-2">' +
+          '<img src="' + e.target.result + '" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
+          '<div class="form-check">' +
+            '<input class="form-check-input chkAvaria" type="checkbox" name="foto_avariada" value="' + id + '" id="chk_' + id + '" onchange="toggleObsAvaria(this, \'' + id + '\')">' +
+            '<label class="form-check-label small text-danger" for="chk_' + id + '">Avariado?</label>' +
+          '</div>' +
+          '<textarea class="form-control form-control-sm mt-1 d-none obsAvaria" name="obs_avaria" id="obs_' + id + '" placeholder="Descreva a avaria (obrigatório)"></textarea>' +
+          '<button type="button" class="btn btn-sm btn-outline-danger w-100 mt-1" onclick="document.getElementById(\'' + id + '\').remove()">Remover</button>' +
+        '</div>';
+      lista.appendChild(col);
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+}
+function toggleObsAvaria(chk, id){
+  var obs = document.getElementById('obs_' + id);
+  obs.classList.toggle('d-none', !chk.checked);
+  if (chk.checked) obs.setAttribute('required','required'); else obs.removeAttribute('required');
+}
+function validarAvarias(){
+  var ok = true;
+  document.querySelectorAll('.chkAvaria:checked').forEach(function(chk){
+    var id = chk.value;
+    var obs = document.getElementById('obs_' + id);
+    if (!obs.value.trim()){ ok = false; obs.classList.add('is-invalid'); }
+  });
+  if (!ok) alert('Toda foto marcada como "Avariado?" precisa de uma observação explicando a avaria.');
+  return ok;
+}
+</script>
 {% endblock %}

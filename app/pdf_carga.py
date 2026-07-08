@@ -50,6 +50,17 @@ def gerar_pdf_relatorio_carga(modo, dados):
         ("LEFTPADDING", (0, 0), (0, -1), 14),
     ]))
     el.append(cabecalho)
+
+    if dados.get("tem_avaria"):
+        aviso = Table([[Paragraph('<font color="white"><b>⚠ ATENÇÃO: carga com item(ns) avariado(s) — ver observações abaixo</b></font>', _ST["Normal"])]],
+                      colWidths=[170 * mm])
+        aviso.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#C0392B")),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        el.append(aviso)
+
     el.append(Spacer(1, 8 * mm))
 
     linhas = [
@@ -93,6 +104,16 @@ def gerar_pdf_relatorio_carga(modo, dados):
     ]))
     el.append(t2)
     el.append(Spacer(1, 4 * mm))
+
+    if dados.get("obs_avarias"):
+        sec_avaria = Table([[Paragraph("OBSERVAÇÕES DE AVARIA", _SECAO)]], colWidths=[168 * mm])
+        sec_avaria.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FBE0DC")),
+                                        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+        el.append(sec_avaria)
+        el.append(Spacer(1, 2 * mm))
+        for i, obs in enumerate(dados["obs_avarias"], start=1):
+            el.append(Paragraph(f"{i}. {obs}", _ST["Normal"]))
+        el.append(Spacer(1, 4 * mm))
 
     sec_obs = Table([[Paragraph("OBSERVAÇÕES", _SECAO)]], colWidths=[168 * mm])
     sec_obs.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), CINZA_CLARO),

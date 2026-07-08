@@ -77,33 +77,23 @@
   </div>
   <div class="col-lg-6">
     <div class="card mb-3"><div class="card-body">
-      <h6>Solicitar cotação</h6>
+      <h6>Fornecedores desta cotação</h6>
+      <p class="text-muted small mb-2">O envio de cotação (WhatsApp/E-mail/Texto) agora é feito centralizado em <a href="{{ url_for('admin.enviar_lote') }}">Compras → Enviar cotação</a>. Aqui você só gerencia quais fornecedores participam desta solicitação.</p>
       {% if s.status == 'AGUARDANDO_RECEBIMENTO_COTACAO' %}
       <form method="post" action="{{ url_for('admin.reenviar_cotacao', sid=s.id) }}" class="mb-2"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-sm btn-outline-primary">Reenviar cotação (renovar prazo)</button></form>
       {% endif %}
       {% if fornecedores %}
-        <form method="post" action="{{ url_for('admin.enviar_pedido', sid=s.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <textarea name="corpo" class="form-control mb-2" rows="2" placeholder="Corpo do e-mail (opcional; padrão cita 5 dias úteis)."></textarea>
-          <button class="btn btn-success btn-sm">Enviar cotação por e-mail (PDF)</button></form>
-        <hr><div class="small">Enviar manualmente por fornecedor:</div>
         {% for f in fornecedores %}
         <div class="d-flex align-items-center gap-1 mb-1 small flex-wrap">
-          <span style="min-width:120px">{{ f.nome }}</span>
+          <span style="min-width:120px"><b>{{ f.nome }}</b><br>
+            <span class="text-muted" style="font-size:11px;">{{ f.email or '-' }}{% if f.telefone %} · 📞 {{ f.telefone }}{% endif %}</span>
+          </span>
           {% if seqs %}<span class="text-muted">#{{ seqs[f.id] }}</span>{% endif %}
-          {% if wa and wa[f.id] %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ wa[f.id] }}">WhatsApp</a>{% endif %}
-          {% if mail and mail[f.id] %}<a class="btn btn-sm btn-outline-primary py-0" href="{{ mail[f.id] }}">E-mail</a>{% endif %}
-          <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('txt{{ f.id }}')">Copiar texto</button>
-          {% if s.status == 'AGUARDANDO_ENVIO_COTACAO' %}
-          <form method="post" action="{{ url_for('admin.marcar_cotacao_enviada', fid=f.id) }}" class="d-inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="ids" value="{{ s.id }}">
-            <button class="btn btn-sm btn-warning py-0" title="Marca como enviada e muda o status">Cotação enviada</button>
-          </form>{% endif %}
           <form method="post" action="{{ url_for('admin.remover_fornecedor', sid=s.id, fid=f.id) }}" class="d-inline" onsubmit="return confirm('Remover {{ f.nome }} desta solicitação (não tem o item)?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-sm btn-outline-danger py-0" title="Fornecedor não tem o item — remover desta solicitação">Não tem</button>
           </form>
-          <textarea id="txt{{ f.id }}" class="d-none">{{ txt[f.id] if txt }}</textarea>
         </div>
         {% endfor %}
       {% else %}<p class="text-warning small mb-0">Sem fornecedores para cotar (defina o tipo de material com fornecedores ativos, ou algum foi removido).</p>{% endif %}

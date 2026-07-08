@@ -12,6 +12,13 @@ class Config:
         _db = _db.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_DATABASE_URI = _db
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Corrige "SSL connection has been closed unexpectedly" (Neon derruba conexões
+    # ociosas do plano grátis; pool_pre_ping testa a conexão antes de usá-la e
+    # pool_recycle descarta conexões "velhas" antes que o banco as feche sozinho).
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 280,
+    }
 
     # Upload de imagens
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB por requisição

@@ -6,15 +6,19 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="row g-3">
     <div class="col-md-8"><label class="form-label">Material *</label><input name="material" class="form-control" required></div>
-    <div class="col-md-4"><label class="form-label">Quantidade *</label><input name="quantidade" type="number" min="1" value="1" class="form-control" required></div>
+    <div class="col-md-2"><label class="form-label">Quantidade *</label><input name="quantidade" type="number" min="1" value="1" class="form-control" required></div>
+    <div class="col-md-2"><label class="form-label">Unidade</label>
+      <input name="unidade_medida" class="form-control" list="listaUnidades" placeholder="Buscar...">
+      <datalist id="listaUnidades">{% for u in unidades %}<option value="{{ u }}">{% endfor %}</datalist>
+    </div>
     <div class="col-md-6"><label class="form-label">Fabricante</label><input name="fabricante" class="form-control"></div>
     <div class="col-md-6"><label class="form-label">Tipo de material</label>
       <div class="input-group">
-        <select name="tipo_material_id" class="form-select" id="selTipo">
-          <option value="">— selecione —</option>
-          {% for t in tipos %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}
-        </select>
-        {% if current_user.is_admin %}<button type="button" class="btn btn-outline-secondary" title="Cadastrar novo tipo" onclick="cadastrarRapido('tipo','selTipo')">+</button>{% endif %}
+        <input class="form-control" list="listaTipos" id="inputTipo" placeholder="Buscar tipo..." autocomplete="off"
+               oninput="var op=[...document.querySelectorAll('#listaTipos option')].find(o=>o.value===this.value); document.getElementById('selTipo').value = op ? op.dataset.id : '';">
+        <datalist id="listaTipos">{% for t in tipos %}<option data-id="{{ t.id }}" value="{{ t.nome }}">{% endfor %}</datalist>
+        <input type="hidden" name="tipo_material_id" id="selTipo">
+        {% if current_user.is_admin %}<button type="button" class="btn btn-outline-secondary" title="Cadastrar novo tipo" onclick="cadastrarTipoRapido()">+</button>{% endif %}
       </div>
       {% if current_user.is_admin %}<div class="form-text">Não achou o tipo? Use o "+" para cadastrar na hora.</div>{% endif %}
     </div>
@@ -27,4 +31,17 @@
     <a class="btn btn-link" href="{{ url_for('solicitante.index') }}">Cancelar</a></div>
 </form>
 </div></div>
+<script>
+function cadastrarTipoRapido(){
+  var nome = prompt('Novo tipo de material:'); if(!nome) return;
+  fetch('/admin/api/criar/tipo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome})})
+   .then(function(r){return r.json();}).then(function(d){
+     if(!d.ok){alert('Erro: '+(d.erro||''));return;}
+     var dl=document.getElementById('listaTipos'); var op=document.createElement('option');
+     op.value=d.nome; op.dataset.id=d.id; dl.appendChild(op);
+     document.getElementById('inputTipo').value=d.nome;
+     document.getElementById('selTipo').value=d.id;
+   }).catch(function(){ alert('Falha ao cadastrar.'); });
+}
+</script>
 {% endblock %}

@@ -22,10 +22,17 @@
   <div class="col-md-7"><div class="card"><div class="card-body pb-0"><input class="form-control form-control-sm" placeholder="Buscar fornecedor (nome, contato, tipo)..." onkeyup="filtrarForn(this.value)"></div><div class="table-responsive">
     <table class="table mb-0 align-middle"><thead class="table-light"><tr><th>Fornecedor</th><th>Contato</th><th>WhatsApp</th><th>Tipos</th><th></th></tr></thead>
     <tbody id="tabForn">{% for f in lista %}<tr class="lf" data-busca="{{ (f.nome ~ ' ' ~ (f.contato_nome or '') ~ ' ' ~ (f.tipos|map(attribute='nome')|join(' ')))|lower }}">
-      <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}{% if not f.usa_email %} <span class="badge bg-light text-muted">sem e-mail</span>{% endif %}<div class="small text-muted">{{ f.email or '-' }}</div></td>
+      <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}{% if not f.usa_email %} <span class="badge bg-light text-muted">sem e-mail</span>{% endif %}<div class="small text-muted">{{ f.email or '-' }}{% if f.telefone %} · 📞 {{ f.telefone }}{% endif %}</div></td>
       <td class="small">{{ f.contato_nome or '-' }}</td><td class="small">{{ f.telefone or '-' }}</td>
       <td>{% for t in f.tipos %}<span class="badge bg-info text-dark">{{ t.nome }}</span> {% endfor %}</td>
-      <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.fornecedor_editar', fid=f.id) }}">Editar</a></td></tr>
+      <td class="text-nowrap">
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.fornecedor_editar', fid=f.id) }}">Editar</a>
+        <form method="post" action="{{ url_for('admin.fornecedor_toggle_ativo', fid=f.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm {{ 'btn-outline-secondary' if f.ativo else 'btn-outline-success' }}" title="{{ 'Desativar' if f.ativo else 'Ativar' }}"
+                  onclick="return confirm('{{ 'Desativar' if f.ativo else 'Ativar' }} {{ f.nome }}?')">{{ 'Desativar' if f.ativo else 'Ativar' }}</button>
+        </form>
+      </td></tr>
     {% else %}<tr><td colspan="5" class="text-muted">Nenhum fornecedor.</td></tr>{% endfor %}</tbody></table>
   </div></div></div>
 </div>

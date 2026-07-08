@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt-br" data-tema="{{ current_user.tema_preferido if current_user.is_authenticated else 'escuro' }}">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Almoxarifado{% endblock %}</title>
@@ -8,72 +8,82 @@
   <style>
     :root{
       --coral:#FF5246; --coral-dark:#E8463B; --verde:#32CAA0;
+    }
+    html[data-tema="escuro"]{
       --bg:#1B1B1B; --bg-elevado:#242424; --card-bg:#232323;
       --texto:#EDEAE6; --texto-2:#A9A49D; --linha:#333333;
+      --topbar-bg:#141414; --input-bg:#1E1E1E; --input-bg-disabled:#161616;
+      --hover-bg:#2E2E2E; --table-striped:#262626; --table-light:#2A2A2A;
     }
+    html[data-tema="claro"]{
+      --bg:#F4F1ED; --bg-elevado:#FFFFFF; --card-bg:#FFFFFF;
+      --texto:#4B4B4B; --texto-2:#767676; --linha:#E2DDD6;
+      --topbar-bg:#4B4B4B; --input-bg:#FFFFFF; --input-bg-disabled:#F0EEEA;
+      --hover-bg:#F1EFE8; --table-striped:#F8F6F3; --table-light:#F1EFE8;
+    }
+
     body{ background:var(--bg); color:var(--texto); font-family:'Poppins',system-ui,sans-serif; }
     h1,h2,h3,h4,h5,h6,.navbar-brand{ font-family:'Poppins',sans-serif; font-weight:600; color:var(--texto); }
     a{ color:var(--coral); }
     a:hover{ color:var(--coral-dark); }
 
-    /* topbar */
-    .topbar{ background:#141414; border-bottom:1px solid var(--linha); }
+    .topbar{ background:var(--topbar-bg); border-bottom:1px solid var(--linha); }
     .topbar .brand-mark{ width:26px;height:26px;border-radius:7px;background:var(--coral);display:inline-block; }
-    .topbar .navbar-brand{ color:var(--texto)!important; }
+    .topbar .navbar-brand{ color:#fff!important; }
 
-    .nav-link{ color:var(--texto-2)!important; }
+    .nav-link{ color:#cfcac2!important; }
     .nav-link:hover, .nav-link.active{ color:#fff!important; }
     .nav-link.active{ border-bottom:2px solid var(--coral); }
 
     .dropdown-menu{ background:var(--bg-elevado); border:1px solid var(--linha); }
     .dropdown-item{ color:var(--texto); }
-    .dropdown-item:hover, .dropdown-item:focus{ background:#2E2E2E; color:#fff; }
-    .dropdown-item.text-danger{ color:#ff6b60!important; }
+    .dropdown-item:hover, .dropdown-item:focus{ background:var(--hover-bg); color:var(--texto); }
+    .dropdown-item.text-danger{ color:#d9463c!important; }
     .dropdown-divider{ border-color:var(--linha); }
     .dropdown-header{ color:var(--texto-2); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
 
-    /* cards / tabelas / forms adaptados ao escuro */
-    .card{ background:var(--card-bg); border:1px solid var(--linha); box-shadow:0 1px 3px rgba(0,0,0,.4); color:var(--texto); }
+    .card{ background:var(--card-bg); border:1px solid var(--linha); box-shadow:0 1px 3px rgba(0,0,0,.15); color:var(--texto); }
     .card .text-muted{ color:var(--texto-2)!important; }
     .table{ color:var(--texto); }
-    .table-light, thead.table-light{ background:#2A2A2A; color:var(--texto); }
+    .table-light, thead.table-light{ background:var(--table-light); color:var(--texto); }
     .table>:not(caption)>*>*{ background-color:transparent; border-bottom-color:var(--linha); color:var(--texto); }
-    .table-striped>tbody>tr:nth-of-type(odd)>*{ background-color:#262626; }
-    .table-success{ --bs-table-bg:#1E3B32; }
-    .table-warning{ --bs-table-bg:#3B331E; }
-    .form-control, .form-select{ background:#1E1E1E; border-color:var(--linha); color:var(--texto); }
-    .form-control:focus, .form-select:focus{ background:#1E1E1E; color:var(--texto); border-color:var(--coral); box-shadow:0 0 0 .2rem rgba(255,82,70,.2); }
+    .table-striped>tbody>tr:nth-of-type(odd)>*{ background-color:var(--table-striped); }
+    html[data-tema="escuro"] .table-success{ --bs-table-bg:#1E3B32; }
+    html[data-tema="escuro"] .table-warning{ --bs-table-bg:#3B331E; }
+    .form-control, .form-select{ background:var(--input-bg); border-color:var(--linha); color:var(--texto); }
+    .form-control:focus, .form-select:focus{ background:var(--input-bg); color:var(--texto); border-color:var(--coral); box-shadow:0 0 0 .2rem rgba(255,82,70,.2); }
     .form-control::placeholder{ color:var(--texto-2); }
-    .form-control:disabled, .form-select:disabled{ background:#161616; color:var(--texto-2); }
+    .form-control:disabled, .form-select:disabled{ background:var(--input-bg-disabled); color:var(--texto-2); }
     .modal-content{ background:var(--card-bg); color:var(--texto); }
     .alert{ border:1px solid var(--linha); }
     hr{ border-color:var(--linha); }
-    .badge.bg-light{ background:#2E2E2E!important; color:var(--texto)!important; }
-    .btn-outline-secondary{ --bs-btn-color:var(--texto-2); --bs-btn-border-color:var(--linha); --bs-btn-hover-bg:#2E2E2E; --bs-btn-hover-color:#fff; }
-    .btn-close{ filter:invert(1); }
+    .badge.bg-light{ background:var(--hover-bg)!important; color:var(--texto)!important; }
+    .btn-outline-secondary{ --bs-btn-color:var(--texto-2); --bs-btn-border-color:var(--linha); --bs-btn-hover-bg:var(--hover-bg); --bs-btn-hover-color:var(--texto); }
+    html[data-tema="escuro"] .btn-close{ filter:invert(1); }
 
-    /* nav-tabs (abas) no escuro */
     .nav-tabs{ border-bottom-color:var(--linha); }
-    .nav-tabs .nav-link{ color:var(--texto-2); border:1px solid transparent; }
-    .nav-tabs .nav-link:hover{ border-color:var(--linha); color:#fff; }
-    .nav-tabs .nav-link.active{ background:var(--card-bg); color:#fff; border-color:var(--linha) var(--linha) var(--card-bg); }
+    .nav-tabs .nav-link{ color:var(--texto-2)!important; border:1px solid transparent; }
+    .nav-tabs .nav-link:hover{ border-color:var(--linha); color:var(--texto)!important; }
+    .nav-tabs .nav-link.active{ background:var(--card-bg); color:var(--texto)!important; border-color:var(--linha) var(--linha) var(--card-bg); }
 
-    /* texto secundário legível no escuro */
     .text-muted{ color:var(--texto-2)!important; }
     .form-text{ color:var(--texto-2); }
     .form-label{ color:var(--texto); }
     label{ color:var(--texto); }
-    .alert-secondary{ background:#2A2A2A; color:var(--texto); border-color:var(--linha); }
+    .alert-secondary{ background:var(--table-light); color:var(--texto); border-color:var(--linha); }
 
     .btn-primary{ --bs-btn-bg:var(--coral); --bs-btn-border-color:var(--coral); --bs-btn-hover-bg:var(--coral-dark); --bs-btn-hover-border-color:var(--coral-dark); }
     .btn-success{ --bs-btn-bg:var(--verde); --bs-btn-border-color:var(--verde); --bs-btn-hover-bg:#28b08b; }
     .btn-outline-primary{ --bs-btn-color:var(--coral); --bs-btn-border-color:var(--coral); --bs-btn-hover-bg:var(--coral); --bs-btn-hover-border-color:var(--coral); }
     .badge.bg-secondary{ background:#4B4B4B!important; }
-    .rodape{ font-size:.78rem; color:#6B6660; }
+    .rodape{ font-size:.78rem; color:var(--texto-2); }
     .bolha{ background:var(--coral); color:#fff; border-radius:10px; padding:0 7px; font-size:11px; margin-left:3px; }
 
     .bell-wrap{ position:relative; }
     .bell-wrap .bolha{ position:absolute; top:2px; right:2px; margin:0; }
+
+    .tema-switch-item{ display:flex; align-items:center; justify-content:space-between; padding:9px 10px; gap:10px; }
+    .tema-switch-item .form-check-input{ cursor:pointer; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -93,6 +103,7 @@
         <ul class="dropdown-menu">
           <li><a class="dropdown-item" href="{{ url_for('admin.aprovacoes') }}">📋 Aprovações {% if n_aprovacoes %}<span class="badge bg-secondary">{{ n_aprovacoes }}</span>{% endif %}</a></li>
           <li><a class="dropdown-item" href="{{ url_for('almox.index') }}">📦 Chegadas</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.coletas_proprias') }}">🚚 Coletas próprias</a></li>
           <li><hr class="dropdown-divider"></li>
           <li><h6 class="dropdown-header">Compras</h6></li>
           <li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">💬 Enviar cotação {% if n_cotacao %}<span class="badge bg-secondary">{{ n_cotacao }}</span>{% endif %}</a></li>
@@ -107,10 +118,7 @@
         <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Relatórios e Impressões</a>
         <ul class="dropdown-menu">
           <li><a class="dropdown-item" href="{{ url_for('relatorios.etiquetas') }}">🏷️ Geração de etiquetas</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='recebimento') }}">📑 Relatório de recebimento</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='envio') }}">📤 Relatório de envio</a></li>
-          <li><hr class="dropdown-divider"></li>
-          <li><a class="dropdown-item" href="{{ url_for('admin.backup') }}">💾 Baixar backup (.sql)</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('relatorios.carga') }}">📑 Relatório de carga (recebimento/envio)</a></li>
         </ul>
       </div>
 
@@ -131,8 +139,25 @@
           <span style="width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">{{ current_user.nome[:2]|upper }}</span>
           {{ current_user.nome.split()[0] }}
         </a>
-        <ul class="dropdown-menu dropdown-menu-end">
+        <ul class="dropdown-menu dropdown-menu-end" style="min-width:220px;">
+          <li>
+            <div class="tema-switch-item">
+              <span>🌓 Tema escuro</span>
+              <form method="post" action="{{ url_for('auth.trocar_tema') }}" id="formTema">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="voltar" value="{{ request.full_path }}">
+                <input type="hidden" name="tema" id="temaInput" value="{{ 'claro' if current_user.tema_preferido=='escuro' else 'escuro' }}">
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" role="switch" id="temaCheck"
+                         {{ 'checked' if current_user.tema_preferido=='escuro' else '' }}
+                         onchange="document.getElementById('temaInput').value = this.checked ? 'escuro' : 'claro'; document.getElementById('formTema').submit();">
+                </div>
+              </form>
+            </div>
+          </li>
+          <li><hr class="dropdown-divider"></li>
           <li><a class="dropdown-item" href="{{ url_for('admin.cadastros') }}">Cadastros</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('admin.backup') }}">💾 Baixar backup (.sql)</a></li>
           <li><a class="dropdown-item" href="{{ url_for('admin.sugestoes') }}">Sugestões</a></li>
           <li><a class="dropdown-item" href="{{ url_for('geral.faq') }}">FAQ</a></li>
           <li><a class="dropdown-item" href="{{ url_for('geral.sugerir') }}">Sugerir melhoria</a></li>
@@ -155,8 +180,7 @@
           <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">Relatórios e Impressões</a>
           <ul class="dropdown-menu">
             <li><a class="dropdown-item" href="{{ url_for('relatorios.etiquetas') }}">🏷️ Geração de etiquetas</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='recebimento') }}">📑 Relatório de recebimento</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('relatorios.carga', modo='envio') }}">📤 Relatório de envio</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('relatorios.carga') }}">📑 Relatório de carga (recebimento/envio)</a></li>
           </ul>
         </div>
       {% endif %}
@@ -165,7 +189,23 @@
           <span style="width:22px;height:22px;border-radius:50%;background:var(--coral);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;">{{ current_user.nome[:2]|upper }}</span>
           {{ current_user.nome.split()[0] }}
         </a>
-        <ul class="dropdown-menu dropdown-menu-end">
+        <ul class="dropdown-menu dropdown-menu-end" style="min-width:220px;">
+          <li>
+            <div class="tema-switch-item">
+              <span>🌓 Tema escuro</span>
+              <form method="post" action="{{ url_for('auth.trocar_tema') }}" id="formTema2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="voltar" value="{{ request.full_path }}">
+                <input type="hidden" name="tema" id="temaInput2" value="{{ 'claro' if current_user.tema_preferido=='escuro' else 'escuro' }}">
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" role="switch" id="temaCheck2"
+                         {{ 'checked' if current_user.tema_preferido=='escuro' else '' }}
+                         onchange="document.getElementById('temaInput2').value = this.checked ? 'escuro' : 'claro'; document.getElementById('formTema2').submit();">
+                </div>
+              </form>
+            </div>
+          </li>
+          <li><hr class="dropdown-divider"></li>
           {% if current_user.pode_solicitar %}<li><a class="dropdown-item" href="{{ url_for('solicitante.nova') }}">Nova solicitação</a></li>{% endif %}
           <li><a class="dropdown-item" href="{{ url_for('geral.faq') }}">FAQ</a></li>
           <li><a class="dropdown-item" href="{{ url_for('geral.sugerir') }}">Sugerir melhoria</a></li>
@@ -185,7 +225,7 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% if current_user.is_authenticated %}
-<footer class="container text-center pb-4 rodape">v1.10</footer>
+<footer class="container text-center pb-4 rodape">v1.11</footer>
 {% endif %}
 <script>
 function cadastrarRapido(entidade, selectId, comUF){

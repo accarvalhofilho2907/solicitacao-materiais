@@ -7,6 +7,23 @@ Estratégia:
 3) Para layouts desconhecidos, cai num método heurístico (último valor da linha).
 
 Cada item devolvido: {descricao, valor (preço unitário), quantidade, unidade, subtotal, codigo}.
+
+--------------------------------------------------------------------------
+ITEM 114 (08/07/2026) — nota técnica sobre a leitura de orçamentos:
+O padrão ITEM_RE abaixo foi calibrado só para o primeiro modelo de PDF testado
+(layout tipo REALSYS/DELTA, com código de 6+ dígitos no início da linha).
+PDFs de outros fornecedores, com layout diferente, caem automaticamente no
+método heurístico (2), que é mais frágil e pode pegar campos errados
+(descrição truncada, valor de outra coluna, etc.).
+
+Para corrigir de verdade, é necessário calibrar o parser com exemplos REAIS
+dos PDFs que erram — cada layout de fornecedor pode precisar do seu próprio
+padrão de reconhecimento (como o ITEM_RE já existente). Sem esses exemplos,
+qualquer ajuste aqui seria "no escuro" e poderia não refletir os formatos
+reais recebidos. Quando o usuário anexar 2-3 modelos de orçamento que hoje
+erram, adicionar um novo padrão `ITEM_RE_<FORNECEDOR>` seguindo o mesmo estilo
+do existente, e incluí-lo na lista `_PADROES` abaixo.
+--------------------------------------------------------------------------
 """
 import re
 
@@ -19,6 +36,10 @@ ITEM_RE = re.compile(
     r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+"      # preço unitário
     r"(\d{1,3}(?:\.\d{3})*,\d{2})\s*$"     # subtotal
 )
+
+# Lista de padrões conhecidos, na ordem em que devem ser tentados.
+# Adicionar novos padrões aqui conforme novos modelos de orçamento forem calibrados (item 114).
+_PADROES = [ITEM_RE]
 
 _MONEY = re.compile(
     r"(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})"
@@ -54,20 +75,22 @@ def extrair_itens(file_storage):
     """Recebe um PDF e devolve a lista de itens do orçamento."""
     linhas = _linhas(file_storage)
 
-    # 1) Padrão estruturado
+    # 1) Padrões estruturados conhecidos (item 114 — cada fornecedor pode ter o seu)
     estruturados = []
     for ln in linhas:
-        m = ITEM_RE.match(ln)
-        if m:
-            cod, desc, und, qtd, preco, sub = m.groups()
-            estruturados.append({
-                "descricao": desc.strip(),
-                "unidade": und,
-                "quantidade": _parse_valor(qtd),
-                "valor": _parse_valor(preco),     # preço unitário
-                "subtotal": _parse_valor(sub),
-                "codigo": cod,
-            })
+        for padrao in _PADROES:
+            m = padrao.match(ln)
+            if m:
+                cod, desc, und, qtd, preco, sub = m.groups()
+                estruturados.append({
+                    "descricao": desc.strip(),
+                    "unidade": und,
+                    "quantidade": _parse_valor(qtd),
+                    "valor": _parse_valor(preco),     # preço unitário
+                    "subtotal": _parse_valor(sub),
+                    "codigo": cod,
+                })
+                break
     if estruturados:
         return estruturados
 

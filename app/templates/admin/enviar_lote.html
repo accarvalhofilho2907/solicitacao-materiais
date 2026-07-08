@@ -1,33 +1,131 @@
 {% extends "base.html" %}
 {% block content %}
-<h4 class="mb-1">Enviar cotação (lote)</h4>
-<p class="text-muted">Junta as solicitações <strong>aprovadas</strong> (Aguardando envio p/ cotação) e envia <strong>um e-mail por fornecedor</strong> (PDF). Para o WhatsApp, use os botões — abre a conversa com a mensagem pronta (texto).</p>
+<h4 class="mb-1">Enviar cotação</h4>
+<p class="text-muted small">Por padrão mostra as solicitações <strong>Aguardando envio p/ cotação</strong>. Use "Expandir" para ver de qualquer status, ou busque por empresa/tipo/produto.</p>
+
+<div class="card mb-3"><div class="card-body py-2">
+  <form method="get" class="d-flex flex-wrap align-items-center gap-2">
+    <input type="text" name="q" value="{{ busca }}" class="form-control form-control-sm" style="max-width:280px" placeholder="Buscar por empresa, tipo ou produto...">
+    <div class="form-check form-switch mb-0">
+      <input class="form-check-input" type="checkbox" role="switch" id="chkExpandir" name="expandir" value="1" {{ 'checked' if expandir }} onchange="this.form.submit()">
+      <label class="form-check-label small" for="chkExpandir">Expandir todos os status</label>
+    </div>
+    <button class="btn btn-sm btn-outline-primary">Filtrar</button>
+    {% if busca or expandir %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.enviar_lote') }}">Limpar</a>{% endif %}
+    <div class="ms-auto dropdown">
+      <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">Excluir empresas desta tela</button>
+      <ul class="dropdown-menu dropdown-menu-end p-2" style="min-width:260px;">
+        <li class="small text-muted px-2 mb-1">Empresas que sabemos que não têm o produto (some só desta listagem, não desativa o cadastro):</li>
+        <form method="get">
+          <input type="hidden" name="q" value="{{ busca }}">
+          <input type="hidden" name="expandir" value="{{ '1' if expandir else '' }}">
+          {% for f in todos_fornecedores %}
+          <li class="px-2"><div class="form-check">
+            <input class="form-check-input" type="checkbox" name="excluir_fornecedores_ids" value="{{ f.id }}" id="exf{{ f.id }}"
+                   {{ 'checked' if f.id|string in excluir_fornecedores.split(',') }}>
+            <label class="form-check-label small" for="exf{{ f.id }}">{{ f.nome }}</label>
+          </div></li>
+          {% endfor %}
+          <li class="px-2 mt-2"><button class="btn btn-sm btn-outline-danger w-100"
+              onclick="var ids=[...this.form.querySelectorAll('[name=excluir_fornecedores_ids]:checked')].map(i=>i.value).join(','); var h=document.createElement('input'); h.type='hidden'; h.name='excluir_fornecedores'; h.value=ids; this.form.appendChild(h); return true;">Aplicar</button></li>
+        </form>
+      </ul>
+    </div>
+  </form>
+</div></div>
+
 {% if not grupos %}
-  <div class="alert alert-info">Nada para enviar. Aprove solicitações para que entrem aqui.</div>
+  <div class="alert alert-info">Nada para enviar com esses filtros.</div>
 {% else %}
   {% for g in grupos %}
   <div class="card mb-2"><div class="card-body py-2">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">#{{ g.seq }} · {% if g.fornecedor.email %}{{ g.fornecedor.email }}{% else %}sem e-mail{% endif %}</span></div>
+      <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">#{{ g.seq }} · {% if g.fornecedor.email %}{{ g.fornecedor.email }}{% else %}sem e-mail{% endif %}{% if g.fornecedor.telefone %} · 📞 {{ g.fornecedor.telefone }}{% endif %}</span></div>
       <div class="d-flex gap-1 flex-wrap">
         {% if g.wa %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ g.wa }}">WhatsApp</a>{% endif %}
-        {% if g.mail %}<a class="btn btn-sm btn-outline-primary py-0" href="{{ g.mail }}">E-mail</a>{% endif %}
+        {% if g.fornecedor.email %}
+        <button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="abrirPopupSPE({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', [{% for s in g.itens %}{{ s.id }}{{ ',' if not loop.last }}{% endfor %}])">E-mail</button>
+        {% endif %}
         <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('lt{{ g.fornecedor.id }}')">Texto pronto</button>
-        <form method="post" action="{{ url_for('admin.marcar_cotacao_enviada', fid=g.fornecedor.id) }}" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-warning py-0" title="Marca como enviada e muda o status">Cotação enviada</button>
-        </form>
+        <button type="button" class="btn btn-sm btn-warning py-0" onclick="abrirPopupFinalizar({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', [{% for s in g.itens %}{{ s.id }}{{ ',' if not loop.last }}{% endfor %}])">Cotação enviada</button>
       </div>
     </div>
-    <ul class="mb-0 mt-1 small">{% for s in g.itens %}<li>Nº {{ s.id }} — {{ s.material }} (x{{ s.quantidade }})</li>{% endfor %}</ul>
+    <ul class="mb-0 mt-1 small">{% for s in g.itens %}<li>Nº {{ s.id }} — {{ s.material }}{% if s.unidade_medida %} ({{ s.unidade_medida }}){% endif %} (x{{ s.quantidade }}) <span class="text-muted">[{{ s.status_label }}]</span></li>{% endfor %}</ul>
     <textarea id="lt{{ g.fornecedor.id }}" class="d-none">{{ g.texto }}</textarea>
   </div></div>
   {% endfor %}
-  <form method="post" action="{{ url_for('admin.enviar_lote_confirmar') }}" class="mt-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label class="form-label">Corpo do e-mail (opcional; padrão já cita o prazo de 5 dias úteis)</label>
-    <textarea name="corpo" class="form-control mb-3" rows="3"></textarea>
-    <button class="btn btn-success" onclick="return confirm('Enviar os e-mails de cotação para todos os fornecedores?')">Enviar e-mails de cotação</button>
-  </form>
 {% endif %}
+
+<div class="modal fade" id="modalSPE" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('admin.enviar_lote_email') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="fornecedor_id" id="speFornecedorId">
+        <div id="speIdsContainer"></div>
+        <div class="modal-header"><h5 class="modal-title">Enviar cotação por e-mail</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <p class="small text-muted" id="speFornecedorNome"></p>
+          <label class="form-label">Qual SPE está solicitando esta cotação?</label>
+          <select name="spe_nome" class="form-select" required>
+            {% for d in spes %}<option value="{{ d[0] }}">{{ d[0] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-primary">Enviar e-mail</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalFinalizar" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Cotação enviada</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p id="finalizarFornecedorNome"></p>
+        <p class="text-muted small">Deseja enviar cotação para mais algum fornecedor antes de fechar o processo, ou isso é tudo?</p>
+      </div>
+      <div class="modal-footer">
+        <form method="post" id="formContinuar">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="finalizar" value="0">
+          <div id="continuarIdsContainer"></div>
+          <button class="btn btn-outline-secondary" data-bs-dismiss="modal" type="submit">Quero enviar para mais algum</button>
+        </form>
+        <form method="post" id="formFinalizar">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="finalizar" value="1">
+          <div id="finalizarIdsContainer"></div>
+          <button class="btn btn-primary" type="submit">É tudo, finalizar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function abrirPopupSPE(fid, nome, ids){
+  document.getElementById('speFornecedorId').value = fid;
+  document.getElementById('speFornecedorNome').textContent = 'Fornecedor: ' + nome;
+  var c = document.getElementById('speIdsContainer'); c.innerHTML = '';
+  ids.forEach(function(id){ var i=document.createElement('input'); i.type='hidden'; i.name='ids'; i.value=id; c.appendChild(i); });
+  new bootstrap.Modal(document.getElementById('modalSPE')).show();
+}
+function abrirPopupFinalizar(fid, nome, ids){
+  document.getElementById('finalizarFornecedorNome').innerHTML = 'Fornecedor: <b>' + nome + '</b>';
+  var base = "{{ url_for('admin.marcar_cotacao_enviada', fid=0) }}".replace('/0', '/' + fid);
+  document.getElementById('formContinuar').action = base;
+  document.getElementById('formFinalizar').action = base;
+  ['continuarIdsContainer','finalizarIdsContainer'].forEach(function(cid){
+    var c = document.getElementById(cid); c.innerHTML = '';
+    ids.forEach(function(id){ var i=document.createElement('input'); i.type='hidden'; i.name='ids'; i.value=id; c.appendChild(i); });
+  });
+  new bootstrap.Modal(document.getElementById('modalFinalizar')).show();
+}
+</script>
 {% endblock %}

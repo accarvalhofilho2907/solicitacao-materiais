@@ -5,7 +5,8 @@ from flask_login import login_required, current_user
 
 from .extensions import db
 from datetime import datetime
-from .models import Solicitacao, TipoMaterial, Imagem, Comentario, LogSolicitacao, Usuario, Fornecedor, Orcamento
+from .models import (Solicitacao, TipoMaterial, Imagem, Comentario, LogSolicitacao,
+                    Usuario, Fornecedor, Orcamento, UNIDADES_MEDIDA)
 from .storage import salvar_imagem
 from .emails import enviar_email
 from .pdf import gerar_pdf_lista
@@ -63,6 +64,7 @@ def nova():
             tipo_material_id=request.form.get("tipo_material_id") or None,
             material=request.form.get("material", "").strip(),
             quantidade=int(request.form.get("quantidade") or 1),
+            unidade_medida=request.form.get("unidade_medida") or None,
             fabricante=request.form.get("fabricante", "").strip(),
             link_similar=request.form.get("link_similar", "").strip(),
             local_servico=request.form.get("local_servico", "").strip(),
@@ -70,7 +72,7 @@ def nova():
         )
         if not s.material:
             flash("Informe o material.", "danger")
-            return render_template("solicitante/nova.html", tipos=tipos)
+            return render_template("solicitante/nova.html", tipos=tipos, unidades=UNIDADES_MEDIDA)
         db.session.add(s)
         db.session.flush()
         for f in request.files.getlist("imagens"):
@@ -85,7 +87,7 @@ def nova():
                      f"{current_user.nome} abriu a solicitação Nº {s.id}: {s.material} (qtd {s.quantidade}).")
         flash("Solicitação enviada. Ficará 'Aguardando aprovação' até o administrador aprovar.", "success")
         return redirect(url_for("solicitante.detalhe", sid=s.id))
-    return render_template("solicitante/nova.html", tipos=tipos)
+    return render_template("solicitante/nova.html", tipos=tipos, unidades=UNIDADES_MEDIDA)
 
 
 @sol_bp.route("/solicitacao/<int:sid>", methods=["GET", "POST"])

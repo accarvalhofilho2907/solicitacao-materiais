@@ -46,12 +46,14 @@
               {% for fo in fornecedores %}
               <option value="{{ fo.id }}" data-nome="{{ fo.nome }}" data-contato="{{ fo.contato_nome or '' }}"
                       data-telefone="{{ fo.telefone or '' }}" data-email="{{ fo.email or '' }}"
-                      data-cnpj="{{ fo.cnpj or '' }}" data-endereco="{{ fo.endereco or '' }}">{{ fo.nome }}</option>
+                      data-cnpj="{{ fo.cnpj or '' }}" data-endereco="{{ fo.endereco_completo or fo.endereco or '' }}">{{ fo.nome }}</option>
               {% endfor %}
             </select>
             <div class="row g-2">
               <div class="col-12"><input name="dest_nome" id="dest_nome" class="form-control form-control-sm" placeholder="Nome / Razão social do destinatário *" required></div>
-              <div class="col-12"><input name="dest_endereco" id="dest_endereco" class="form-control form-control-sm" placeholder="Endereço completo"></div>
+              <div class="col-4"><input id="dest_cep" class="form-control form-control-sm" placeholder="CEP (busca auto)" inputmode="numeric" onblur="buscaCepEtiq()"></div>
+              <div class="col-8"><input name="dest_endereco" id="dest_endereco" class="form-control form-control-sm" placeholder="Endereço completo"></div>
+              <div class="col-12"><span class="small text-muted" id="dest_cepmsg"></span></div>
               <div class="col-6"><input name="dest_cnpj" id="dest_cnpj" class="form-control form-control-sm" placeholder="CNPJ"></div>
               <div class="col-6"><input name="dest_contato" id="dest_contato" class="form-control form-control-sm" placeholder="Contato"></div>
               <div class="col-6"><input name="dest_telefone" id="dest_telefone" class="form-control form-control-sm" placeholder="Telefone"></div>
@@ -182,6 +184,25 @@ function preencherFornecedor(sel){
   document.getElementById('dest_email').value = o.dataset.email||'';
   document.getElementById('dest_cnpj').value = o.dataset.cnpj||'';
   document.getElementById('dest_endereco').value = o.dataset.endereco||'';
+}
+function buscaCepEtiq(){
+  var cep = (document.getElementById('dest_cep').value||'').replace(/\D/g,'');
+  var msg = document.getElementById('dest_cepmsg');
+  if(cep.length !== 8){ if(msg) msg.textContent=''; return; }
+  if(msg){ msg.textContent='buscando...'; msg.className='small text-muted'; }
+  fetch('https://viacep.com.br/ws/'+cep+'/json/').then(function(r){return r.json();}).then(function(d){
+    if(d.erro){ if(msg){ msg.textContent='CEP não encontrado — digite o endereço manualmente'; msg.className='small text-danger'; } return; }
+    // monta um endereço legível para a etiqueta a partir do CEP
+    var partes = [];
+    if(d.logradouro) partes.push(d.logradouro.toUpperCase());
+    if(d.bairro) partes.push(d.bairro.toUpperCase());
+    var cid = [d.localidade, d.uf].filter(Boolean).join(' - ');
+    if(cid) partes.push(cid.toUpperCase());
+    partes.push('CEP '+d.cep);
+    var campo = document.getElementById('dest_endereco');
+    campo.value = partes.join(', ');
+    if(msg){ msg.textContent='endereço preenchido ✓ (ajuste o número se precisar)'; msg.className='small text-success'; }
+  }).catch(function(){ if(msg){ msg.textContent='sem internet — digite o endereço manualmente'; msg.className='small text-danger'; } });
 }
 
 // Grid (colunas, linhas) — IGUAL ao _GRID do pdf_etiquetas.py (item 136: preview bate com a impressão)

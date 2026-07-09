@@ -1,5 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Relatório de Carga — Almoxarifado{% endblock %}
+{% macro campos_endereco(prefixo) %}
+<div class="row g-2 mt-1">
+  <div class="col-md-3"><label class="form-label small mb-0">CEP</label>
+    <input name="{{ prefixo }}_cep" id="{{ prefixo }}_cep" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números" onblur="buscaCepCarga('{{ prefixo }}')"></div>
+  <div class="col-md-7"><label class="form-label small mb-0">Logradouro</label>
+    <input name="{{ prefixo }}_logradouro" id="{{ prefixo }}_logradouro" class="form-control form-control-sm"></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Nº</label>
+    <input name="{{ prefixo }}_numero" id="{{ prefixo }}_numero" class="form-control form-control-sm"></div>
+  <div class="col-md-4"><label class="form-label small mb-0">Bairro</label>
+    <input name="{{ prefixo }}_bairro" id="{{ prefixo }}_bairro" class="form-control form-control-sm"></div>
+  <div class="col-md-4"><label class="form-label small mb-0">Complemento</label>
+    <input name="{{ prefixo }}_complemento" id="{{ prefixo }}_complemento" class="form-control form-control-sm"></div>
+  <div class="col-md-3"><label class="form-label small mb-0">Cidade</label>
+    <input name="{{ prefixo }}_cidade" id="{{ prefixo }}_cidade" class="form-control form-control-sm"></div>
+  <div class="col-md-1"><label class="form-label small mb-0">UF</label>
+    <input name="{{ prefixo }}_estado" id="{{ prefixo }}_estado" class="form-control form-control-sm" maxlength="2"></div>
+  <span class="small text-muted" id="{{ prefixo }}_cepmsg"></span>
+</div>
+{% endmacro %}
 {% block content %}
 <h4 class="mb-1">📑 Relatório de Recebimento / Envio de Materiais</h4>
 <p class="text-muted small">
@@ -42,9 +61,8 @@
                oninput="atualizarTomador()"></div>
       <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
         <input name="rem_ie" id="rem_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
-      <div class="col-md-7"><label class="form-label small mb-0">Endereço</label>
-        <input name="rem_endereco" id="rem_endereco" class="form-control form-control-sm"></div>
     </div>
+    {{ campos_endereco('rem') }}
   </div></div>
 
   <!-- 3. DESTINATÁRIO -->
@@ -59,9 +77,8 @@
                oninput="atualizarTomador()"></div>
       <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
         <input name="dest_ie" id="dest_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
-      <div class="col-md-7"><label class="form-label small mb-0">Endereço</label>
-        <input name="dest_endereco" id="dest_endereco" class="form-control form-control-sm"></div>
     </div>
+    {{ campos_endereco('dest') }}
   </div></div>
 
   <!-- 4. TRANSPORTADORA (sem IE) -->
@@ -74,9 +91,8 @@
                placeholder="Só números" onblur="tratarCnpj('transp','transportadora')"></div>
       <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome</label>
         <input name="transp_nome" id="transp_nome" class="form-control form-control-sm"></div>
-      <div class="col-12"><label class="form-label small mb-0">Endereço</label>
-        <input name="transp_endereco" id="transp_endereco" class="form-control form-control-sm"></div>
     </div>
+    {{ campos_endereco('transp') }}
   </div></div>
 
   <!-- 5. DADOS DA CARGA -->
@@ -173,6 +189,19 @@ function formatarCnpj(raw){
 }
 
 var _validandoCnpj = false;
+function buscaCepCarga(prefixo){
+  var cep = soDigitos(document.getElementById(prefixo+'_cep').value);
+  var msg = document.getElementById(prefixo+'_cepmsg');
+  if(cep.length !== 8){ if(msg) msg.textContent=''; return; }
+  if(msg){ msg.textContent='buscando...'; msg.className='small text-muted'; }
+  fetch('https://viacep.com.br/ws/'+cep+'/json/').then(function(r){return r.json();}).then(function(d){
+    if(d.erro){ if(msg){ msg.textContent='CEP não encontrado — preencha manualmente'; msg.className='small text-danger'; } return; }
+    var set=function(campo,val){ var el=document.getElementById(prefixo+'_'+campo); if(el && val) el.value=val; };
+    set('logradouro',(d.logradouro||'').toUpperCase()); set('bairro',(d.bairro||'').toUpperCase());
+    set('cidade',(d.localidade||'').toUpperCase()); set('estado',(d.uf||'').toUpperCase());
+    if(msg){ msg.textContent='endereço preenchido ✓'; msg.className='small text-success'; }
+  }).catch(function(){ if(msg){ msg.textContent='sem internet — preencha manualmente'; msg.className='small text-danger'; } });
+}
 function tratarCnpj(prefixo, tipo){
   if(_validandoCnpj) return;              // evita reentrada (o alert dispara blur de novo)
   var campo = document.getElementById(prefixo+'_cnpj');
@@ -191,11 +220,14 @@ function tratarCnpj(prefixo, tipo){
   var d = soDigitos(raw);
   var mapa = (tipo === 'transportadora') ? MAPA_TRANSP : MAPA_FORN;
   if(mapa[d]){
-    // achou: autopreenche
+    // achou: autopreenche nome, IE e endereço estruturado
     document.getElementById(prefixo+'_nome').value = mapa[d].nome || '';
-    document.getElementById(prefixo+'_endereco').value = mapa[d].endereco || '';
     if(tipo !== 'transportadora' && document.getElementById(prefixo+'_ie'))
       document.getElementById(prefixo+'_ie').value = mapa[d].ie || '';
+    ['cep','logradouro','numero','bairro','complemento','cidade','estado'].forEach(function(campoEnd){
+      var el = document.getElementById(prefixo+'_'+campoEnd);
+      if(el) el.value = mapa[d][campoEnd] || '';
+    });
   }
   atualizarTomador();
 }

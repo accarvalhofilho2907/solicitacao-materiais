@@ -162,46 +162,58 @@ def etiquetas_identificacao_gerar():
 @relatorios_bp.route("/carga", methods=["GET"])
 @relatorios_required
 def carga():
-    """Tela única de Relatório de Carga (itens 128/145) — o campo Status decide se é
-    Recebimento ou Envio. Passa listas de Usuários (Responsável), tipos de volume e
-    naturezas de operação, além dos CNPJs já cadastrados para autopreenchimento."""
+    """Tela única de Relatório de Carga (itens 128/145/150) — o campo Status decide se é
+    Recebimento ou Envio. Passa Usuários, tipos de volume, naturezas, e os CNPJs já
+    cadastrados (com endereço estruturado) para autopreenchimento."""
     usuarios = Usuario.query.filter_by(ativo=True).order_by(Usuario.nome).all()
-    # mapa CNPJ(só dígitos) -> dados, para autopreencher no JS (item 145)
+
+    def _dados_endereco(obj):
+        return {"cep": obj.cep or "", "logradouro": obj.logradouro or "", "numero": obj.numero or "",
+                "bairro": obj.bairro or "", "complemento": obj.complemento or "",
+                "cidade": obj.cidade or "", "estado": obj.estado or "",
+                "endereco": obj.endereco_completo or obj.endereco or ""}
+
+    # Cadastro unificado (item 150): fornecedores E empresas internas entram no autopreenchimento.
     fornecedores = {}
     for fo in Fornecedor.query.filter(Fornecedor.cnpj.isnot(None)).all():
         d = so_digitos(fo.cnpj)
         if d:
-            fornecedores[d] = {"nome": fo.razao_social or fo.nome or "",
-                               "endereco": fo.endereco or "", "ie": fo.inscricao_estadual or ""}
+            dados = {"nome": fo.razao_social or fo.nome or "", "ie": fo.inscricao_estadual or ""}
+            dados.update(_dados_endereco(fo))
+            fornecedores[d] = dados
+    # Transportadoras seguem na sua própria tabela
     transportadoras = {}
     for tr in Transportadora.query.filter(Transportadora.cnpj.isnot(None)).all():
         d = so_digitos(tr.cnpj)
         if d:
-            transportadoras[d] = {"nome": tr.nome or "", "endereco": tr.endereco or ""}
+            transportadoras[d] = {"nome": tr.nome or "", "endereco": tr.endereco or "",
+                                  "cep": "", "logradouro": "", "numero": "", "bairro": "",
+                                  "complemento": "", "cidade": "", "estado": ""}
     return render_template("relatorios/carga.html", hoje=date.today().strftime("%Y-%m-%d"),
                            usuario_atual_id=current_user.id, usuarios=usuarios,
                            tipos_volume=TIPOS_VOLUME, naturezas=NATUREZAS_OPERACAO,
                            mapa_fornecedores=fornecedores, mapa_transportadoras=transportadoras)
 
 
-def _garantir_fornecedor_pendente(nome, cnpj_raw, ie, endereco):
+def _garantir_fornecedor_pendente(nome, cnpj_raw, ie, endereco, end_estrut=None):
     """Se o CNPJ é válido e ainda não existe em Fornecedor, cria um cadastro
-    PENDENTE de aprovação (item 145). Devolve (criado: bool)."""
+    PENDENTE de aprovação (item 145/150). Devolve (criado: bool)."""
     if not cnpj_valido(cnpj_raw):
         return False
     cnpj_fmt = formatar_cnpj(cnpj_raw)
     d = so_digitos(cnpj_raw)
-    existe = None
     for fo in Fornecedor.query.filter(Fornecedor.cnpj.isnot(None)).all():
         if so_digitos(fo.cnpj) == d:
-            existe = fo
-            break
-    if existe:
-        return False
+            return False
+    e = end_estrut or {}
     f = Fornecedor(razao_social=(nome or "").strip().upper() or "SEM NOME",
                    cnpj=cnpj_fmt, inscricao_estadual=(ie or "").strip(),
                    endereco=(endereco or "").strip(), aprovacao="pendente",
-                   ativo=True, usa_email=False)
+                   ativo=True, usa_email=False, is_fornecedor=True, is_empresa_interna=False,
+                   cep=e.get("cep") or None, logradouro=e.get("logradouro") or None,
+                   numero=e.get("numero") or None, bairro=e.get("bairro") or None,
+                   complemento=e.get("complemento") or None, cidade=e.get("cidade") or None,
+                   estado=(e.get("estado") or "").upper() or None)
     db.session.add(f)
     return True
 
@@ -273,15 +285,43 @@ def carga_gerar():
     avarias_ids = set(f.getlist("foto_avariada"))
     obs_avarias = [v.strip() for v in f.getlist("obs_avaria") if v.strip()]
 
+    def _endereco_estruturado(prefixo):
+        """Monta o endereço em texto a partir dos campos separados do formulário (item 150)."""
+        cep = f.get(f"{prefixo}_cep", "").strip()
+        logr = f.get(f"{prefixo}_logradouro", "").strip()
+        num = f.get(f"{prefixo}_numero", "").strip()
+        bairro = f.get(f"{prefixo}_bairro", "").strip()
+        compl = f.get(f"{prefixo}_complemento", "").strip()
+        cidade = f.get(f"{prefixo}_cidade", "").strip()
+        uf = f.get(f"{prefixo}_estado", "").strip().upper()
+        partes = []
+        if logr:
+            partes.append(logr + (f", {num}" if num else ""))
+        if bairro:
+            partes.append(bairro)
+        if compl:
+            partes.append(compl)
+        cid_uf = " - ".join(x for x in [cidade, uf] if x)
+        if cid_uf:
+            partes.append(cid_uf)
+        if cep:
+            partes.append(f"CEP {cep}")
+        # se não preencheu nada estruturado, cai no campo antigo (compatibilidade)
+        return ", ".join(partes) if partes else f.get(f"{prefixo}_endereco", "").strip()
+
+    rem_endereco = _endereco_estruturado("rem")
+    dest_endereco = _endereco_estruturado("dest")
+    transp_endereco = _endereco_estruturado("transp")
+
     dados = {
         "data": f.get("data", ""),
         "responsavel": responsavel_nome,
         "rem_nome": f.get("rem_nome", ""), "rem_cnpj": formatar_cnpj(f.get("rem_cnpj", "")) or f.get("rem_cnpj", ""),
-        "rem_ie": formatar_ie(f.get("rem_ie", "")), "rem_endereco": f.get("rem_endereco", ""),
+        "rem_ie": formatar_ie(f.get("rem_ie", "")), "rem_endereco": rem_endereco,
         "dest_nome": f.get("dest_nome", ""), "dest_cnpj": formatar_cnpj(f.get("dest_cnpj", "")) or f.get("dest_cnpj", ""),
-        "dest_ie": formatar_ie(f.get("dest_ie", "")), "dest_endereco": f.get("dest_endereco", ""),
+        "dest_ie": formatar_ie(f.get("dest_ie", "")), "dest_endereco": dest_endereco,
         "transp_nome": f.get("transp_nome", ""), "transp_cnpj": formatar_cnpj(f.get("transp_cnpj", "")) or f.get("transp_cnpj", ""),
-        "transp_endereco": f.get("transp_endereco", ""),
+        "transp_endereco": transp_endereco,
         "nota_fiscal": f.get("nota_fiscal", ""), "serie": f.get("serie", ""), "oc": f.get("oc", ""),
         "qtd_volumes": f.get("qtd_volumes", ""),
         "tipo_volume": f.get("tipo_volume_outro", "").strip() if f.get("tipo_volume") == "__OUTRO__" else f.get("tipo_volume", ""),
@@ -303,9 +343,11 @@ def carga_gerar():
     try:
         criados = 0
         criados += 1 if _garantir_fornecedor_pendente(dados["rem_nome"], f.get("rem_cnpj", ""),
-                                                       f.get("rem_ie", ""), dados["rem_endereco"]) else 0
+                                                       f.get("rem_ie", ""), dados["rem_endereco"],
+                                                       {k: f.get("rem_" + k, "") for k in ["cep","logradouro","numero","bairro","complemento","cidade","estado"]}) else 0
         criados += 1 if _garantir_fornecedor_pendente(dados["dest_nome"], f.get("dest_cnpj", ""),
-                                                       f.get("dest_ie", ""), dados["dest_endereco"]) else 0
+                                                       f.get("dest_ie", ""), dados["dest_endereco"],
+                                                       {k: f.get("dest_" + k, "") for k in ["cep","logradouro","numero","bairro","complemento","cidade","estado"]}) else 0
         criados += 1 if _garantir_transportadora_pendente(dados["transp_nome"], f.get("transp_cnpj", ""),
                                                            dados["transp_endereco"]) else 0
         if criados:

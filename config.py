@@ -20,8 +20,10 @@ class Config:
         "pool_recycle": 280,
     }
 
-    # Upload de imagens
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB por requisição
+    # Upload de imagens. Limite generoso porque o Relatório de Carga pode receber
+    # várias fotos de celular (cada uma 3-5 MB). Configurável no Render pela variável
+    # MAX_UPLOAD_MB sem precisar mexer no código. Padrão: 100 MB por requisição.
+    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024
     UPLOAD_FOLDER = os.path.join(basedir, "uploads")
     ALLOWED_EXT = {"png", "jpg", "jpeg", "gif", "webp"}
 

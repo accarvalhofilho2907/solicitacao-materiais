@@ -185,6 +185,17 @@ def create_app():
     from flask import redirect, abort
     from .models import STATUS, STATUS_LABEL, Solicitacao
 
+    @app.errorhandler(413)
+    def _upload_grande(e):
+        # Substitui a tela crua "Request Entity Too Large" por um aviso claro.
+        from flask import request, redirect, flash, url_for
+        limite_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+        flash(f"Os arquivos enviados passaram do limite de {limite_mb} MB por envio. "
+              f"Envie menos fotos de uma vez (ou fotos menores) e tente novamente.", "warning")
+        # volta para a tela de onde veio, se der; senão para o início
+        destino = request.referrer or url_for("auth.index")
+        return redirect(destino), 303
+
     @app.route("/r/<int:sid>")
     def link_curto(sid):
         s = db.session.get(Solicitacao, sid)

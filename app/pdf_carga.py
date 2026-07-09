@@ -71,6 +71,18 @@ _VALOR = ParagraphStyle("v", parent=_ST["Normal"], fontName="Helvetica",
 _OBS = ParagraphStyle("o", parent=_ST["Normal"], fontName="Helvetica", fontSize=9,
                       textColor=GRAFITE, leading=13)
 
+# Estilos do cabeçalho (Opção 3 — bloco grafite com status integrado)
+_MARCA_S = ParagraphStyle("ms", parent=_ST["Normal"], textColor=BRANCO, fontSize=20,
+                          fontName="Helvetica-Bold", leading=20, alignment=1)
+_CAB_TIT = ParagraphStyle("ct", parent=_ST["Normal"], textColor=BRANCO, fontSize=17,
+                          fontName="Helvetica-Bold", leading=20)
+_CAB_SUB = ParagraphStyle("cs", parent=_ST["Normal"], textColor=colors.HexColor("#C9C6C2"),
+                          fontSize=8.5, fontName="Helvetica", leading=11)
+_STATUS_LABEL = ParagraphStyle("sl", parent=_ST["Normal"], textColor=BRANCO, fontSize=8,
+                               fontName="Helvetica", leading=10, alignment=1)
+_STATUS_VAL = ParagraphStyle("sv", parent=_ST["Normal"], textColor=BRANCO, fontSize=13,
+                             fontName="Helvetica-Bold", leading=15, alignment=1)
+
 
 def _campo(label, valor):
     """Uma célula com rótulo pequeno em cima e valor embaixo."""
@@ -138,26 +150,45 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
     status_txt = "RECEBIMENTO" if is_receb else "ENVIO"
     status_cor = VERDE if is_receb else CORAL
 
-    # ---------- Cabeçalho (faixa Grafite com bloco de status colorido) ----------
-    titulo = Paragraph("RELATÓRIO DE CARGA", _TITULO)
-    sub = Paragraph("Almoxarifado · Cluster Delta MA", _SUBTIT)
-    bloco_titulo = Table([[titulo], [sub]], colWidths=[128 * mm])
-    bloco_titulo.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 10),
-                                      ("TOPPADDING", (0, 0), (0, 0), 12),
-                                      ("BOTTOMPADDING", (0, 1), (0, 1), 12),
-                                      ("TOPPADDING", (0, 1), (0, 1), 0)]))
-    bloco_status = Table([[Paragraph(f'<font color="white"><b>{status_txt}</b></font>', _ST["Normal"])]],
-                         colWidths=[50 * mm], rowHeights=[None])
-    bloco_status.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_cor),
+    # ---------- Cabeçalho (Opção 3: bloco grafite, barrinhas coral+verde, status integrado) ----------
+    ALT_CAB = 26 * mm
+    # marca "S" num quadrado coral
+    marca = Table([[Paragraph("S", _MARCA_S)]], colWidths=[13 * mm], rowHeights=[13 * mm])
+    marca.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), CORAL),
+                               ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                               ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    # marca + título lado a lado
+    titulo_bloco = Table(
+        [[marca, [Paragraph("RELATÓRIO DE CARGA", _CAB_TIT),
+                  Paragraph("Serena Energia · Almoxarifado Cluster Delta MA", _CAB_SUB)]]],
+        colWidths=[13 * mm, 96 * mm])
+    titulo_bloco.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                      ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 14),
+                                      ("LEFTPADDING", (1, 0), (1, 0), 0),
+                                      ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    # bloco de status (cor conforme o modo)
+    status_bloco = Table([[Paragraph("STATUS", _STATUS_LABEL)], [Paragraph(status_txt, _STATUS_VAL)]],
+                         colWidths=[46 * mm])
+    status_bloco.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_cor),
                                       ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                                      ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
-    cab = Table([[bloco_titulo, bloco_status]], colWidths=[128 * mm, 50 * mm])
-    cab.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), GRAFITE),
-                             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                             ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                             ("TOPPADDING", (0, 0), (-1, -1), 0),
-                             ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+                                      ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                      ("TOPPADDING", (0, 0), (0, 0), 6), ("BOTTOMPADDING", (0, 0), (0, 0), 0),
+                                      ("TOPPADDING", (0, 1), (0, 1), 0), ("BOTTOMPADDING", (0, 1), (0, 1), 6)]))
+    # linha inteira: barrinha coral | barrinha verde | grafite(titulo) | status
+    cab = Table([["", "", titulo_bloco, status_bloco]],
+                colWidths=[2.2 * mm, 1.3 * mm, 128.5 * mm, 46 * mm], rowHeights=[ALT_CAB])
+    cab.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), CORAL),
+        ("BACKGROUND", (1, 0), (1, 0), VERDE),
+        ("BACKGROUND", (2, 0), (2, 0), GRAFITE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (1, 0), 0), ("RIGHTPADDING", (0, 0), (1, 0), 0),
+        ("LEFTPADDING", (2, 0), (2, 0), 14), ("RIGHTPADDING", (2, 0), (2, 0), 0),
+        ("LEFTPADDING", (3, 0), (3, 0), 0), ("RIGHTPADDING", (3, 0), (3, 0), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
     el.append(cab)
 
     # aviso de avaria (se houver)

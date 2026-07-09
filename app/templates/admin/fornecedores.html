@@ -1,43 +1,110 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="{{ url_for('admin.cadastros') }}" class="small">&larr; Cadastros</a>
-<h4 class="mt-2 mb-3">Fornecedores</h4>
+<h4 class="mt-2 mb-1">Fornecedores / Empresas</h4>
+<p class="text-muted small">Cadastro único. Marque se cada registro é <b>Fornecedor</b> (aparece na cotação), <b>Empresa interna</b> (vincula usuários), ou os dois.</p>
+
 <div class="row g-3">
   <div class="col-md-5"><div class="card"><div class="card-body">
-    <h6>Novo fornecedor</h6>
-    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h6>Novo cadastro</h6>
+    <form method="post" id="formNovo"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="d-flex gap-3 mb-2">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="is_fornecedor" value="1" id="isF" checked><label class="form-check-label small" for="isF">Fornecedor</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="is_empresa_interna" value="1" id="isE"><label class="form-check-label small" for="isE">Empresa interna</label></div>
+      </div>
       <div class="mb-2"><input name="razao_social" class="form-control" placeholder="Razão Social"></div>
       <div class="mb-2"><input name="nome_fantasia" class="form-control" placeholder="Nome Fantasia"></div>
+      <div class="row g-2 mb-2">
+        <div class="col-7"><input name="cnpj" id="cnpjNovo" class="form-control" placeholder="CNPJ * (obrigatório)" inputmode="numeric" onblur="validaCnpjNovo()"></div>
+        <div class="col-5"><input name="inscricao_estadual" class="form-control" placeholder="Insc. Estadual"></div>
+      </div>
       <div class="mb-2"><input name="email" type="email" class="form-control" placeholder="E-mail"></div>
       <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="usa_email" value="1" id="ue" checked><label class="form-check-label small" for="ue">Contatar por e-mail (entra no envio de cotação por e-mail)</label></div>
       <div class="mb-2"><input name="contato_nome" class="form-control" placeholder="Nome do contato"></div>
       <div class="mb-2"><input name="telefone" class="form-control" placeholder="Telefone / WhatsApp (ex.: 11 98888-7777)"></div>
+
+      <label class="form-label small fw-bold mt-1">Endereço</label>
+      <div class="row g-2 mb-2">
+        <div class="col-5"><input name="cep" id="cepNovo" class="form-control" placeholder="CEP" inputmode="numeric" onblur="buscaCep('Novo')"></div>
+        <div class="col-7 d-flex align-items-center"><span class="small text-muted" id="cepMsgNovo"></span></div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-9"><input name="logradouro" id="logradouroNovo" class="form-control" placeholder="Logradouro"></div>
+        <div class="col-3"><input name="numero" class="form-control" placeholder="Nº"></div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-6"><input name="bairro" id="bairroNovo" class="form-control" placeholder="Bairro"></div>
+        <div class="col-6"><input name="complemento" class="form-control" placeholder="Complemento"></div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-9"><input name="cidade" id="cidadeNovo" class="form-control" placeholder="Cidade"></div>
+        <div class="col-3"><input name="estado" id="estadoNovo" class="form-control" placeholder="UF" maxlength="2"></div>
+      </div>
+
       <label class="form-label small">Tipos de material atendidos</label>
       <input class="form-control form-control-sm mb-1" placeholder="Buscar tipo..." onkeyup="filtrarChk(this.value,'boxTipos')">
-      <div class="border rounded p-2 mb-2" id="boxTipos" style="max-height:170px;overflow:auto">
+      <div class="border rounded p-2 mb-2" id="boxTipos" style="max-height:150px;overflow:auto">
         {% for t in tipos %}<div class="form-check chk" data-nome="{{ t.nome|lower }}"><input class="form-check-input" type="checkbox" name="tipos" value="{{ t.id }}" id="t{{ t.id }}"><label class="form-check-label" for="t{{ t.id }}">{{ t.nome }}</label></div>{% else %}<span class="text-muted small">Cadastre tipos primeiro.</span>{% endfor %}
       </div>
       <button class="btn btn-primary">Cadastrar</button></form>
   </div></div></div>
-  <div class="col-md-7"><div class="card"><div class="card-body pb-0"><input class="form-control form-control-sm" placeholder="Buscar fornecedor (nome, contato, tipo)..." onkeyup="filtrarForn(this.value)"></div><div class="table-responsive">
-    <table class="table mb-0 align-middle"><thead class="table-light"><tr><th>Fornecedor</th><th>Contato</th><th>WhatsApp</th><th>Tipos</th><th></th></tr></thead>
-    <tbody id="tabForn">{% for f in lista %}<tr class="lf" data-busca="{{ (f.nome ~ ' ' ~ (f.contato_nome or '') ~ ' ' ~ (f.tipos|map(attribute='nome')|join(' ')))|lower }}">
-      <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}{% if not f.usa_email %} <span class="badge bg-light text-muted">sem e-mail</span>{% endif %}<div class="small text-muted">{{ f.email or '-' }}{% if f.telefone %} · 📞 {{ f.telefone }}{% endif %}</div></td>
-      <td class="small">{{ f.contato_nome or '-' }}</td><td class="small">{{ f.telefone or '-' }}</td>
-      <td>{% for t in f.tipos %}<span class="badge bg-info text-dark">{{ t.nome }}</span> {% endfor %}</td>
+
+  <div class="col-md-7"><div class="card"><div class="card-body pb-2">
+    <form method="get" class="d-flex gap-2 align-items-center mb-2">
+      <input name="q" class="form-control form-control-sm" placeholder="Buscar (nome, CNPJ, cidade)..." value="{{ busca }}">
+      <button class="btn btn-sm btn-outline-primary">Buscar</button>
+      {% if so_incompletos %}<a href="{{ url_for('admin.fornecedores') }}" class="btn btn-sm btn-warning">Ver todos</a>{% else %}<a href="{{ url_for('admin.fornecedores', incompletos='1') }}" class="btn btn-sm btn-outline-warning" title="Cadastros sem CNPJ">Sem CNPJ</a>{% endif %}
+    </form>
+    {% if so_incompletos %}<div class="alert alert-warning py-1 small mb-2">Mostrando só cadastros <b>sem CNPJ</b> — complete-os para sair da lista de pendências do sininho.</div>{% endif %}
+    </div><div class="table-responsive">
+    <table class="table mb-0 align-middle"><thead class="table-light"><tr><th>Cadastro</th><th>Papel</th><th>CNPJ</th><th>Cidade</th><th></th></tr></thead>
+    <tbody>{% for f in lista %}<tr>
+      <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}
+        <div class="small text-muted">{{ f.email or '-' }}{% if f.telefone %} · 📞 {{ f.telefone }}{% endif %}</div></td>
+      <td class="small">
+        {% if f.is_fornecedor %}<span class="badge bg-info text-dark">Fornecedor</span>{% endif %}
+        {% if f.is_empresa_interna %}<span class="badge" style="background:var(--coral)">Empresa</span>{% endif %}
+      </td>
+      <td class="small">{% if f.cnpj %}{{ f.cnpj }}{% else %}<span class="badge bg-warning text-dark">sem CNPJ</span>{% endif %}</td>
+      <td class="small">{{ f.cidade or '-' }}</td>
       <td class="text-nowrap">
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.fornecedor_editar', fid=f.id) }}">Editar</a>
         <form method="post" action="{{ url_for('admin.fornecedor_toggle_ativo', fid=f.id) }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm {{ 'btn-outline-secondary' if f.ativo else 'btn-outline-success' }}" title="{{ 'Desativar' if f.ativo else 'Ativar' }}"
+          <button class="btn btn-sm {{ 'btn-outline-secondary' if f.ativo else 'btn-outline-success' }}"
                   onclick="return confirm('{{ 'Desativar' if f.ativo else 'Ativar' }} {{ f.nome }}?')">{{ 'Desativar' if f.ativo else 'Ativar' }}</button>
         </form>
       </td></tr>
-    {% else %}<tr><td colspan="5" class="text-muted">Nenhum fornecedor.</td></tr>{% endfor %}</tbody></table>
+    {% else %}<tr><td colspan="5" class="text-muted">Nenhum cadastro encontrado.</td></tr>{% endfor %}</tbody></table>
   </div></div></div>
 </div>
+
 <script>
 function filtrarChk(q, boxId){ q=q.toLowerCase(); document.querySelectorAll('#'+boxId+' .chk').forEach(function(d){ d.style.display = d.dataset.nome.indexOf(q)>=0?'':'none'; }); }
-function filtrarForn(q){ q=q.toLowerCase(); document.querySelectorAll('#tabForn tr.lf').forEach(function(r){ r.style.display = r.dataset.busca.indexOf(q)>=0?'':'none'; }); }
+
+function soDig(s){ return (s||'').replace(/\D/g,''); }
+function validaCnpjNovo(){
+  var c = document.getElementById('cnpjNovo'); var d = soDig(c.value);
+  if(d && d.length !== 14){ c.classList.add('is-invalid'); } else { c.classList.remove('is-invalid'); }
+}
+function buscaCep(sufixo){
+  var campo = document.getElementById('cep'+sufixo);
+  var cep = soDig(campo.value);
+  var msg = document.getElementById('cepMsg'+sufixo);
+  if(cep.length !== 8){ if(msg) msg.textContent=''; return; }
+  if(msg){ msg.textContent = 'buscando...'; msg.className='small text-muted'; }
+  fetch('https://viacep.com.br/ws/'+cep+'/json/')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.erro){ if(msg){ msg.textContent='CEP não encontrado — preencha manualmente'; msg.className='small text-danger'; } return; }
+      var set = function(id,val){ var el=document.getElementById(id+sufixo); if(el && val) el.value = val; };
+      set('logradouro', (d.logradouro||'').toUpperCase());
+      set('bairro', (d.bairro||'').toUpperCase());
+      set('cidade', (d.localidade||'').toUpperCase());
+      set('estado', (d.uf||'').toUpperCase());
+      if(msg){ msg.textContent='endereço preenchido ✓'; msg.className='small text-success'; }
+    })
+    .catch(function(){ if(msg){ msg.textContent='sem internet — preencha manualmente'; msg.className='small text-danger'; } });
+}
 </script>
 {% endblock %}

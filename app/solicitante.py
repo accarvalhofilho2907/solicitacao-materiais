@@ -8,6 +8,7 @@ from datetime import datetime
 from .models import (Solicitacao, TipoMaterial, Imagem, Comentario, LogSolicitacao,
                     Usuario, Fornecedor, Orcamento, UNIDADES_MEDIDA)
 from .storage import salvar_imagem
+from .util import contem_busca
 from .emails import enviar_email
 from .pdf import gerar_pdf_lista
 
@@ -36,13 +37,13 @@ def index():
         q = q.filter(db.or_(Solicitacao.fornecedor_definido_id.in_(ids), Solicitacao.id.in_(sub)))
     if f_tipo:
         q = q.filter_by(tipo_material_id=int(f_tipo))
-    if f_busca:
-        q = q.filter(Solicitacao.material.ilike(f"%{f_busca}%"))
     if f_de:
         q = q.filter(Solicitacao.criado_em >= datetime.strptime(f_de, "%Y-%m-%d"))
     if f_ate:
         q = q.filter(Solicitacao.criado_em <= datetime.strptime(f_ate, "%Y-%m-%d").replace(hour=23, minute=59))
     pedidos = q.order_by(Solicitacao.atualizado_em.desc()).all()
+    if f_busca:  # busca ignora acentos (item 150)
+        pedidos = [s for s in pedidos if contem_busca(s.material, f_busca)]
     pode_criar = current_user.is_admin or current_user.pode_solicitar
     return render_template("solicitante/index.html", pedidos=pedidos,
         tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),

@@ -1,16 +1,45 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="{{ url_for('admin.fornecedores') }}" class="small">&larr; Voltar</a>
-<h4 class="mt-2 mb-3">Editar fornecedor</h4>
-<div class="card" style="max-width:560px"><div class="card-body">
+<h4 class="mt-2 mb-3">Editar cadastro</h4>
+<div class="card" style="max-width:620px"><div class="card-body">
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="d-flex gap-3 mb-3">
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="is_fornecedor" value="1" id="isF" {{ 'checked' if f.is_fornecedor }}><label class="form-check-label small" for="isF">Fornecedor</label></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" name="is_empresa_interna" value="1" id="isE" {{ 'checked' if f.is_empresa_interna }}><label class="form-check-label small" for="isE">Empresa interna</label></div>
+    </div>
     <div class="mb-2"><label class="form-label">Razão Social</label><input name="razao_social" class="form-control" value="{{ f.razao_social or '' }}"></div>
     <div class="mb-2"><label class="form-label">Nome Fantasia</label><input name="nome_fantasia" class="form-control" value="{{ f.nome_fantasia or '' }}"></div>
-    <div class="mb-2"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" value="{{ f.email }}"></div>
-    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="usa_email" value="1" id="ue" {{ 'checked' if f.usa_email }}><label class="form-check-label small" for="ue">Contatar por e-mail (entra no envio de cotação por e-mail)</label></div>
+    <div class="row g-2 mb-2">
+      <div class="col-7"><label class="form-label">CNPJ</label><input name="cnpj" id="cnpjNovo" class="form-control" value="{{ f.cnpj or '' }}" inputmode="numeric" onblur="validaCnpjNovo()">
+        {% if not f.cnpj %}<div class="form-text text-warning">Cadastro antigo sem CNPJ — complete para tirar da lista de pendências.</div>{% endif %}</div>
+      <div class="col-5"><label class="form-label">Insc. Estadual</label><input name="inscricao_estadual" class="form-control" value="{{ f.inscricao_estadual or '' }}"></div>
+    </div>
+    <div class="mb-2"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" value="{{ f.email or '' }}"></div>
+    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="usa_email" value="1" id="ue" {{ 'checked' if f.usa_email }}><label class="form-check-label small" for="ue">Contatar por e-mail</label></div>
     <div class="mb-2"><label class="form-label">Nome do contato</label><input name="contato_nome" class="form-control" value="{{ f.contato_nome or '' }}"></div>
     <div class="mb-2"><label class="form-label">Telefone / WhatsApp</label><input name="telefone" class="form-control" value="{{ f.telefone or '' }}">
       {% if f.telefone_e164 %}<div class="form-text">WhatsApp: {{ f.telefone_e164 }}</div>{% endif %}</div>
+
+    <label class="form-label fw-bold mt-1">Endereço</label>
+    <div class="row g-2 mb-2">
+      <div class="col-5"><input name="cep" id="cepNovo" class="form-control" placeholder="CEP" value="{{ f.cep or '' }}" inputmode="numeric" onblur="buscaCep('Novo')"></div>
+      <div class="col-7 d-flex align-items-center"><span class="small text-muted" id="cepMsgNovo"></span></div>
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-9"><input name="logradouro" id="logradouroNovo" class="form-control" placeholder="Logradouro" value="{{ f.logradouro or '' }}"></div>
+      <div class="col-3"><input name="numero" class="form-control" placeholder="Nº" value="{{ f.numero or '' }}"></div>
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-6"><input name="bairro" id="bairroNovo" class="form-control" placeholder="Bairro" value="{{ f.bairro or '' }}"></div>
+      <div class="col-6"><input name="complemento" class="form-control" placeholder="Complemento" value="{{ f.complemento or '' }}"></div>
+    </div>
+    <div class="row g-2 mb-2">
+      <div class="col-9"><input name="cidade" id="cidadeNovo" class="form-control" placeholder="Cidade" value="{{ f.cidade or '' }}"></div>
+      <div class="col-3"><input name="estado" id="estadoNovo" class="form-control" placeholder="UF" maxlength="2" value="{{ f.estado or '' }}"></div>
+    </div>
+    {% if f.endereco and not f.logradouro %}<div class="form-text mb-2">Endereço antigo (texto): {{ f.endereco }}</div>{% endif %}
+
     <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="ativo" value="1" id="ativo" {{ 'checked' if f.ativo }}><label class="form-check-label" for="ativo">Ativo</label></div>
     <label class="form-label">Tipos de material atendidos</label>
     <input class="form-control form-control-sm mb-1" placeholder="Buscar tipo..." onkeyup="filtrarChk(this.value,'boxTipos')">
@@ -22,5 +51,20 @@
 </div></div>
 <script>
 function filtrarChk(q, boxId){ q=q.toLowerCase(); document.querySelectorAll('#'+boxId+' .chk').forEach(function(d){ d.style.display = d.dataset.nome.indexOf(q)>=0?'':'none'; }); }
+function soDig(s){ return (s||'').replace(/\D/g,''); }
+function validaCnpjNovo(){ var c=document.getElementById('cnpjNovo'); var d=soDig(c.value); if(d && d.length!==14){ c.classList.add('is-invalid'); } else { c.classList.remove('is-invalid'); } }
+function buscaCep(sufixo){
+  var campo=document.getElementById('cep'+sufixo); var cep=soDig(campo.value);
+  var msg=document.getElementById('cepMsg'+sufixo);
+  if(cep.length!==8){ if(msg) msg.textContent=''; return; }
+  if(msg){ msg.textContent='buscando...'; msg.className='small text-muted'; }
+  fetch('https://viacep.com.br/ws/'+cep+'/json/').then(function(r){return r.json();}).then(function(d){
+    if(d.erro){ if(msg){ msg.textContent='CEP não encontrado — preencha manualmente'; msg.className='small text-danger'; } return; }
+    var set=function(id,val){ var el=document.getElementById(id+sufixo); if(el && val) el.value=val; };
+    set('logradouro',(d.logradouro||'').toUpperCase()); set('bairro',(d.bairro||'').toUpperCase());
+    set('cidade',(d.localidade||'').toUpperCase()); set('estado',(d.uf||'').toUpperCase());
+    if(msg){ msg.textContent='endereço preenchido ✓'; msg.className='small text-success'; }
+  }).catch(function(){ if(msg){ msg.textContent='sem internet — preencha manualmente'; msg.className='small text-danger'; } });
+}
 </script>
 {% endblock %}

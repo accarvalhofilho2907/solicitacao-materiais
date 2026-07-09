@@ -49,12 +49,16 @@ class Usuario(UserMixin, db.Model):
     senha_hash = db.Column(db.String(255), nullable=False)
     papel = db.Column(db.String(20), nullable=False, default="solicitante")  # solicitante|almoxarifado|visualizador|admin
     empresa_id = db.Column(db.ForeignKey("empresas.id"))
+    # item 150: novo vínculo para a tabela unificada (fornecedores com is_empresa_interna).
+    # empresa_id antigo é mantido para não quebrar nada; a migração popula este a partir daquele.
+    empresa_fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"))
     senha_temporaria = db.Column(db.Boolean, default=False)
     ativo = db.Column(db.Boolean, default=True)
     tema_preferido = db.Column(db.String(10), default="escuro")   # 'claro' | 'escuro' — item 113
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     empresa = db.relationship("Empresa")
+    empresa_fornecedor = db.relationship("Fornecedor", foreign_keys=[empresa_fornecedor_id])
     solicitacoes = db.relationship("Solicitacao", backref="solicitante",
                                    foreign_keys="Solicitacao.solicitante_id", lazy=True)
 
@@ -118,7 +122,18 @@ class Fornecedor(db.Model):
     telefone_e164 = db.Column(db.String(20))
     cnpj = db.Column(db.String(20))                  # item 145 — só números, formatado na exibição
     inscricao_estadual = db.Column(db.String(20))    # item 145
-    endereco = db.Column(db.String(255))             # item 145
+    endereco = db.Column(db.String(255))             # item 145 — endereço antigo (texto livre); mantido como fallback
+    # Endereço estruturado (item 150)
+    cep = db.Column(db.String(9))
+    logradouro = db.Column(db.String(180))
+    numero = db.Column(db.String(20))
+    bairro = db.Column(db.String(120))
+    complemento = db.Column(db.String(120))
+    cidade = db.Column(db.String(120))
+    estado = db.Column(db.String(2))
+    # Papel no cadastro unificado (item 150): pode ser fornecedor, empresa interna, ou ambos
+    is_fornecedor = db.Column(db.Boolean, default=True)
+    is_empresa_interna = db.Column(db.Boolean, default=False)
     aprovacao = db.Column(db.String(12), default="aprovado")  # 'aprovado' | 'pendente' (item 145)
     usa_email = db.Column(db.Boolean, default=True)   # se o contato é por e-mail
     ativo = db.Column(db.Boolean, default=True)
@@ -130,6 +145,33 @@ class Fornecedor(db.Model):
     @property
     def aprovado(self):
         return (self.aprovacao or "aprovado") == "aprovado"
+
+    @property
+    def endereco_completo(self):
+        """Monta o endereço a partir dos campos estruturados; cai no texto antigo se vazios."""
+        partes = []
+        if self.logradouro:
+            linha = self.logradouro
+            if self.numero:
+                linha += f", {self.numero}"
+            partes.append(linha)
+        if self.bairro:
+            partes.append(self.bairro)
+        if self.complemento:
+            partes.append(self.complemento)
+        cidade_uf = " - ".join(x for x in [self.cidade, self.estado] if x)
+        if cidade_uf:
+            partes.append(cidade_uf)
+        if self.cep:
+            partes.append(f"CEP {self.cep}")
+        if partes:
+            return ", ".join(partes)
+        return self.endereco or ""
+
+    @property
+    def cadastro_incompleto(self):
+        """Sem CNPJ = cadastro antigo a completar (item 150 — gera aviso no sininho)."""
+        return not (self.cnpj or "").strip()
 
 
 class Solicitacao(db.Model):

@@ -17,7 +17,8 @@ from .storage import salvar_imagem
 from .emails import enviar_email
 from .pdf import gerar_pdf_pedido, gerar_pdf_pedido_lote
 from .pdf_orcamento import extrair_itens, _parse_valor
-from .util import normalizar_telefone_br, somar_dias_uteis
+from .util import (normalizar_telefone_br, somar_dias_uteis, contem_busca,
+                   formatar_cnpj, cnpj_valido, formatar_ie, so_digitos)
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 NOTA_WHATS = ("(Esta solicitação de cotação também foi enviada por e-mail; estamos "
@@ -193,13 +194,13 @@ def dashboard():
         q = q.filter(db.or_(Solicitacao.fornecedor_definido_id.in_(ids), Solicitacao.id.in_(sub)))
     if f_tipo:
         q = q.filter_by(tipo_material_id=int(f_tipo))
-    if f_busca:
-        q = q.filter(Solicitacao.material.ilike(f"%{f_busca}%"))
     if f_de:
         q = q.filter(Solicitacao.criado_em >= datetime.strptime(f_de, "%Y-%m-%d"))
     if f_ate:
         q = q.filter(Solicitacao.criado_em <= datetime.strptime(f_ate, "%Y-%m-%d").replace(hour=23, minute=59))
     pedidos = q.order_by(Solicitacao.atualizado_em.desc()).all()
+    if f_busca:  # busca ignora acentos (item 150)
+        pedidos = [s for s in pedidos if contem_busca(s.material, f_busca)]
 
     # Resumo de notinhas (mês corrente) + filtro de atividade
     f_ativ = request.args.get("ativ_resumo")
@@ -380,11 +381,10 @@ def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
     itens = query.order_by(Solicitacao.id).all()
 
     if busca:
-        b = busca.strip().lower()
         def _bate(s):
             campos = [s.material or "", s.tipo.nome if s.tipo else "",
                      " ".join(f.nome for f in s.tipo.fornecedores) if s.tipo else ""]
-            return any(b in c.lower() for c in campos)
+            return any(contem_busca(c, busca) for c in campos)
         itens = [s for s in itens if _bate(s)]
 
     excluir_fornecedores = excluir_fornecedores or set()
@@ -1059,6 +1059,23 @@ def _aplicar_fornecedor(f):
     f.telefone = exib or request.form.get("telefone", "").strip()
     f.telefone_e164 = e164
     f.tipos = TipoMaterial.query.filter(TipoMaterial.id.in_(request.form.getlist("tipos"))).all()
+    # item 150 — CNPJ, IE e endereço estruturado
+    cnpj_raw = request.form.get("cnpj", "").strip()
+    f.cnpj = formatar_cnpj(cnpj_raw) if cnpj_valido(cnpj_raw) else (cnpj_raw or None)
+    f.inscricao_estadual = formatar_ie(request.form.get("inscricao_estadual", "").strip())
+    f.cep = request.form.get("cep", "").strip() or None
+    f.logradouro = _mai(request.form.get("logradouro"))
+    f.numero = request.form.get("numero", "").strip() or None
+    f.bairro = _mai(request.form.get("bairro"))
+    f.complemento = _mai(request.form.get("complemento"))
+    f.cidade = _mai(request.form.get("cidade"))
+    f.estado = (request.form.get("estado", "").strip().upper() or None)
+    # papéis (item 150) — pode ser fornecedor, empresa interna, ou ambos
+    f.is_fornecedor = request.form.get("is_fornecedor") == "1"
+    f.is_empresa_interna = request.form.get("is_empresa_interna") == "1"
+    # se não marcou nenhum, assume fornecedor (não deixa cadastro "órfão")
+    if not f.is_fornecedor and not f.is_empresa_interna:
+        f.is_fornecedor = True
 
 
 @admin_bp.route("/fornecedores", methods=["GET", "POST"])
@@ -1066,15 +1083,30 @@ def _aplicar_fornecedor(f):
 def fornecedores():
     tipos = TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all()
     if request.method == "POST":
+        # CNPJ obrigatório e válido nos cadastros novos (item 150)
+        cnpj_raw = request.form.get("cnpj", "").strip()
+        if not cnpj_valido(cnpj_raw):
+            flash("Informe um CNPJ válido — ele é obrigatório em novos cadastros.", "warning")
+            return redirect(url_for("admin.fornecedores"))
         f = Fornecedor(email="")
         _aplicar_fornecedor(f)
         f.ativo = True
         db.session.add(f)
         db.session.commit()
-        flash("Fornecedor cadastrado.", "success")
+        flash("Cadastro salvo.", "success")
         return redirect(url_for("admin.fornecedores"))
-    return render_template("admin/fornecedores.html",
-                           lista=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(), tipos=tipos)
+
+    # Lista unificada (fornecedores + empresas internas). Filtros: busca e incompletos.
+    busca = (request.args.get("q") or "").strip()
+    so_incompletos = request.args.get("incompletos") == "1"
+    lista = Fornecedor.query.order_by(Fornecedor.nome_fantasia, Fornecedor.razao_social).all()
+    if so_incompletos:
+        lista = [f for f in lista if f.cadastro_incompleto and f.ativo]
+    if busca:
+        lista = [f for f in lista if contem_busca(f.nome, busca) or contem_busca(f.cnpj, busca)
+                 or contem_busca(f.cidade, busca)]
+    return render_template("admin/fornecedores.html", lista=lista, tipos=tipos,
+                           busca=busca, so_incompletos=so_incompletos)
 
 
 @admin_bp.route("/fornecedores/<int:fid>/editar", methods=["GET", "POST"])

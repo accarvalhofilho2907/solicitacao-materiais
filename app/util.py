@@ -1,6 +1,23 @@
 """Utilitários: normalização de telefone BR e cálculo de dias úteis."""
 import re
+import unicodedata
 from datetime import date, timedelta
+
+
+def sem_acentos(texto):
+    """Remove acentos/diacríticos e passa para minúsculas, para busca que ignora
+    sinais gráficos (item 150). Ex.: 'Veículos' -> 'veiculos', 'Açúcar' -> 'acucar'.
+    Aceita None (devolve string vazia)."""
+    if not texto:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", str(texto))
+    sem = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return sem.casefold().strip()
+
+
+def contem_busca(conteudo, termo):
+    """True se `termo` aparece em `conteudo` ignorando acentos e maiúsc/minúsc (item 150)."""
+    return sem_acentos(termo) in sem_acentos(conteudo)
 
 
 def normalizar_telefone_br(raw):

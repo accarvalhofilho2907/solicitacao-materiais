@@ -47,6 +47,67 @@ def _light_migrate():
             db.session.rollback()
     # Backfill: todos os cadastros em MAIÚSCULAS (item 88). Idempotente.
     _maiusculas_cadastros(insp)
+    # Unificação Fornecedores/Empresas (item 150). Aditiva e idempotente.
+    _unificar_empresas_fornecedores(insp)
+
+
+def _unificar_empresas_fornecedores(insp):
+    """Item 150 — unifica Empresas dentro de Fornecedores, de forma ADITIVA e sem risco:
+    - fornecedores existentes viram is_fornecedor=True (backfill dos NULL);
+    - cada Empresa vira um Fornecedor com is_empresa_interna=True (se ainda não migrada);
+    - Usuario.empresa_fornecedor_id é populado a partir do empresa_id antigo.
+    Nada é apagado nem renumerado — os vínculos antigos continuam existindo.
+    Em qualquer falha, faz rollback e não aplica (deixa como estava)."""
+    from .models import Empresa, Fornecedor, Usuario
+    try:
+        cols_forn = {c["name"] for c in insp.get_columns("fornecedores")}
+        if "is_fornecedor" not in cols_forn or "is_empresa_interna" not in cols_forn:
+            return  # colunas ainda não existem neste boot; próximo boot aplica
+
+        # 1) fornecedores sem papel definido = fornecedores de verdade
+        db.session.execute(text(
+            "UPDATE fornecedores SET is_fornecedor = TRUE WHERE is_fornecedor IS NULL"))
+        db.session.execute(text(
+            "UPDATE fornecedores SET is_empresa_interna = FALSE WHERE is_empresa_interna IS NULL"))
+        db.session.commit()
+
+        if not insp.has_table("empresas"):
+            return
+
+        # 2) cada Empresa vira um Fornecedor-empresa-interna (se ainda não existe um com esse nome)
+        mapa = {}   # empresa_id -> fornecedor_id
+        for emp in Empresa.query.all():
+            nome = (emp.nome or "").strip()
+            if not nome:
+                continue
+            # já migrada? procura fornecedor com mesmo nome marcado como empresa interna
+            existente = (Fornecedor.query
+                         .filter(Fornecedor.is_empresa_interna.is_(True))
+                         .filter((Fornecedor.razao_social == nome) | (Fornecedor.nome_fantasia == nome))
+                         .first())
+            if existente:
+                mapa[emp.id] = existente.id
+                continue
+            novo = Fornecedor(razao_social=nome, nome_fantasia=nome,
+                              is_fornecedor=False, is_empresa_interna=True,
+                              aprovacao="aprovado", ativo=bool(getattr(emp, "ativo", True)),
+                              usa_email=False)
+            db.session.add(novo)
+            db.session.flush()   # garante o id sem fechar a transação
+            mapa[emp.id] = novo.id
+        db.session.commit()
+
+        # 3) popula Usuario.empresa_fornecedor_id a partir do empresa_id antigo
+        cols_user = {c["name"] for c in insp.get_columns("usuarios")}
+        if "empresa_fornecedor_id" in cols_user:
+            for u in Usuario.query.filter(Usuario.empresa_id.isnot(None)).all():
+                if u.empresa_fornecedor_id is None and u.empresa_id in mapa:
+                    u.empresa_fornecedor_id = mapa[u.empresa_id]
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception("Falha na unificação Empresas/Fornecedores (item 150) — mantido estado anterior")
 
 
 def _maiusculas_cadastros(insp):
@@ -138,6 +199,15 @@ def create_app():
         if current_user.is_authenticated and current_user.is_admin:
             ctx["n_aprovacoes"] = Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").count()
             ctx["n_cotacao"] = Solicitacao.query.filter_by(status="AGUARDANDO_ENVIO_COTACAO").count()
+            # item 150: cadastros (fornecedores/empresas) ativos sem CNPJ = precisam ser completados
+            from .models import Fornecedor
+            try:
+                ctx["n_cadastros_incompletos"] = (Fornecedor.query
+                    .filter(Fornecedor.ativo.is_(True))
+                    .filter((Fornecedor.cnpj.is_(None)) | (Fornecedor.cnpj == ""))
+                    .count())
+            except Exception:
+                ctx["n_cadastros_incompletos"] = 0
         return ctx
 
     with app.app_context():

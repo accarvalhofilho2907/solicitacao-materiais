@@ -84,7 +84,11 @@
     <h6>5. Dados da carga</h6>
     <div class="row g-2">
       <div class="col-md-4"><label class="form-label small mb-0">Nº Nota Fiscal</label>
-        <input name="nota_fiscal" class="form-control form-control-sm"></div>
+        <input name="nota_fiscal" id="campoNF" class="form-control form-control-sm" oninput="toggleFotoDoc('NF', this.value)">
+        <div id="wrapFotoNF" class="mt-1 d-none">
+          <label class="form-label small mb-0 text-primary">📷 Foto da Nota Fiscal</label>
+          <input type="file" accept="image/*" class="form-control form-control-sm" name="foto_nf" id="fotoNF"></div>
+      </div>
       <div class="col-md-4"><label class="form-label small mb-0">Série</label>
         <input name="serie" class="form-control form-control-sm"></div>
       <div class="col-md-4"><label class="form-label small mb-0">OC (se informado)</label>
@@ -110,7 +114,11 @@
         </select>
         <input name="natureza_outro" id="natOutro" class="form-control form-control-sm mt-1 d-none" placeholder="Qual natureza?"></div>
       <div class="col-md-4"><label class="form-label small mb-0">Nº CT-e</label>
-        <input name="cte" class="form-control form-control-sm"></div>
+        <input name="cte" id="campoCTE" class="form-control form-control-sm" oninput="toggleFotoDoc('CTE', this.value)">
+        <div id="wrapFotoCTE" class="mt-1 d-none">
+          <label class="form-label small mb-0 text-primary">📷 Foto do CT-e</label>
+          <input type="file" accept="image/*" class="form-control form-control-sm" name="foto_cte" id="fotoCTE"></div>
+      </div>
       <div class="col-md-4"><label class="form-label small mb-0">Valor do CT-e (R$)</label>
         <input name="valor_cte" class="form-control form-control-sm" placeholder="0,00"></div>
 
@@ -126,8 +134,8 @@
 
   <!-- 6. FOTOS -->
   <div class="card mb-3"><div class="card-body">
-    <h6>6. Fotos da carga</h6>
-    <p class="text-muted small mb-2">Anexe uma a uma ou várias de uma vez direto da galeria. As fotos entram no PDF (uma por página). Marque "Avariado?" se a foto mostrar problema — gera aviso no cabeçalho e exige observação.</p>
+    <h6>6. Outras fotos da carga</h6>
+    <p class="text-muted small mb-2">As fotos da Nota Fiscal e do CT-e aparecem ao preencher os números acima. Aqui você anexa as demais fotos da carga (uma a uma ou várias de uma vez da galeria). Todas entram no PDF, uma por página. Marque "Avariado?" se a foto mostrar problema — gera aviso no cabeçalho e exige observação.</p>
     <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" name="fotos" id="inputFotos" onchange="previewFotos(this)">
     <div id="listaFotos" class="row g-2"></div>
   </div></div>
@@ -164,15 +172,21 @@ function formatarCnpj(raw){
   return c.substr(0,2)+'.'+c.substr(2,3)+'.'+c.substr(5,3)+'/'+c.substr(8,4)+'-'+c.substr(12,2);
 }
 
+var _validandoCnpj = false;
 function tratarCnpj(prefixo, tipo){
+  if(_validandoCnpj) return;              // evita reentrada (o alert dispara blur de novo)
   var campo = document.getElementById(prefixo+'_cnpj');
   var raw = campo.value.trim();
-  if(!raw) return;
+  if(!raw){ campo.classList.remove('is-invalid'); return; }
   if(!cnpjValido(raw)){
-    alert('O CNPJ informado é inválido. Por favor, corrija antes de continuar.');
-    campo.focus();
+    _validandoCnpj = true;
+    campo.classList.add('is-invalid');
+    alert('O CNPJ informado é inválido. Confira os números e corrija.');
+    _validandoCnpj = false;
+    // NÃO chama focus() aqui: forçar foco dentro do blur cria um loop que reabre o alerta.
     return;
   }
+  campo.classList.remove('is-invalid');
   campo.value = formatarCnpj(raw);
   var d = soDigitos(raw);
   var mapa = (tipo === 'transportadora') ? MAPA_TRANSP : MAPA_FORN;
@@ -202,6 +216,11 @@ function atualizarTomador(){
   sel.value = atual;
 }
 
+function toggleFotoDoc(qual, valor){
+  var wrap = document.getElementById('wrapFoto' + qual);
+  if(!wrap) return;
+  wrap.classList.toggle('d-none', !valor.trim());
+}
 function toggleOutro(sel, campoId){
   var c = document.getElementById(campoId);
   c.classList.toggle('d-none', sel.value !== '__OUTRO__');

@@ -19,6 +19,36 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, Tab
                                 Image, PageBreak)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+try:
+    from PIL import Image as PILImage, ImageOps
+    _TEM_PIL = True
+except Exception:
+    _TEM_PIL = False
+
+
+def _normalizar_imagem(raw_bytes):
+    """Converte qualquer foto (JPEG/PNG/EXIF-rotacionada/RGBA) em um JPEG RGB limpo,
+    com a orientação EXIF já aplicada e o tamanho limitado. Devolve bytes JPEG ou
+    None se não for possível abrir (nesse caso a foto é pulada, sem derrubar o PDF).
+    Isso evita o Internal Server Error com fotos de celular (item 135)."""
+    if not _TEM_PIL:
+        return raw_bytes  # sem Pillow, tenta entregar como veio (ReportLab pode aceitar)
+    try:
+        im = PILImage.open(BytesIO(raw_bytes))
+        im = ImageOps.exif_transpose(im)   # corrige rotação vinda do celular
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        # limita resolução (fotos de celular são enormes; 2000px já é ótimo p/ impressão)
+        max_lado = 2000
+        if max(im.size) > max_lado:
+            im.thumbnail((max_lado, max_lado))
+        out = BytesIO()
+        im.save(out, format="JPEG", quality=85)
+        out.seek(0)
+        return out.getvalue()
+    except Exception:
+        return None
+
 _ST = getSampleStyleSheet()
 
 CORAL = colors.HexColor("#FF5246")
@@ -204,25 +234,36 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
     fotos = fotos or []
     if fotos:
         for foto in fotos:
-            el.append(PageBreak())
             legenda = foto.get("legenda") or "Foto da carga"
             if foto.get("avaria"):
                 legenda += "  —  ⚠ AVARIADO"
-            el.append(_faixa_secao(legenda))
-            el.append(Spacer(1, 4 * mm))
+            img_bytes = _normalizar_imagem(foto.get("bytes"))
+            if not img_bytes:
+                # não conseguiu processar a imagem: registra aviso mas NÃO derruba o PDF
+                el.append(PageBreak())
+                el.append(_faixa_secao(legenda))
+                el.append(Spacer(1, 4 * mm))
+                el.append(Paragraph("(não foi possível processar esta imagem — formato não suportado)", _OBS))
+                continue
             try:
-                img_reader = ImageReader(BytesIO(foto["bytes"]))
+                img_reader = ImageReader(BytesIO(img_bytes))
                 iw, ih = img_reader.getSize()
-                max_w, max_h = 178 * mm, 210 * mm
+                max_w, max_h = 178 * mm, 205 * mm
                 ratio = min(max_w / iw, max_h / ih)
-                img = Image(BytesIO(foto["bytes"]), width=iw * ratio, height=ih * ratio)
+                img = Image(BytesIO(img_bytes), width=iw * ratio, height=ih * ratio)
                 img.hAlign = "CENTER"
+                el.append(PageBreak())
+                el.append(_faixa_secao(legenda))
+                el.append(Spacer(1, 4 * mm))
                 el.append(img)
+                if foto.get("avaria") and foto.get("obs"):
+                    el.append(Spacer(1, 3 * mm))
+                    el.append(Paragraph(f'<font color="#C0392B"><b>Avaria:</b></font> {foto["obs"]}', _OBS))
             except Exception:
+                el.append(PageBreak())
+                el.append(_faixa_secao(legenda))
+                el.append(Spacer(1, 4 * mm))
                 el.append(Paragraph("(não foi possível carregar esta imagem)", _OBS))
-            if foto.get("avaria") and foto.get("obs"):
-                el.append(Spacer(1, 3 * mm))
-                el.append(Paragraph(f'<font color="#C0392B"><b>Avaria:</b></font> {foto["obs"]}', _OBS))
 
     def _rodape(canvas, _doc):
         canvas.saveState()

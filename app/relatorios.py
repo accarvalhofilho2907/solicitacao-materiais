@@ -16,7 +16,7 @@ from datetime import date
 from io import BytesIO
 import re
 
-from flask import Blueprint, render_template, request, abort, send_file, flash
+from flask import Blueprint, render_template, request, abort, send_file, flash, redirect, url_for, current_app
 from flask_login import login_required, current_user
 
 from .extensions import db
@@ -309,6 +309,21 @@ def carga_gerar():
 
     # Fotos enviadas (item 135) — trafegam ao servidor só para montar o PDF; não são arquivadas.
     fotos = []
+
+    # Foto da Nota Fiscal e do CT-e (aparecem ao preencher o número — item 128)
+    foto_nf = request.files.get("foto_nf")
+    if foto_nf and foto_nf.filename:
+        conteudo = foto_nf.read()
+        if conteudo:
+            fotos.append({"bytes": conteudo, "legenda": f"Nota Fiscal {dados.get('nota_fiscal','')}".strip(),
+                          "avaria": False, "obs": ""})
+    foto_cte = request.files.get("foto_cte")
+    if foto_cte and foto_cte.filename:
+        conteudo = foto_cte.read()
+        if conteudo:
+            fotos.append({"bytes": conteudo, "legenda": f"CT-e {dados.get('cte','')}".strip(),
+                          "avaria": False, "obs": ""})
+
     idx = 0
     for arquivo in request.files.getlist("fotos"):
         if not arquivo or not arquivo.filename:
@@ -325,6 +340,12 @@ def carga_gerar():
             obs = obs_lista[0].strip() if obs_lista else ""
         fotos.append({"bytes": conteudo, "legenda": arquivo.filename, "avaria": avaria, "obs": obs})
 
-    pdf = gerar_pdf_relatorio_carga(modo, dados, fotos=fotos)
+    try:
+        pdf = gerar_pdf_relatorio_carga(modo, dados, fotos=fotos)
+    except Exception:
+        current_app.logger.exception("Falha ao gerar PDF do relatório de carga")
+        flash("Não foi possível gerar o PDF (verifique as fotos anexadas e tente novamente). "
+              "Se persistir, gere sem as fotos e anexe-as separadamente.", "danger")
+        return redirect(url_for("relatorios.carga"))
     return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
                      download_name=_nome_arquivo_carga(modo, dados))

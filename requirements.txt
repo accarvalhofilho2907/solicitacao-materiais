@@ -5,6 +5,7 @@ Flask-WTF==1.2.1
 Flask-Migrate==4.0.7
 email-validator==2.2.0
 reportlab==4.2.2
+Pillow==10.4.0
 cloudinary==1.41.0
 python-dotenv==1.0.1
 pdfplumber==0.11.4

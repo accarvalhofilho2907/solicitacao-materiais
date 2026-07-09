@@ -1,8 +1,11 @@
-"""PDF do Relatório de Recebimento / Envio de Materiais (item 111).
+"""PDF do Relatório de Recebimento / Envio de Materiais (itens 111/128/135/145/147).
 
-Modelo inspirado na foto enviada pelo usuário em 08/07/2026
-("Relatório de Carga Almoxarifado Delta MA"): cabeçalho com faixa colorida,
-selo de status, dados do fornecedor/destinatário e bloco "Dados da Carga".
+Redesenhado (item 135) com a paleta oficial Serena e layout profissional:
+- Coral (#FF5246) nas faixas/destaques, Grafite (#4B4B4B) nos textos,
+  Verde (#32CAA0) no status de Recebimento, Areia (#EDE9E5) nos fundos de seção.
+- Seções: Cabeçalho, Remetente, Destinatário, Transportadora, Dados da Carga,
+  Observações (avarias entram junto aqui — item 145), e Fotos.
+- Fotos embutidas de verdade, UMA POR PÁGINA, em boa resolução (item 135).
 
 Não é salvo no banco — só gera o PDF na hora (decisão do usuário, 08/07/2026).
 """
@@ -11,117 +14,224 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+                                Image, PageBreak)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 _ST = getSampleStyleSheet()
 
-FAIXA_COR = colors.HexColor("#6E7FE0")   # tom próximo ao do modelo em foto
-STATUS_RECEBIDO = colors.HexColor("#32CAA0")
-STATUS_ENVIADO = colors.HexColor("#FF5246")
-CINZA_CLARO = colors.HexColor("#EDE9E5")
+CORAL = colors.HexColor("#FF5246")
+VERDE = colors.HexColor("#32CAA0")
 GRAFITE = colors.HexColor("#4B4B4B")
+AREIA = colors.HexColor("#EDE9E5")
+AREIA_ESCURA = colors.HexColor("#DED8D1")
+BRANCO = colors.white
 
-_TITULO = ParagraphStyle("titulo_relatorio", parent=_ST["Title"], textColor=colors.white, fontSize=16)
-_SECAO = ParagraphStyle("secao", parent=_ST["Normal"], alignment=1, fontName="Helvetica-Bold", fontSize=10)
+_TITULO = ParagraphStyle("t", parent=_ST["Normal"], textColor=BRANCO, fontSize=15,
+                         fontName="Helvetica-Bold", leading=18)
+_SUBTIT = ParagraphStyle("st", parent=_ST["Normal"], textColor=BRANCO, fontSize=8.5,
+                         fontName="Helvetica", leading=11)
+_SECAO = ParagraphStyle("s", parent=_ST["Normal"], fontName="Helvetica-Bold",
+                        fontSize=9.5, textColor=GRAFITE, leading=12)
+_LABEL = ParagraphStyle("l", parent=_ST["Normal"], fontName="Helvetica-Bold",
+                        fontSize=7.5, textColor=colors.HexColor("#8A8580"), leading=9)
+_VALOR = ParagraphStyle("v", parent=_ST["Normal"], fontName="Helvetica",
+                        fontSize=9, textColor=GRAFITE, leading=12)
+_OBS = ParagraphStyle("o", parent=_ST["Normal"], fontName="Helvetica", fontSize=9,
+                      textColor=GRAFITE, leading=13)
 
 
-def gerar_pdf_relatorio_carga(modo, dados):
-    """modo: 'recebimento' ou 'envio'. dados: dict vindo do formulário."""
+def _campo(label, valor):
+    """Uma célula com rótulo pequeno em cima e valor embaixo."""
+    return [Paragraph(label.upper(), _LABEL), Paragraph(str(valor or "—"), _VALOR)]
+
+
+def _faixa_secao(titulo):
+    """Barra de título de seção, fundo areia com um filete coral à esquerda."""
+    t = Table([[Paragraph(titulo.upper(), _SECAO)]], colWidths=[178 * mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), AREIA),
+        ("LINEBEFORE", (0, 0), (0, -1), 3, CORAL),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return t
+
+
+def _grade(linhas):
+    """Monta uma grade de campos. linhas: lista de listas de células;
+    cada célula é [Paragraph_label, Paragraph_valor]. Cada linha é renderizada
+    como sua própria mini-tabela ocupando a largura total, dividida igualmente
+    pelo nº de colunas daquela linha (2 ou 3). Assim nada estoura a margem."""
+    LARG_TOTAL = 178 * mm
+    PAD_LAT = 8
+    blocos = []
+    for idx, linha in enumerate(linhas):
+        n = len(linha)
+        col_width = LARG_TOTAL / n
+        larg_interna = col_width - (PAD_LAT * 2)
+        cells = []
+        for cel in linha:
+            sub = Table([[cel[0]], [cel[1]]], colWidths=[larg_interna])
+            sub.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                     ("TOPPADDING", (0, 0), (-1, -1), 1),
+                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+            cells.append(sub)
+        row_tab = Table([cells], colWidths=[col_width] * n)
+        estilo = [
+            ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), PAD_LAT), ("RIGHTPADDING", (0, 0), (-1, -1), PAD_LAT),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]
+        if idx < len(linhas) - 1:
+            estilo.append(("LINEBELOW", (0, 0), (-1, -1), 0.4, AREIA_ESCURA))
+        row_tab.setStyle(TableStyle(estilo))
+        blocos.append([row_tab])
+    # empilha as linhas numa tabela única de 1 coluna
+    t = Table(blocos, colWidths=[LARG_TOTAL])
+    t.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                           ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    return t
+
+
+def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
+    """modo: 'recebimento' ou 'envio'. dados: dict do formulário. fotos: lista de dicts
+    {bytes, legenda, avaria(bool), obs} — embutidas uma por página no fim (item 135)."""
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0, bottomMargin=18 * mm,
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0, bottomMargin=15 * mm,
                             leftMargin=16 * mm, rightMargin=16 * mm)
     el = []
 
-    titulo_txt = "RELATÓRIO DE CARGA — ALMOXARIFADO DELTA MA"
-    status_txt = dados.get("status", "Recebido" if modo == "recebimento" else "Enviado")
-    status_cor = STATUS_RECEBIDO if modo == "recebimento" else STATUS_ENVIADO
+    is_receb = (modo == "recebimento")
+    status_txt = "RECEBIMENTO" if is_receb else "ENVIO"
+    status_cor = VERDE if is_receb else CORAL
 
-    cabecalho = Table(
-        [[Paragraph(titulo_txt, _TITULO), Paragraph(f'<font color="white"><b>{status_txt}</b></font>', _ST["Normal"])]],
-        colWidths=[130 * mm, 40 * mm]
-    )
-    cabecalho.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), FAIXA_COR),
-        ("BACKGROUND", (1, 0), (1, -1), status_cor),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (1, 0), (1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ("LEFTPADDING", (0, 0), (0, -1), 14),
-    ]))
-    el.append(cabecalho)
+    # ---------- Cabeçalho (faixa Grafite com bloco de status colorido) ----------
+    titulo = Paragraph("RELATÓRIO DE CARGA", _TITULO)
+    sub = Paragraph("Almoxarifado · Cluster Delta MA", _SUBTIT)
+    bloco_titulo = Table([[titulo], [sub]], colWidths=[128 * mm])
+    bloco_titulo.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 10),
+                                      ("TOPPADDING", (0, 0), (0, 0), 12),
+                                      ("BOTTOMPADDING", (0, 1), (0, 1), 12),
+                                      ("TOPPADDING", (0, 1), (0, 1), 0)]))
+    bloco_status = Table([[Paragraph(f'<font color="white"><b>{status_txt}</b></font>', _ST["Normal"])]],
+                         colWidths=[50 * mm], rowHeights=[None])
+    bloco_status.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_cor),
+                                      ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                                      ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    cab = Table([[bloco_titulo, bloco_status]], colWidths=[128 * mm, 50 * mm])
+    cab.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), GRAFITE),
+                             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                             ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                             ("TOPPADDING", (0, 0), (-1, -1), 0),
+                             ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    el.append(cab)
 
-    if dados.get("tem_avaria"):
-        aviso = Table([[Paragraph('<font color="white"><b>⚠ ATENÇÃO: carga com item(ns) avariado(s) — ver observações abaixo</b></font>', _ST["Normal"])]],
-                      colWidths=[170 * mm])
-        aviso.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#C0392B")),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        el.append(aviso)
-
-    el.append(Spacer(1, 8 * mm))
-
-    linhas = [
-        ["Data", dados.get("data") or "-", "Responsável", dados.get("responsavel") or "-"],
-        ["Razão Social", dados.get("razao_social") or "-", "", ""],
-        ["CNPJ", dados.get("cnpj") or "-", "Inscrição Estadual", dados.get("ie") or "-"],
-        ["Endereço", dados.get("endereco") or "-", "", ""],
-    ]
-    t1 = Table(linhas, colWidths=[28 * mm, 62 * mm, 32 * mm, 46 * mm])
-    t1.setStyle(TableStyle([
-        ("SPAN", (1, 1), (3, 1)), ("SPAN", (1, 3), (3, 3)),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"), ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.4, colors.HexColor("#DDDDDD")),
-    ]))
-    el.append(t1)
-    el.append(Spacer(1, 4 * mm))
-
-    sec_carga = Table([[Paragraph("DADOS DA CARGA", _SECAO)]], colWidths=[168 * mm])
-    sec_carga.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), CINZA_CLARO),
+    # aviso de avaria (se houver)
+    tem_avaria = dados.get("tem_avaria")
+    if tem_avaria:
+        aviso = Table([[Paragraph('<font color="white"><b>⚠ ATENÇÃO: carga com item(ns) avariado(s) — ver Observações Gerais</b></font>', _ST["Normal"])]],
+                      colWidths=[178 * mm])
+        aviso.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#C0392B")),
+                                   ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                                    ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-    el.append(sec_carga)
-    el.append(Spacer(1, 2 * mm))
+        el.append(aviso)
+    el.append(Spacer(1, 6 * mm))
 
-    linhas2 = [
-        ["Nota Fiscal", dados.get("nota_fiscal") or "-", "Série", dados.get("serie") or "-",
-         "OC (se informado)", "  " + (dados.get("oc") or "-")],
-        ["Valor da NF", f"R$ {dados.get('valor_nf') or '-'}", "Natureza da operação", "  " + (dados.get("natureza_operacao") or "-"), "", ""],
-        ["CT-e", dados.get("cte") or "-", "Valor CT-e", f"R$ {dados.get('valor_cte') or '-'}", "", ""],
-    ]
-    t2 = Table(linhas2, colWidths=[24 * mm, 30 * mm, 32 * mm, 32 * mm, 28 * mm, 22 * mm])
-    t2.setStyle(TableStyle([
-        ("SPAN", (3, 1), (5, 1)), ("SPAN", (3, 2), (5, 2)),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"), ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.4, colors.HexColor("#DDDDDD")),
-    ]))
-    el.append(t2)
+    # ---------- Cabeçalho: Data / Responsável ----------
+    el.append(_faixa_secao("Cabeçalho"))
+    el.append(_grade([[_campo("Data", dados.get("data")), _campo("Responsável", dados.get("responsavel")),
+                       _campo("Status", status_txt.capitalize())]]))
     el.append(Spacer(1, 4 * mm))
 
-    if dados.get("obs_avarias"):
-        sec_avaria = Table([[Paragraph("OBSERVAÇÕES DE AVARIA", _SECAO)]], colWidths=[168 * mm])
-        sec_avaria.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FBE0DC")),
-                                        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-        el.append(sec_avaria)
-        el.append(Spacer(1, 2 * mm))
-        for i, obs in enumerate(dados["obs_avarias"], start=1):
-            el.append(Paragraph(f"{i}. {obs}", _ST["Normal"]))
-        el.append(Spacer(1, 4 * mm))
+    # ---------- Remetente ----------
+    el.append(_faixa_secao("Remetente"))
+    el.append(_grade([
+        [_campo("Razão Social / Nome", dados.get("rem_nome")), _campo("CNPJ", dados.get("rem_cnpj"))],
+        [_campo("Inscrição Estadual", dados.get("rem_ie")), _campo("Endereço", dados.get("rem_endereco"))],
+    ]))
+    el.append(Spacer(1, 4 * mm))
 
-    sec_obs = Table([[Paragraph("OBSERVAÇÕES", _SECAO)]], colWidths=[168 * mm])
-    sec_obs.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), CINZA_CLARO),
-                                 ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
-    el.append(sec_obs)
-    el.append(Spacer(1, 2 * mm))
-    el.append(Paragraph(dados.get("observacoes") or "S/ observações", _ST["Normal"]))
+    # ---------- Destinatário ----------
+    el.append(_faixa_secao("Destinatário"))
+    el.append(_grade([
+        [_campo("Razão Social / Nome", dados.get("dest_nome")), _campo("CNPJ", dados.get("dest_cnpj"))],
+        [_campo("Inscrição Estadual", dados.get("dest_ie")), _campo("Endereço", dados.get("dest_endereco"))],
+    ]))
+    el.append(Spacer(1, 4 * mm))
 
-    doc.build(el)
+    # ---------- Transportadora (sem IE) ----------
+    el.append(_faixa_secao("Transportadora"))
+    el.append(_grade([
+        [_campo("Razão Social / Nome", dados.get("transp_nome")), _campo("CNPJ", dados.get("transp_cnpj"))],
+        [_campo("Endereço", dados.get("transp_endereco"))],
+    ]))
+    el.append(Spacer(1, 4 * mm))
+
+    # ---------- Dados da Carga ----------
+    el.append(_faixa_secao("Dados da Carga"))
+    el.append(_grade([
+        [_campo("Nº Nota Fiscal", dados.get("nota_fiscal")), _campo("Série", dados.get("serie")),
+         _campo("OC", dados.get("oc"))],
+        [_campo("Qtd. Volumes", dados.get("qtd_volumes")), _campo("Tipo de Volume", dados.get("tipo_volume")),
+         _campo("Valor da NF", dados.get("valor_nf"))],
+        [_campo("Natureza da Operação", dados.get("natureza_operacao")), _campo("Nº CT-e", dados.get("cte")),
+         _campo("Valor do CT-e", dados.get("valor_cte"))],
+        [_campo("Tomador do CT-e", dados.get("tomador_cte")), _campo("Descrição da Carga", dados.get("descricao_carga"))],
+    ]))
+    el.append(Spacer(1, 4 * mm))
+
+    # ---------- Observações Gerais (avarias entram aqui — item 145) ----------
+    el.append(_faixa_secao("Observações Gerais"))
+    obs_txt = (dados.get("observacoes") or "S/ observações").strip()
+    corpo_obs = [Paragraph(obs_txt, _OBS)]
+    obs_avarias = dados.get("obs_avarias") or []
+    if obs_avarias:
+        corpo_obs.append(Spacer(1, 2 * mm))
+        corpo_obs.append(Paragraph('<font color="#C0392B"><b>Avarias registradas nas fotos:</b></font>', _OBS))
+        for i, o in enumerate(obs_avarias, 1):
+            corpo_obs.append(Paragraph(f"{i}. {o}", _OBS))
+    box = Table([[corpo_obs]], colWidths=[178 * mm])
+    box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.5, AREIA_ESCURA),
+                             ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                             ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
+    el.append(box)
+
+    # ---------- Fotos (uma por página, boa resolução — item 135) ----------
+    fotos = fotos or []
+    if fotos:
+        for foto in fotos:
+            el.append(PageBreak())
+            legenda = foto.get("legenda") or "Foto da carga"
+            if foto.get("avaria"):
+                legenda += "  —  ⚠ AVARIADO"
+            el.append(_faixa_secao(legenda))
+            el.append(Spacer(1, 4 * mm))
+            try:
+                img_reader = ImageReader(BytesIO(foto["bytes"]))
+                iw, ih = img_reader.getSize()
+                max_w, max_h = 178 * mm, 210 * mm
+                ratio = min(max_w / iw, max_h / ih)
+                img = Image(BytesIO(foto["bytes"]), width=iw * ratio, height=ih * ratio)
+                img.hAlign = "CENTER"
+                el.append(img)
+            except Exception:
+                el.append(Paragraph("(não foi possível carregar esta imagem)", _OBS))
+            if foto.get("avaria") and foto.get("obs"):
+                el.append(Spacer(1, 3 * mm))
+                el.append(Paragraph(f'<font color="#C0392B"><b>Avaria:</b></font> {foto["obs"]}', _OBS))
+
+    def _rodape(canvas, _doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#8A8580"))
+        canvas.drawCentredString(A4[0] / 2, 8 * mm,
+                                 "Serena Energia · Almoxarifado Cluster Delta MA · documento gerado pelo sistema")
+        canvas.restoreState()
+
+    doc.build(el, onFirstPage=_rodape, onLaterPages=_rodape)
     buf.seek(0)
     return buf.getvalue()

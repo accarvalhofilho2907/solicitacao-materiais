@@ -25,6 +25,11 @@ def _light_migrate():
         if insp.has_table(table.name) and "ativo" in {c["name"] for c in insp.get_columns(table.name)}:
             db.session.execute(text(f'UPDATE "{table.name}" SET ativo = TRUE WHERE ativo IS NULL'))
     db.session.commit()
+    # Coluna "aprovacao" recém-criada (item 145): registros antigos = 'aprovado' (não somem das listas).
+    for tabela in ("fornecedores", "transportadoras"):
+        if insp.has_table(tabela) and "aprovacao" in {c["name"] for c in insp.get_columns(tabela)}:
+            db.session.execute(text(f"UPDATE \"{tabela}\" SET aprovacao = 'aprovado' WHERE aprovacao IS NULL"))
+    db.session.commit()
     # Garante que o link aceite URLs longas (ex.: Mercado Livre) no PostgreSQL.
     if db.engine.dialect.name == "postgresql":
         try:

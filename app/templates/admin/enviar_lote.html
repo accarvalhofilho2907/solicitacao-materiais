@@ -44,13 +44,21 @@
       <div class="d-flex gap-1 flex-wrap">
         {% if g.wa %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ g.wa }}">WhatsApp</a>{% endif %}
         {% if g.fornecedor.email %}
-        <button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="abrirPopupSPE({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', [{% for s in g.itens %}{{ s.id }}{{ ',' if not loop.last }}{% endfor %}])">E-mail</button>
+        <button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="abrirPopupSPE({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', idsMarcados({{ g.fornecedor.id }}))">E-mail</button>
         {% endif %}
         <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('lt{{ g.fornecedor.id }}')">Texto pronto</button>
-        <button type="button" class="btn btn-sm btn-warning py-0" onclick="abrirPopupFinalizar({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', [{% for s in g.itens %}{{ s.id }}{{ ',' if not loop.last }}{% endfor %}])">Cotação enviada</button>
+        <button type="button" class="btn btn-sm btn-warning py-0" onclick="abrirPopupFinalizar({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', idsMarcados({{ g.fornecedor.id }}))">Cotação enviada</button>
       </div>
     </div>
-    <ul class="mb-0 mt-1 small">{% for s in g.itens %}<li>Nº {{ s.id }} — {{ s.material }}{% if s.unidade_medida %} ({{ s.unidade_medida }}){% endif %} (x{{ s.quantidade }}) <span class="text-muted">[{{ s.status_label }}]</span></li>{% endfor %}</ul>
+    <div class="mt-1"><label class="small text-muted"><input type="checkbox" checked onchange="marcarTodos({{ g.fornecedor.id }}, this.checked)"> selecionar todos</label></div>
+    <ul class="mb-0 mt-1 small list-unstyled" data-forn="{{ g.fornecedor.id }}">
+      {% for s in g.itens %}
+      <li class="d-flex align-items-center gap-2">
+        <input type="checkbox" class="chk-item-{{ g.fornecedor.id }}" value="{{ s.id }}" checked>
+        <span>Nº {{ s.id }} — {{ s.material }}{% if s.unidade_medida %} ({{ s.unidade_medida }}){% endif %} (x{{ s.quantidade }}) <span class="text-muted">[{{ s.status_label }}]</span></span>
+      </li>
+      {% endfor %}
+    </ul>
     <textarea id="lt{{ g.fornecedor.id }}" class="d-none">{{ g.texto }}</textarea>
   </div></div>
   {% endfor %}
@@ -59,7 +67,7 @@
 <div class="modal fade" id="modalSPE" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="post" action="{{ url_for('admin.enviar_lote_email') }}">
+      <form method="post" action="{{ url_for('admin.enviar_lote_email') }}" id="formSPE" onsubmit="return enviarEmailComSPE(event)">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="fornecedor_id" id="speFornecedorId">
         <div id="speIdsContainer"></div>
@@ -74,7 +82,7 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button class="btn btn-primary">Enviar e-mail</button>
+          <button class="btn btn-primary" id="btnEnviarEmailSPE">Abrir e-mail</button>
         </div>
       </form>
     </div>
@@ -109,7 +117,31 @@
 </div>
 
 <script>
+function idsMarcados(fid){
+  return [...document.querySelectorAll('.chk-item-'+fid+':checked')].map(function(c){ return parseInt(c.value); });
+}
+function marcarTodos(fid, marcar){
+  document.querySelectorAll('.chk-item-'+fid).forEach(function(c){ c.checked = marcar; });
+}
+function enviarEmailComSPE(ev){
+  ev.preventDefault();
+  var form = document.getElementById('formSPE');
+  var btn = document.getElementById('btnEnviarEmailSPE');
+  btn.disabled = true; btn.textContent = 'Preparando...';
+  fetch(form.action, { method:'POST', body:new FormData(form) })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      btn.disabled = false; btn.textContent = 'Abrir e-mail';
+      if(!d.ok){ alert('Erro: ' + (d.erro || 'não foi possível preparar o e-mail.')); return; }
+      var m = bootstrap.Modal.getInstance(document.getElementById('modalSPE'));
+      if(m) m.hide();
+      window.location.href = d.mailto;
+    })
+    .catch(function(){ btn.disabled=false; btn.textContent='Abrir e-mail'; alert('Falha ao preparar o e-mail.'); });
+  return false;
+}
 function abrirPopupSPE(fid, nome, ids){
+  if(!ids || !ids.length){ alert('Selecione ao menos um item para enviar a cotação.'); return; }
   document.getElementById('speFornecedorId').value = fid;
   document.getElementById('speFornecedorNome').textContent = 'Fornecedor: ' + nome;
   var c = document.getElementById('speIdsContainer'); c.innerHTML = '';
@@ -117,6 +149,7 @@ function abrirPopupSPE(fid, nome, ids){
   new bootstrap.Modal(document.getElementById('modalSPE')).show();
 }
 function abrirPopupFinalizar(fid, nome, ids){
+  if(!ids || !ids.length){ alert('Selecione ao menos um item.'); return; }
   document.getElementById('finalizarFornecedorNome').innerHTML = 'Fornecedor: <b>' + nome + '</b>';
   var base = "{{ url_for('admin.marcar_cotacao_enviada', fid=0) }}".replace('/0', '/' + fid);
   document.getElementById('formContinuar').action = base;

@@ -52,3 +52,48 @@ def somar_dias_uteis(n, inicio=None):
         if d.weekday() < 5:  # 0-4 = seg a sex
             add += 1
     return d
+
+
+# ---------------- CNPJ / Inscrição Estadual (item 145) ----------------
+
+def so_digitos(raw):
+    """Devolve só os dígitos de uma string."""
+    return re.sub(r"\D", "", raw or "")
+
+
+def cnpj_valido(raw):
+    """Valida um CNPJ pelo dígito verificador (algoritmo padrão da Receita Federal).
+    Aceita com ou sem máscara. Devolve True/False."""
+    c = so_digitos(raw)
+    if len(c) != 14 or len(set(c)) == 1:   # 14 dígitos e não pode ser tudo igual (ex.: 00000000000000)
+        return False
+
+    def _dv(base, pesos):
+        s = sum(int(d) * p for d, p in zip(base, pesos))
+        r = s % 11
+        return "0" if r < 2 else str(11 - r)
+
+    p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    p2 = [6] + p1
+    dv1 = _dv(c[:12], p1)
+    dv2 = _dv(c[:12] + dv1, p2)
+    return c[12] == dv1 and c[13] == dv2
+
+
+def formatar_cnpj(raw):
+    """Formata os dígitos no padrão 00.000.000/0000-00. Se não tiver 14 dígitos, devolve como veio."""
+    c = so_digitos(raw)
+    if len(c) != 14:
+        return raw or ""
+    return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
+
+
+def formatar_ie(raw):
+    """Inscrição Estadual: só números, com um hífen antes do último dígito (item 145).
+    Ex.: '1234567890' -> '123456789-0'. Se vazio, devolve ''."""
+    d = so_digitos(raw)
+    if not d:
+        return ""
+    if len(d) == 1:
+        return d
+    return f"{d[:-1]}-{d[-1]}"

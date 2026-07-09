@@ -84,6 +84,16 @@
 
     .tema-switch-item{ display:flex; align-items:center; justify-content:space-between; padding:9px 10px; gap:10px; }
     .tema-switch-item .form-check-input{ cursor:pointer; }
+
+    /* Menu lateral (offcanvas) no mobile — item 140. No desktop (lg+) volta a ser menu horizontal. */
+    @media (max-width: 991.98px){
+      .topbar-offcanvas{ background:var(--bg-elevado); color:var(--texto); width:82% !important; max-width:320px; }
+      .topbar-offcanvas .offcanvas-header{ border-bottom:1px solid var(--linha); }
+      .topbar-offcanvas .menu-itens{ flex-direction:column !important; align-items:stretch !important; flex-wrap:nowrap !important; }
+      .topbar-offcanvas .menu-itens .nav-link{ padding:10px 6px; border-bottom:1px solid var(--linha); width:100%; }
+      .topbar-offcanvas .dropdown{ width:100%; }
+      .topbar-offcanvas .dropdown-menu{ position:static !important; transform:none !important; border:none; box-shadow:none; padding-left:12px; }
+    }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -92,9 +102,14 @@
   {% set _papeis = {'admin':'Administrador','almoxarifado':'Almoxarifado','solicitante':'Solicitante','visualizador':'Visualização'} %}
   <a class="navbar-brand d-flex align-items-center gap-2" href="/"><span class="brand-mark"></span> ALMOXARIFADO</a>
   {% if current_user.is_authenticated %}
-  <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nv"><span class="navbar-toggler-icon"></span></button>
-  <div class="collapse navbar-collapse" id="nv">
-  <div class="navbar-nav flex-row flex-wrap gap-1 align-items-center">
+  <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#nv" aria-controls="nv"><span class="navbar-toggler-icon"></span></button>
+  <div class="offcanvas-lg offcanvas-start topbar-offcanvas" tabindex="-1" id="nv" aria-labelledby="nvLabel">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title" id="nvLabel">Menu</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#nv"></button>
+    </div>
+    <div class="offcanvas-body">
+  <div class="navbar-nav flex-row flex-wrap gap-1 align-items-center menu-itens">
     {% if current_user.is_admin %}
       <a class="nav-link {{ 'active' if request.endpoint=='admin.dashboard' }}" href="{{ url_for('admin.dashboard') }}">🏠 Início</a>
 
@@ -215,6 +230,7 @@
         </ul>
       </div>
     {% endif %}
+  </div>
   </div>
   </div>
   {% endif %}

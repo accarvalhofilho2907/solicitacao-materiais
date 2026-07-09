@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <a class="text-decoration-none" href="{{ url_for('admin.cadastros') }}">← Cadastros</a>
+</div>
+<h4 class="mb-1">Cadastros pendentes de aprovação</h4>
+<p class="text-muted small">Cadastros criados automaticamente quando um CNPJ novo foi informado no Relatório de Carga. Aprove para que passem a aparecer nas listas do sistema (cotação, frete), ou rejeite para descartar.</p>
+
+<div class="card mb-4"><div class="card-body">
+  <h6 class="mb-3">Fornecedores <span class="badge bg-secondary">{{ fornecedores|length }}</span></h6>
+  {% if not fornecedores %}
+    <p class="text-muted small mb-0">Nenhum fornecedor pendente.</p>
+  {% else %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr><th>Razão Social</th><th>CNPJ</th><th>Insc. Estadual</th><th>Endereço</th><th class="text-end">Ações</th></tr></thead>
+      <tbody>
+        {% for f in fornecedores %}
+        <tr>
+          <td>{{ f.razao_social or f.nome }}</td>
+          <td class="small">{{ f.cnpj or '—' }}</td>
+          <td class="small">{{ f.inscricao_estadual or '—' }}</td>
+          <td class="small">{{ f.endereco or '—' }}</td>
+          <td class="text-end text-nowrap">
+            <form method="post" action="{{ url_for('admin.pendente_fornecedor_acao', fid=f.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button name="acao" value="aprovar" class="btn btn-sm btn-success py-0">Aprovar</button>
+              <button name="acao" value="rejeitar" class="btn btn-sm btn-outline-danger py-0"
+                      onclick="return confirm('Rejeitar e remover este cadastro?')">Rejeitar</button>
+            </form>
+            <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('admin.fornecedor_editar', fid=f.id) }}">Editar antes</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% endif %}
+</div></div>
+
+<div class="card"><div class="card-body">
+  <h6 class="mb-3">Transportadoras <span class="badge bg-secondary">{{ transportadoras|length }}</span></h6>
+  {% if not transportadoras %}
+    <p class="text-muted small mb-0">Nenhuma transportadora pendente.</p>
+  {% else %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr><th>Nome</th><th>CNPJ</th><th>Endereço</th><th class="text-end">Ações</th></tr></thead>
+      <tbody>
+        {% for t in transportadoras %}
+        <tr>
+          <td>{{ t.nome }}</td>
+          <td class="small">{{ t.cnpj or '—' }}</td>
+          <td class="small">{{ t.endereco or '—' }}</td>
+          <td class="text-end text-nowrap">
+            <form method="post" action="{{ url_for('admin.pendente_transportadora_acao', tid=t.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button name="acao" value="aprovar" class="btn btn-sm btn-success py-0">Aprovar</button>
+              <button name="acao" value="rejeitar" class="btn btn-sm btn-outline-danger py-0"
+                      onclick="return confirm('Rejeitar e remover este cadastro?')">Rejeitar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% endif %}
+</div></div>
+{% endblock %}

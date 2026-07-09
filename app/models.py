@@ -18,6 +18,12 @@ STATUS_PADRAO = [s for s in STATUS if s not in ("CONCLUIDO", "CANCELADA")]
 # Unidades de medida (item 117) — lista fixa, sem necessidade de cadastro.
 UNIDADES_MEDIDA = ["UN", "KG", "G", "L", "ML", "M", "M²", "M³", "CX", "PAR", "ROLO", "PCT", "SC", "CJ"]
 
+# Item 145 — listas fixas do Relatório de Carga (com opção "Outro" no formulário)
+TIPOS_VOLUME = ["Pallets", "Caixas de madeira", "Caixas de papelão", "Tambores",
+                "Sacos/Bags", "Fardos", "Amarrados", "Bobinas", "Engradados", "Volume avulso"]
+NATUREZAS_OPERACAO = ["Venda de Mercadoria", "Remessa para Conserto", "Remessa para Industrialização",
+                      "Devolução", "Transferência", "Uso e Consumo", "Bonificação", "Comodato", "Garantia"]
+
 fornecedor_tipo = db.Table("fornecedor_tipo",
     db.Column("fornecedor_id", db.ForeignKey("fornecedores.id"), primary_key=True),
     db.Column("tipo_material_id", db.ForeignKey("tipos_material.id"), primary_key=True))
@@ -95,6 +101,9 @@ class Transportadora(db.Model):
     __tablename__ = "transportadoras"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), unique=True, nullable=False)
+    cnpj = db.Column(db.String(20))          # item 145 — só números, formatado na exibição
+    endereco = db.Column(db.String(255))     # item 145
+    aprovacao = db.Column(db.String(12), default="aprovado")  # 'aprovado' | 'pendente' (item 145)
     ativo = db.Column(db.Boolean, default=True)
 
 
@@ -103,16 +112,24 @@ class Fornecedor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     razao_social = db.Column(db.String(160))
     nome_fantasia = db.Column(db.String(160))
-    email = db.Column(db.String(180), nullable=False)
+    email = db.Column(db.String(180))  # pode ser nulo em cadastro pendente vindo do relatório (item 145)
     contato_nome = db.Column(db.String(120))
     telefone = db.Column(db.String(40))
     telefone_e164 = db.Column(db.String(20))
+    cnpj = db.Column(db.String(20))                  # item 145 — só números, formatado na exibição
+    inscricao_estadual = db.Column(db.String(20))    # item 145
+    endereco = db.Column(db.String(255))             # item 145
+    aprovacao = db.Column(db.String(12), default="aprovado")  # 'aprovado' | 'pendente' (item 145)
     usa_email = db.Column(db.Boolean, default=True)   # se o contato é por e-mail
     ativo = db.Column(db.Boolean, default=True)
     tipos = db.relationship("TipoMaterial", secondary=fornecedor_tipo, back_populates="fornecedores")
 
     @property
     def nome(self): return self.nome_fantasia or self.razao_social or self.email
+
+    @property
+    def aprovado(self):
+        return (self.aprovacao or "aprovado") == "aprovado"
 
 
 class Solicitacao(db.Model):

@@ -3,86 +3,138 @@
 {% block content %}
 <h4 class="mb-1">📑 Relatório de Recebimento / Envio de Materiais</h4>
 <p class="text-muted small">
-  Preencha os dados abaixo para gerar o PDF (modelo "Relatório de Carga Almoxarifado Delta MA").
-  Visível só para Almoxarifado e Admin. <b>Este relatório não é salvo no sistema</b> — só gera o documento.
-  Escolha em <b>Status</b> se é um Recebimento ou um Envio.
+  Preencha os dados para gerar o PDF. Visível só para Almoxarifado e Admin.
+  <b>Este relatório não é salvo no sistema</b> — só gera o documento na hora.
+  Escolha em <b>Status</b> se é Recebimento ou Envio.
 </p>
 
-<form method="post" action="{{ url_for('relatorios.carga_gerar') }}" target="_blank">
+<form method="post" action="{{ url_for('relatorios.carga_gerar') }}" target="_blank" enctype="multipart/form-data" id="formCarga">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+  <!-- 1. CABEÇALHO -->
   <div class="card mb-3"><div class="card-body">
-    <h6>Cabeçalho</h6>
+    <h6>1. Cabeçalho</h6>
     <div class="row g-2">
-      <div class="col-md-3"><label class="form-label small mb-0">Data</label>
-        <input type="date" name="data" class="form-control form-control-sm" value="{{ hoje }}"></div>
-      <div class="col-md-5"><label class="form-label small mb-0">Responsável</label>
-        <select name="responsavel_id" class="form-select form-select-sm">
+      <div class="col-md-3"><label class="form-label small mb-0">Data *</label>
+        <input type="date" name="data" class="form-control form-control-sm" value="{{ hoje }}" required></div>
+      <div class="col-md-5"><label class="form-label small mb-0">Responsável *</label>
+        <select name="responsavel_id" class="form-select form-select-sm" required>
           {% for u in usuarios %}<option value="{{ u.id }}" {{ 'selected' if u.id==usuario_atual_id }}>{{ u.nome }}</option>{% endfor %}
         </select></div>
-      <div class="col-md-4"><label class="form-label small mb-0">Status</label>
-        <select name="status" class="form-select form-select-sm">
+      <div class="col-md-4"><label class="form-label small mb-0">Status *</label>
+        <select name="status" class="form-select form-select-sm" required>
+          <option value="" selected disabled>— escolha —</option>
           <option value="Recebido">Recebimento</option>
           <option value="Enviado">Envio</option>
         </select></div>
     </div>
   </div></div>
 
+  <!-- 2. REMETENTE -->
   <div class="card mb-3"><div class="card-body">
-    <h6>Fornecedor / Destinatário</h6>
+    <h6>2. Remetente</h6>
     <div class="row g-2">
-      <div class="col-12"><label class="form-label small mb-0">Razão Social</label>
-        <input name="razao_social" class="form-control form-control-sm" required></div>
-      <div class="col-md-6"><label class="form-label small mb-0">CNPJ</label>
-        <input name="cnpj" class="form-control form-control-sm"></div>
-      <div class="col-md-6"><label class="form-label small mb-0">Inscrição Estadual</label>
-        <input name="ie" class="form-control form-control-sm"></div>
-      <div class="col-12"><label class="form-label small mb-0">Endereço</label>
-        <input name="endereco" class="form-control form-control-sm" placeholder="Rua, número, bairro, cidade/UF, CEP"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">CNPJ</label>
+        <input name="rem_cnpj" id="rem_cnpj" class="form-control form-control-sm" inputmode="numeric"
+               placeholder="Só números" onblur="tratarCnpj('rem','fornecedor')"></div>
+      <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome *</label>
+        <input name="rem_nome" id="rem_nome" class="form-control form-control-sm" required
+               oninput="atualizarTomador()"></div>
+      <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
+        <input name="rem_ie" id="rem_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
+      <div class="col-md-7"><label class="form-label small mb-0">Endereço</label>
+        <input name="rem_endereco" id="rem_endereco" class="form-control form-control-sm"></div>
     </div>
   </div></div>
 
+  <!-- 3. DESTINATÁRIO -->
   <div class="card mb-3"><div class="card-body">
-    <h6>Dados da carga</h6>
+    <h6>3. Destinatário</h6>
     <div class="row g-2">
-      <div class="col-md-4"><label class="form-label small mb-0">Nota Fiscal</label>
-        <input name="nota_fiscal" class="form-control form-control-sm" id="campoNF" onkeyup="mostrarFoto('campoNF','fotoNF')"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">CNPJ</label>
+        <input name="dest_cnpj" id="dest_cnpj" class="form-control form-control-sm" inputmode="numeric"
+               placeholder="Só números" onblur="tratarCnpj('dest','fornecedor')"></div>
+      <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome *</label>
+        <input name="dest_nome" id="dest_nome" class="form-control form-control-sm" required
+               oninput="atualizarTomador()"></div>
+      <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
+        <input name="dest_ie" id="dest_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
+      <div class="col-md-7"><label class="form-label small mb-0">Endereço</label>
+        <input name="dest_endereco" id="dest_endereco" class="form-control form-control-sm"></div>
+    </div>
+  </div></div>
+
+  <!-- 4. TRANSPORTADORA (sem IE) -->
+  <div class="card mb-3"><div class="card-body">
+    <h6>4. Transportadora</h6>
+    <p class="text-muted small mb-2">Essas informações costumam vir no próprio CT-e.</p>
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label small mb-0">CNPJ</label>
+        <input name="transp_cnpj" id="transp_cnpj" class="form-control form-control-sm" inputmode="numeric"
+               placeholder="Só números" onblur="tratarCnpj('transp','transportadora')"></div>
+      <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome</label>
+        <input name="transp_nome" id="transp_nome" class="form-control form-control-sm"></div>
+      <div class="col-12"><label class="form-label small mb-0">Endereço</label>
+        <input name="transp_endereco" id="transp_endereco" class="form-control form-control-sm"></div>
+    </div>
+  </div></div>
+
+  <!-- 5. DADOS DA CARGA -->
+  <div class="card mb-3"><div class="card-body">
+    <h6>5. Dados da carga</h6>
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label small mb-0">Nº Nota Fiscal</label>
+        <input name="nota_fiscal" class="form-control form-control-sm"></div>
       <div class="col-md-4"><label class="form-label small mb-0">Série</label>
         <input name="serie" class="form-control form-control-sm"></div>
       <div class="col-md-4"><label class="form-label small mb-0">OC (se informado)</label>
         <input name="oc" class="form-control form-control-sm"></div>
 
-      <div class="col-12" id="fotoNF" style="display:none;">
-        <label class="form-label small mb-0">Foto da Nota Fiscal</label>
-        <input type="file" accept="image/*" class="form-control form-control-sm" onchange="adicionarFotos(this)">
-      </div>
-
-      <div class="col-md-6"><label class="form-label small mb-0">Valor da NF (R$)</label>
+      <div class="col-md-4"><label class="form-label small mb-0">Qtd. de volumes</label>
+        <input name="qtd_volumes" type="number" min="0" class="form-control form-control-sm"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Tipo de volume</label>
+        <select name="tipo_volume" class="form-select form-select-sm" onchange="toggleOutro(this,'tipoVolOutro')">
+          <option value="">— selecione —</option>
+          {% for tv in tipos_volume %}<option value="{{ tv }}">{{ tv }}</option>{% endfor %}
+          <option value="__OUTRO__">Outro...</option>
+        </select>
+        <input name="tipo_volume_outro" id="tipoVolOutro" class="form-control form-control-sm mt-1 d-none" placeholder="Qual tipo de volume?"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Valor da NF (R$)</label>
         <input name="valor_nf" class="form-control form-control-sm" placeholder="0,00"></div>
-      <div class="col-md-6"><label class="form-label small mb-0">Natureza da operação</label>
-        <input name="natureza_operacao" class="form-control form-control-sm" placeholder="Ex.: VENDA DE MERCADORIA"></div>
 
-      <div class="col-md-6"><label class="form-label small mb-0">CT-e</label>
-        <input name="cte" class="form-control form-control-sm" id="campoCTe" onkeyup="mostrarFoto('campoCTe','fotoCTe')"></div>
-      <div class="col-md-6"><label class="form-label small mb-0">Valor CT-e (R$)</label>
+      <div class="col-md-4"><label class="form-label small mb-0">Natureza da operação</label>
+        <select name="natureza_operacao" class="form-select form-select-sm" onchange="toggleOutro(this,'natOutro')">
+          <option value="">— selecione —</option>
+          {% for n in naturezas %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+          <option value="__OUTRO__">Outro...</option>
+        </select>
+        <input name="natureza_outro" id="natOutro" class="form-control form-control-sm mt-1 d-none" placeholder="Qual natureza?"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Nº CT-e</label>
+        <input name="cte" class="form-control form-control-sm"></div>
+      <div class="col-md-4"><label class="form-label small mb-0">Valor do CT-e (R$)</label>
         <input name="valor_cte" class="form-control form-control-sm" placeholder="0,00"></div>
 
-      <div class="col-12" id="fotoCTe" style="display:none;">
-        <label class="form-label small mb-0">Foto do CT-e</label>
-        <input type="file" accept="image/*" class="form-control form-control-sm" onchange="adicionarFotos(this)">
-      </div>
+      <div class="col-md-6"><label class="form-label small mb-0">Tomador do CT-e</label>
+        <select name="tomador_cte" id="tomador_cte" class="form-select form-select-sm">
+          <option value="">— selecione —</option>
+        </select>
+        <div class="form-text">Puxa Razão Social + CNPJ do Remetente ou Destinatário preenchidos acima.</div></div>
+      <div class="col-md-6"><label class="form-label small mb-0">Breve descrição da carga</label>
+        <input name="descricao_carga" class="form-control form-control-sm" placeholder="Ex.: rolamentos, conectores..."></div>
     </div>
   </div></div>
 
+  <!-- 6. FOTOS -->
   <div class="card mb-3"><div class="card-body">
-    <h6>Fotos da carga</h6>
-    <p class="text-muted small mb-2">Anexe uma a uma ou várias de uma vez direto da galeria. Marque "Avariado?" se a foto mostrar algum problema — isso não aparece na foto do relatório, mas gera um aviso no cabeçalho do PDF e exige uma observação explicando a avaria.</p>
-    <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" onchange="adicionarFotos(this)">
-    <div id="listaFotosCarga" class="row g-2"></div>
+    <h6>6. Fotos da carga</h6>
+    <p class="text-muted small mb-2">Anexe uma a uma ou várias de uma vez direto da galeria. As fotos entram no PDF (uma por página). Marque "Avariado?" se a foto mostrar problema — gera aviso no cabeçalho e exige observação.</p>
+    <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" name="fotos" id="inputFotos" onchange="previewFotos(this)">
+    <div id="listaFotos" class="row g-2"></div>
   </div></div>
 
+  <!-- 7. OBSERVAÇÕES -->
   <div class="card mb-3"><div class="card-body">
-    <h6>Observações gerais</h6>
+    <h6>7. Observações gerais</h6>
     <textarea name="observacoes" class="form-control form-control-sm" rows="3" placeholder="S/ observações"></textarea>
   </div></div>
 
@@ -90,51 +142,106 @@
 </form>
 
 <script>
-function mostrarFoto(campoId, boxId){
-  var v = document.getElementById(campoId).value.trim();
-  document.getElementById(boxId).style.display = v ? '' : 'none';
+var MAPA_FORN = {{ mapa_fornecedores|tojson }};
+var MAPA_TRANSP = {{ mapa_transportadoras|tojson }};
+
+function soDigitos(s){ return (s||'').replace(/\D/g,''); }
+
+function cnpjValido(raw){
+  var c = soDigitos(raw);
+  if(c.length !== 14 || /^(\d)\1{13}$/.test(c)) return false;
+  function dv(base, pesos){
+    var s=0; for(var i=0;i<pesos.length;i++) s += parseInt(base[i])*pesos[i];
+    var r = s % 11; return r < 2 ? '0' : String(11-r);
+  }
+  var p1=[5,4,3,2,9,8,7,6,5,4,3,2], p2=[6].concat(p1);
+  var d1=dv(c.substring(0,12),p1), d2=dv(c.substring(0,12)+d1,p2);
+  return c[12]===d1 && c[13]===d2;
+}
+function formatarCnpj(raw){
+  var c = soDigitos(raw);
+  if(c.length!==14) return raw||'';
+  return c.substr(0,2)+'.'+c.substr(2,3)+'.'+c.substr(5,3)+'/'+c.substr(8,4)+'-'+c.substr(12,2);
 }
 
-var _fotoContador = 0;
-function adicionarFotos(input){
-  var lista = document.getElementById('listaFotosCarga');
+function tratarCnpj(prefixo, tipo){
+  var campo = document.getElementById(prefixo+'_cnpj');
+  var raw = campo.value.trim();
+  if(!raw) return;
+  if(!cnpjValido(raw)){
+    alert('O CNPJ informado é inválido. Por favor, corrija antes de continuar.');
+    campo.focus();
+    return;
+  }
+  campo.value = formatarCnpj(raw);
+  var d = soDigitos(raw);
+  var mapa = (tipo === 'transportadora') ? MAPA_TRANSP : MAPA_FORN;
+  if(mapa[d]){
+    // achou: autopreenche
+    document.getElementById(prefixo+'_nome').value = mapa[d].nome || '';
+    document.getElementById(prefixo+'_endereco').value = mapa[d].endereco || '';
+    if(tipo !== 'transportadora' && document.getElementById(prefixo+'_ie'))
+      document.getElementById(prefixo+'_ie').value = mapa[d].ie || '';
+  }
+  atualizarTomador();
+}
+
+function atualizarTomador(){
+  var sel = document.getElementById('tomador_cte');
+  var atual = sel.value;
+  sel.innerHTML = '<option value="">— selecione —</option>';
+  [['rem','Remetente'],['dest','Destinatário']].forEach(function(par){
+    var nome = document.getElementById(par[0]+'_nome').value.trim();
+    var cnpj = document.getElementById(par[0]+'_cnpj').value.trim();
+    if(nome){
+      var txt = nome + (cnpj ? ' - ' + cnpj : '');
+      var op = document.createElement('option'); op.value = txt; op.textContent = par[1]+': '+txt;
+      sel.appendChild(op);
+    }
+  });
+  sel.value = atual;
+}
+
+function toggleOutro(sel, campoId){
+  var c = document.getElementById(campoId);
+  c.classList.toggle('d-none', sel.value !== '__OUTRO__');
+}
+
+var _fc = 0;
+function previewFotos(input){
+  var lista = document.getElementById('listaFotos');
   Array.from(input.files).forEach(function(file){
-    _fotoContador++;
-    var id = 'foto_' + _fotoContador;
+    _fc++;
+    var id = 'foto_' + _fc;
     var reader = new FileReader();
     reader.onload = function(e){
       var col = document.createElement('div');
-      col.className = 'col-md-3';
-      col.id = id;
+      col.className = 'col-md-3'; col.id = 'col_'+id;
       col.innerHTML =
         '<div class="border rounded p-2">' +
-          '<img src="' + e.target.result + '" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
-          '<div class="form-check">' +
-            '<input class="form-check-input chkAvaria" type="checkbox" name="foto_avariada" value="' + id + '" id="chk_' + id + '" onchange="toggleObsAvaria(this, \'' + id + '\')">' +
-            '<label class="form-check-label small text-danger" for="chk_' + id + '">Avariado?</label>' +
-          '</div>' +
-          '<textarea class="form-control form-control-sm mt-1 d-none obsAvaria" name="obs_avaria" id="obs_' + id + '" placeholder="Descreva a avaria (obrigatório)"></textarea>' +
-          '<button type="button" class="btn btn-sm btn-outline-danger w-100 mt-1" onclick="document.getElementById(\'' + id + '\').remove()">Remover</button>' +
+          '<img src="'+e.target.result+'" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
+          '<div class="form-check"><input class="form-check-input chkAvaria" type="checkbox" name="foto_avariada" value="'+id+'" id="chk_'+id+'" onchange="toggleObs(this,\''+id+'\')">' +
+          '<label class="form-check-label small text-danger" for="chk_'+id+'">Avariado?</label></div>' +
+          '<textarea class="form-control form-control-sm mt-1 d-none obsAvaria" name="obs_'+id+'" id="obs_'+id+'" placeholder="Descreva a avaria (obrigatório)"></textarea>' +
         '</div>';
       lista.appendChild(col);
     };
     reader.readAsDataURL(file);
   });
-  input.value = '';
+  // Nota: as imagens vão no envio via o próprio input (multiple). A ordem foto_N segue a ordem de leitura.
 }
-function toggleObsAvaria(chk, id){
-  var obs = document.getElementById('obs_' + id);
-  obs.classList.toggle('d-none', !chk.checked);
-  if (chk.checked) obs.setAttribute('required','required'); else obs.removeAttribute('required');
+function toggleObs(chk, id){
+  var o = document.getElementById('obs_'+id);
+  o.classList.toggle('d-none', !chk.checked);
+  if(chk.checked) o.setAttribute('required','required'); else o.removeAttribute('required');
 }
 function validarAvarias(){
   var ok = true;
   document.querySelectorAll('.chkAvaria:checked').forEach(function(chk){
-    var id = chk.value;
-    var obs = document.getElementById('obs_' + id);
-    if (!obs.value.trim()){ ok = false; obs.classList.add('is-invalid'); }
+    var o = document.getElementById('obs_'+chk.value);
+    if(!o.value.trim()){ ok=false; o.classList.add('is-invalid'); }
   });
-  if (!ok) alert('Toda foto marcada como "Avariado?" precisa de uma observação explicando a avaria.');
+  if(!ok) alert('Toda foto marcada como "Avariado?" precisa de uma observação explicando a avaria.');
   return ok;
 }
 </script>

@@ -288,7 +288,7 @@ def solicitacao(sid):
         abort(404)
     excluidos = list(s.fornecedores_excluidos)
     excluidos_ids = {f.id for f in excluidos}
-    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.id not in excluidos_ids] if s.tipo else []
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.aprovado and f.id not in excluidos_ids] if s.tipo else []
     orcamentos = sorted(s.orcamentos, key=lambda o: o.valor_total)
     base = _proximo_num_cotacao()
     seqs = {f.id: _seq_str(base + i) for i, f in enumerate(fornecedores)}
@@ -308,7 +308,9 @@ def solicitacao(sid):
         excluidos=excluidos, historico_precos=historico_precos,
         hoje=date.today().isoformat(), voltar_url=voltar_url,
         tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),
-        transportadoras=Transportadora.query.filter_by(ativo=True).order_by(Transportadora.nome).all(),
+        transportadoras=Transportadora.query.filter_by(ativo=True)
+            .filter((Transportadora.aprovacao == "aprovado") | (Transportadora.aprovacao.is_(None)))
+            .order_by(Transportadora.nome).all(),
         cidades=Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all())
 
 
@@ -345,7 +347,7 @@ def comentar(sid):
 def enviar_pedido(sid):
     s = db.session.get(Solicitacao, sid) or abort(404)
     _excl = {f.id for f in s.fornecedores_excluidos}
-    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.usa_email and f.email and f.id not in _excl] if s.tipo else []
+    fornecedores = [f for f in s.tipo.fornecedores if f.ativo and f.aprovado and f.usa_email and f.email and f.id not in _excl] if s.tipo else []
     if not fornecedores:
         flash("Nenhum fornecedor ativo com e-mail para este tipo (verifique o 'usa e-mail').", "warning")
         return redirect(url_for("admin.solicitacao", sid=s.id))
@@ -390,7 +392,7 @@ def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
     for s in itens:
         excluidos = {f.id for f in s.fornecedores_excluidos} | excluir_fornecedores
         for f in s.tipo.fornecedores:
-            if f.ativo and f.id not in excluidos:
+            if f.ativo and f.aprovado and f.id not in excluidos:
                 grupos.setdefault(f.id, {"fornecedor": f, "itens": []})["itens"].append(s)
     return itens, grupos
 
@@ -420,7 +422,11 @@ def enviar_lote():
 @admin_bp.route("/enviar-lote/email", methods=["POST"])
 @admin_required
 def enviar_lote_email():
-    """Envia cotação por e-mail para 1 fornecedor específico, já com a SPE escolhida no pop-up (item 120)."""
+    """Prepara o link mailto: para 1 fornecedor, com a SPE escolhida no pop-up (item 120).
+    CORRIGIDO (item 141): antes chamava enviar_email() (SMTP simulado do servidor, que não
+    abre nada na tela do usuário). Agora devolve JSON com o link mailto: e o front-end abre
+    o e-mail do próprio usuário — mesmo padrão do resto do sistema. Retorna JSON (não redirect)
+    porque um redirect 302 do servidor para mailto: não é seguido de forma confiável."""
     fid = int(request.form.get("fornecedor_id"))
     spe = request.form.get("spe_nome") or None
     ids = request.form.getlist("ids")
@@ -428,11 +434,8 @@ def enviar_lote_email():
     itens = [db.session.get(Solicitacao, int(i)) for i in ids]
     itens = [s for s in itens if s]
     if not itens or not (f.usa_email and f.email):
-        flash("Fornecedor sem e-mail ou nenhum item selecionado.", "warning")
-        return redirect(url_for("admin.enviar_lote"))
+        return jsonify({"ok": False, "erro": "Fornecedor sem e-mail ou nenhum item selecionado."})
     seq = _seq_str(_proximo_num_cotacao())
-    corpo = _corpo_cotacao(f, itens, spe_escolhida=spe)
-    enviar_email(f.email, _assunto_cotacao(f, seq), corpo)
     prazo_d, _ = _prazo_cotacao()
     for s in itens:
         db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
@@ -440,10 +443,9 @@ def enviar_lote_email():
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
         s.prazo_cotacao = prazo_d
         spe_txt = f" (SPE: {spe})" if spe else ""
-        _log(s, f"Cotação {seq} enviada por e-mail para {f.nome}{spe_txt}")
+        _log(s, f"Cotação {seq} — e-mail preparado (mailto) para {f.nome}{spe_txt}")
     db.session.commit()
-    flash(f"Cotação {seq} enviada por e-mail para {f.nome} ({len(itens)} item(ns)).", "success")
-    return redirect(url_for("admin.enviar_lote"))
+    return jsonify({"ok": True, "mailto": _mailto(f, itens, seq, spe_escolhida=spe)})
 
 
 @admin_bp.route("/enviar-lote/confirmar", methods=["POST"])
@@ -846,7 +848,55 @@ def backup():
 @admin_bp.route("/cadastros")
 @admin_required
 def cadastros():
-    return render_template("admin/cadastros.html")
+    n_forn_pend = Fornecedor.query.filter_by(aprovacao="pendente").count()
+    n_transp_pend = Transportadora.query.filter_by(aprovacao="pendente").count()
+    return render_template("admin/cadastros.html",
+                           n_pendentes=(n_forn_pend + n_transp_pend))
+
+
+@admin_bp.route("/cadastros-pendentes")
+@admin_required
+def cadastros_pendentes():
+    """Tela de aprovação dos cadastros criados automaticamente pelo Relatório de
+    Carga ao detectar um CNPJ novo (item 145)."""
+    fornecedores = (Fornecedor.query.filter_by(aprovacao="pendente")
+                    .order_by(Fornecedor.razao_social).all())
+    transportadoras = (Transportadora.query.filter_by(aprovacao="pendente")
+                       .order_by(Transportadora.nome).all())
+    return render_template("admin/cadastros_pendentes.html",
+                           fornecedores=fornecedores, transportadoras=transportadoras)
+
+
+@admin_bp.route("/cadastros-pendentes/fornecedor/<int:fid>", methods=["POST"])
+@admin_required
+def pendente_fornecedor_acao(fid):
+    f = db.session.get(Fornecedor, fid) or abort(404)
+    acao = request.form.get("acao")
+    if acao == "aprovar":
+        f.aprovacao = "aprovado"
+        db.session.commit()
+        flash(f"Fornecedor {f.nome} aprovado.", "success")
+    elif acao == "rejeitar":
+        db.session.delete(f)
+        db.session.commit()
+        flash("Cadastro de fornecedor rejeitado e removido.", "success")
+    return redirect(url_for("admin.cadastros_pendentes"))
+
+
+@admin_bp.route("/cadastros-pendentes/transportadora/<int:tid>", methods=["POST"])
+@admin_required
+def pendente_transportadora_acao(tid):
+    t = db.session.get(Transportadora, tid) or abort(404)
+    acao = request.form.get("acao")
+    if acao == "aprovar":
+        t.aprovacao = "aprovado"
+        db.session.commit()
+        flash(f"Transportadora {t.nome} aprovada.", "success")
+    elif acao == "rejeitar":
+        db.session.delete(t)
+        db.session.commit()
+        flash("Cadastro de transportadora rejeitado e removido.", "success")
+    return redirect(url_for("admin.cadastros_pendentes"))
 
 
 @admin_bp.route("/usuarios", methods=["GET", "POST"])
@@ -1055,25 +1105,49 @@ def fornecedor_toggle_ativo(fid):
 @admin_bp.route("/coletas-proprias")
 @admin_required
 def coletas_proprias():
-    """Lista solicitações com frete FOB/retirada por colaborador, agrupadas por
-    cidade, com texto pronto para colar no grupo do motorista (item 125)."""
+    """Solicitações com frete FOB/retirada por colaborador (item 125), agrupadas por
+    cidade e, dentro de cada cidade, por fornecedor (item 142) — com o contato do
+    fornecedor (nome/e-mail/telefone) ao lado, e texto pronto para o motorista."""
     itens = (Solicitacao.query
              .filter_by(frete_tipo="FOB", frete_modalidade="COLABORADOR")
              .filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
              .order_by(Solicitacao.cidade_retirada_id, Solicitacao.id).all())
+
+    # estrutura: { cidade: { "fornecedores": { fid: {"fornecedor": f, "itens": [...] } } } }
     grupos = {}
     for s in itens:
         cidade = s.cidade_retirada.rotulo if s.cidade_retirada else "Sem cidade definida"
-        grupos.setdefault(cidade, []).append(s)
+        f = s.fornecedor_definido
+        chave_f = f.id if f else 0
+        cid = grupos.setdefault(cidade, {})
+        bloco = cid.setdefault(chave_f, {"fornecedor": f, "itens": []})
+        bloco["itens"].append(s)
 
+    # ordena fornecedores por nome dentro de cada cidade
+    grupos_ord = {}
+    for cidade, fdict in grupos.items():
+        grupos_ord[cidade] = sorted(
+            fdict.values(),
+            key=lambda b: (b["fornecedor"].nome.lower() if b["fornecedor"] else "zzz"))
+
+    # texto pronto por cidade (agrupado por fornecedor)
     textos = {}
-    for cidade, lista in grupos.items():
+    for cidade, blocos in grupos_ord.items():
         linhas = [f"🚚 Coleta em {cidade}", ""]
-        for s in lista:
-            forn = s.fornecedor_definido.nome if s.fornecedor_definido else "-"
-            linhas.append(f"#{s.id} — {s.material} (x{s.quantidade}) — Fornecedor: {forn}")
-        textos[cidade] = "\n".join(linhas)
-    return render_template("admin/coletas_proprias.html", grupos=grupos, textos=textos)
+        for b in blocos:
+            f = b["fornecedor"]
+            if f:
+                cab = f.nome
+                contato = " · ".join(x for x in [f.contato_nome, f.telefone, f.email] if x)
+                linhas.append(f"▶ {cab}" + (f"  ({contato})" if contato else ""))
+            else:
+                linhas.append("▶ Fornecedor não definido")
+            for s in b["itens"]:
+                linhas.append(f"   #{s.id} — {s.material} (x{s.quantidade})")
+            linhas.append("")
+        textos[cidade] = "\n".join(linhas).strip()
+
+    return render_template("admin/coletas_proprias.html", grupos=grupos_ord, textos=textos)
 
 
 @admin_bp.route("/sugestoes")

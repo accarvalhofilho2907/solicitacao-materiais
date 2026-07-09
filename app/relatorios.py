@@ -14,12 +14,16 @@ Regras confirmadas com o usuário (08/07/2026):
 from functools import wraps
 from datetime import date
 from io import BytesIO
+import re
 
-from flask import Blueprint, render_template, request, abort, send_file
+from flask import Blueprint, render_template, request, abort, send_file, flash
 from flask_login import login_required, current_user
 
-from .models import Fornecedor, Usuario
+from .extensions import db
+from .models import (Fornecedor, Usuario, Transportadora,
+                     TIPOS_VOLUME, NATUREZAS_OPERACAO)
 from .admin import SPES_COTACAO
+from .util import so_digitos, cnpj_valido, formatar_cnpj, formatar_ie
 from .pdf_etiquetas import gerar_pdf_etiquetas_envio, gerar_pdf_etiquetas_identificacao
 from .pdf_carga import gerar_pdf_relatorio_carga
 
@@ -38,6 +42,8 @@ SELOS_CARGA = [
     ("NAO_EMPILHAR", "Não empilhar"),
 ]
 
+GRIDS_VALIDOS = (1, 2, 4, 6, 8, 10, 12, 14, 16)
+
 
 def relatorios_required(f):
     @wraps(f)
@@ -52,21 +58,27 @@ def relatorios_required(f):
 @relatorios_bp.route("/etiquetas", methods=["GET"])
 @relatorios_required
 def etiquetas():
-    fornecedores = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.razao_social).all()
+    fornecedores = (Fornecedor.query.filter_by(ativo=True)
+                    .filter((Fornecedor.aprovacao == "aprovado") | (Fornecedor.aprovacao.is_(None)))
+                    .order_by(Fornecedor.razao_social).all())
     return render_template("relatorios/etiquetas.html", deltas=SPES_COTACAO,
                            fornecedores=fornecedores, remetente_fixo=REMETENTE_FIXO,
-                           selos=SELOS_CARGA)
+                           selos=SELOS_CARGA, grids=GRIDS_VALIDOS)
+
+
 
 
 def _gerar_pdf_envio_a_partir_do_form(f):
     delta_nome = f.get("delta_nome", "")
+    # Contato do remetente: padrão Antonio Carlos Carvalho, mas editável (item 144)
+    contato_nome = f.get("rem_contato", "").strip() or REMETENTE_FIXO["nome"]
+    contato_tel = f.get("rem_telefone", "").strip() or REMETENTE_FIXO["telefone"]
     if delta_nome == "OUTRO":
         remetente = {
             "nome": f.get("outro_nome", "").strip() or "Remetente não informado",
             "endereco": f.get("outro_endereco", "").strip(),
             "cnpj": f.get("outro_cnpj", "").strip(),
-            "contato": REMETENTE_FIXO["nome"], "telefone": REMETENTE_FIXO["telefone"],
-            "email": REMETENTE_FIXO["email"],
+            "contato": contato_nome, "telefone": contato_tel,
         }
     else:
         delta = next((d for d in SPES_COTACAO if d[0] == delta_nome), None)
@@ -74,8 +86,7 @@ def _gerar_pdf_envio_a_partir_do_form(f):
             abort(400, "Delta (remetente) inválida.")
         remetente = {
             "nome": delta[0], "endereco": delta[1], "cnpj": delta[2],
-            "contato": REMETENTE_FIXO["nome"], "telefone": REMETENTE_FIXO["telefone"],
-            "email": REMETENTE_FIXO["email"],
+            "contato": contato_nome, "telefone": contato_tel,
         }
     destinatario = {
         "nome": f.get("dest_nome", ""), "endereco": f.get("dest_endereco", ""),
@@ -90,13 +101,16 @@ def _gerar_pdf_envio_a_partir_do_form(f):
         por_folha = int(f.get("por_folha", 4))
     except ValueError:
         por_folha = 4
-    if por_folha not in (2, 4, 6, 8):
+    if por_folha not in GRIDS_VALIDOS:
         por_folha = 4
+    orientacao = f.get("orientacao", "retrato")
+    if orientacao not in ("retrato", "paisagem"):
+        orientacao = "retrato"
     nota_fiscal = f.get("nota_fiscal", "").strip() or None
     selos = f.getlist("selos")
 
     return gerar_pdf_etiquetas_envio(remetente, destinatario, volumes, por_folha,
-                                     nota_fiscal=nota_fiscal, selos=selos)
+                                     nota_fiscal=nota_fiscal, selos=selos, orientacao=orientacao)
 
 
 @relatorios_bp.route("/etiquetas/envio/gerar", methods=["POST"])
@@ -110,11 +124,10 @@ def etiquetas_envio_gerar():
 @relatorios_bp.route("/etiquetas/envio/gerar-para-email", methods=["POST"])
 @relatorios_required
 def etiquetas_envio_gerar_email():
-    """Gera o mesmo PDF, mas com nome de arquivo e resposta pensados para o
-    usuário baixar e anexar manualmente ao e-mail (item 133). Navegadores não
-    permitem anexar arquivo automaticamente via link mailto, então a melhor
-    abordagem possível é: baixar o PDF pronto + abrir o e-mail padrão já com
-    assunto/corpo preenchidos, pedindo para anexar o arquivo baixado."""
+    """Gera o mesmo PDF, com nome de arquivo pensado para o usuário baixar e anexar
+    manualmente ao e-mail (itens 133/148). Navegadores não permitem anexar arquivo
+    automaticamente via mailto, então o botão combinado (item 148) baixa este PDF e
+    abre o e-mail em seguida, cabendo ao usuário arrastar o arquivo para o e-mail."""
     pdf = _gerar_pdf_envio_a_partir_do_form(request.form)
     return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
                      download_name="etiquetas_para_anexar_email.pdf")
@@ -135,10 +148,13 @@ def etiquetas_identificacao_gerar():
         por_folha = int(f.get("por_folha", 4))
     except ValueError:
         por_folha = 4
-    if por_folha not in (2, 4, 6, 8):
+    if por_folha not in GRIDS_VALIDOS:
         por_folha = 4
+    orientacao = f.get("orientacao", "retrato")
+    if orientacao not in ("retrato", "paisagem"):
+        orientacao = "retrato"
 
-    pdf = gerar_pdf_etiquetas_identificacao(texto, quantidade, por_folha)
+    pdf = gerar_pdf_etiquetas_identificacao(texto, quantidade, por_folha, orientacao=orientacao)
     return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
                      download_name="etiquetas_identificacao_item.pdf")
 
@@ -146,46 +162,169 @@ def etiquetas_identificacao_gerar():
 @relatorios_bp.route("/carga", methods=["GET"])
 @relatorios_required
 def carga():
-    """Tela única de Relatório de Carga (item 128) — o campo Status decide se é
-    Recebimento ou Envio, em vez de serem duas rotas/telas separadas."""
+    """Tela única de Relatório de Carga (itens 128/145) — o campo Status decide se é
+    Recebimento ou Envio. Passa listas de Usuários (Responsável), tipos de volume e
+    naturezas de operação, além dos CNPJs já cadastrados para autopreenchimento."""
     usuarios = Usuario.query.filter_by(ativo=True).order_by(Usuario.nome).all()
+    # mapa CNPJ(só dígitos) -> dados, para autopreencher no JS (item 145)
+    fornecedores = {}
+    for fo in Fornecedor.query.filter(Fornecedor.cnpj.isnot(None)).all():
+        d = so_digitos(fo.cnpj)
+        if d:
+            fornecedores[d] = {"nome": fo.razao_social or fo.nome or "",
+                               "endereco": fo.endereco or "", "ie": fo.inscricao_estadual or ""}
+    transportadoras = {}
+    for tr in Transportadora.query.filter(Transportadora.cnpj.isnot(None)).all():
+        d = so_digitos(tr.cnpj)
+        if d:
+            transportadoras[d] = {"nome": tr.nome or "", "endereco": tr.endereco or ""}
     return render_template("relatorios/carga.html", hoje=date.today().strftime("%Y-%m-%d"),
-                           usuario_atual_id=current_user.id, usuarios=usuarios)
+                           usuario_atual_id=current_user.id, usuarios=usuarios,
+                           tipos_volume=TIPOS_VOLUME, naturezas=NATUREZAS_OPERACAO,
+                           mapa_fornecedores=fornecedores, mapa_transportadoras=transportadoras)
+
+
+def _garantir_fornecedor_pendente(nome, cnpj_raw, ie, endereco):
+    """Se o CNPJ é válido e ainda não existe em Fornecedor, cria um cadastro
+    PENDENTE de aprovação (item 145). Devolve (criado: bool)."""
+    if not cnpj_valido(cnpj_raw):
+        return False
+    cnpj_fmt = formatar_cnpj(cnpj_raw)
+    d = so_digitos(cnpj_raw)
+    existe = None
+    for fo in Fornecedor.query.filter(Fornecedor.cnpj.isnot(None)).all():
+        if so_digitos(fo.cnpj) == d:
+            existe = fo
+            break
+    if existe:
+        return False
+    f = Fornecedor(razao_social=(nome or "").strip().upper() or "SEM NOME",
+                   cnpj=cnpj_fmt, inscricao_estadual=(ie or "").strip(),
+                   endereco=(endereco or "").strip(), aprovacao="pendente",
+                   ativo=True, usa_email=False)
+    db.session.add(f)
+    return True
+
+
+def _garantir_transportadora_pendente(nome, cnpj_raw, endereco):
+    """Idem, mas para a tabela de Transportadoras (item 145)."""
+    if not cnpj_valido(cnpj_raw):
+        return False
+    cnpj_fmt = formatar_cnpj(cnpj_raw)
+    d = so_digitos(cnpj_raw)
+    existe = None
+    for tr in Transportadora.query.filter(Transportadora.cnpj.isnot(None)).all():
+        if so_digitos(tr.cnpj) == d:
+            existe = tr
+            break
+    if existe:
+        return False
+    nome_final = (nome or "").strip().upper() or f"TRANSPORTADORA {cnpj_fmt}"
+    # nome é único na tabela; se colidir, acrescenta o CNPJ
+    if Transportadora.query.filter_by(nome=nome_final).first():
+        nome_final = f"{nome_final} ({cnpj_fmt})"
+    t = Transportadora(nome=nome_final, cnpj=cnpj_fmt,
+                       endereco=(endereco or "").strip(), aprovacao="pendente", ativo=True)
+    db.session.add(t)
+    return True
+
+
+def _nome_arquivo_carga(modo, dados):
+    """Nome automático do arquivo (item 147):
+    Envio <Destinatário> <NF se houver> <Data DD MM AAAA>
+    Recebimento <Remetente> <NF se houver> <Data DD MM AAAA>. Só espaços, sem especiais."""
+    if modo == "envio":
+        prefixo, empresa = "Envio", dados.get("dest_nome", "")
+    else:
+        prefixo, empresa = "Recebimento", dados.get("rem_nome", "")
+    partes = [prefixo, empresa]
+    if dados.get("nota_fiscal"):
+        partes.append(dados["nota_fiscal"])
+    # data: aceita AAAA-MM-DD (input date) -> DD MM AAAA
+    data_raw = dados.get("data", "")
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", data_raw or "")
+    if m:
+        partes.append(f"{m.group(3)} {m.group(2)} {m.group(1)}")
+    elif data_raw:
+        partes.append(re.sub(r"[^\d ]", " ", data_raw))
+    nome = " ".join(str(p).strip() for p in partes if str(p).strip())
+    nome = re.sub(r"[^\w \-]", "", nome, flags=re.UNICODE)  # remove especiais, mantém espaço e hífen
+    nome = re.sub(r"\s+", " ", nome).strip()
+    return (nome or "Relatorio de Carga") + ".pdf"
 
 
 @relatorios_bp.route("/carga/gerar", methods=["POST"])
 @relatorios_required
 def carga_gerar():
     f = request.form
-    status = f.get("status", "Recebido")
+    status = f.get("status", "")
+    if status not in ("Recebido", "Enviado"):
+        flash("Escolha o Status (Recebimento ou Envio) antes de gerar o relatório.", "warning")
+        return abort(400, "Status não selecionado.")
     modo = "recebimento" if status == "Recebido" else "envio"
+
     responsavel_id = f.get("responsavel_id")
     responsavel_nome = ""
     if responsavel_id:
-        u = Usuario.query.get(int(responsavel_id))
+        u = db.session.get(Usuario, int(responsavel_id))
         responsavel_nome = u.nome if u else ""
-    avarias = f.getlist("foto_avariada")   # marcações "Avariado?" das fotos anexadas (item 128)
+
+    # avarias marcadas + observações
+    avarias_ids = set(f.getlist("foto_avariada"))
     obs_avarias = [v.strip() for v in f.getlist("obs_avaria") if v.strip()]
+
     dados = {
         "data": f.get("data", ""),
         "responsavel": responsavel_nome,
-        "razao_social": f.get("razao_social", ""),
-        "cnpj": f.get("cnpj", ""),
-        "ie": f.get("ie", ""),
-        "endereco": f.get("endereco", ""),
-        "nota_fiscal": f.get("nota_fiscal", ""),
-        "serie": f.get("serie", ""),
-        "oc": f.get("oc", ""),
+        "rem_nome": f.get("rem_nome", ""), "rem_cnpj": formatar_cnpj(f.get("rem_cnpj", "")) or f.get("rem_cnpj", ""),
+        "rem_ie": formatar_ie(f.get("rem_ie", "")), "rem_endereco": f.get("rem_endereco", ""),
+        "dest_nome": f.get("dest_nome", ""), "dest_cnpj": formatar_cnpj(f.get("dest_cnpj", "")) or f.get("dest_cnpj", ""),
+        "dest_ie": formatar_ie(f.get("dest_ie", "")), "dest_endereco": f.get("dest_endereco", ""),
+        "transp_nome": f.get("transp_nome", ""), "transp_cnpj": formatar_cnpj(f.get("transp_cnpj", "")) or f.get("transp_cnpj", ""),
+        "transp_endereco": f.get("transp_endereco", ""),
+        "nota_fiscal": f.get("nota_fiscal", ""), "serie": f.get("serie", ""), "oc": f.get("oc", ""),
+        "qtd_volumes": f.get("qtd_volumes", ""),
+        "tipo_volume": f.get("tipo_volume_outro", "").strip() if f.get("tipo_volume") == "__OUTRO__" else f.get("tipo_volume", ""),
         "valor_nf": f.get("valor_nf", ""),
-        "natureza_operacao": f.get("natureza_operacao", ""),
-        "cte": f.get("cte", ""),
-        "valor_cte": f.get("valor_cte", ""),
+        "natureza_operacao": f.get("natureza_outro", "").strip() if f.get("natureza_operacao") == "__OUTRO__" else f.get("natureza_operacao", ""),
+        "cte": f.get("cte", ""), "valor_cte": f.get("valor_cte", ""),
+        "tomador_cte": f.get("tomador_cte", ""),
+        "descricao_carga": f.get("descricao_carga", ""),
         "observacoes": f.get("observacoes", "").strip() or "S/ observações",
         "status": status,
-        "tem_avaria": bool(avarias),
+        "tem_avaria": bool(avarias_ids),
         "obs_avarias": obs_avarias,
     }
-    pdf = gerar_pdf_relatorio_carga(modo, dados)
-    nome_arquivo = f"relatorio_{modo}_materiais.pdf"
+
+    # Cadastro pendente por CNPJ novo (item 145)
+    criados = 0
+    criados += 1 if _garantir_fornecedor_pendente(dados["rem_nome"], f.get("rem_cnpj", ""),
+                                                   f.get("rem_ie", ""), dados["rem_endereco"]) else 0
+    criados += 1 if _garantir_fornecedor_pendente(dados["dest_nome"], f.get("dest_cnpj", ""),
+                                                   f.get("dest_ie", ""), dados["dest_endereco"]) else 0
+    criados += 1 if _garantir_transportadora_pendente(dados["transp_nome"], f.get("transp_cnpj", ""),
+                                                       dados["transp_endereco"]) else 0
+    if criados:
+        db.session.commit()
+
+    # Fotos enviadas (item 135) — trafegam ao servidor só para montar o PDF; não são arquivadas.
+    fotos = []
+    idx = 0
+    for arquivo in request.files.getlist("fotos"):
+        if not arquivo or not arquivo.filename:
+            continue
+        idx += 1
+        conteudo = arquivo.read()
+        if not conteudo:
+            continue
+        foto_id = f"foto_{idx}"
+        avaria = foto_id in avarias_ids
+        obs = ""
+        if avaria:
+            obs_lista = f.getlist(f"obs_{foto_id}")
+            obs = obs_lista[0].strip() if obs_lista else ""
+        fotos.append({"bytes": conteudo, "legenda": arquivo.filename, "avaria": avaria, "obs": obs})
+
+    pdf = gerar_pdf_relatorio_carga(modo, dados, fotos=fotos)
     return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
-                     download_name=nome_arquivo)
+                     download_name=_nome_arquivo_carga(modo, dados))

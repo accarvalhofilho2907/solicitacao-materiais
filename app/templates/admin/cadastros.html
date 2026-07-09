@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <h4 class="mb-3">Cadastros</h4>
+
+{% if n_pendentes %}
+<a class="card cad-card cad-pendente text-decoration-none mb-3 d-block" href="{{ url_for('admin.cadastros_pendentes') }}"><div class="card-body d-flex align-items-center justify-content-between">
+  <div>
+    <h6 class="mb-1">⏳ Cadastros pendentes de aprovação <span class="badge" style="background:var(--coral)">{{ n_pendentes }}</span></h6>
+    <p class="small text-muted mb-0">Fornecedores/transportadoras criados a partir de CNPJ novo no Relatório de Carga, aguardando sua aprovação.</p>
+  </div>
+  <span class="fs-4">›</span>
+</div></a>
+{% endif %}
+
 <div class="row g-3">
   {% set itens = [
     ('Usuários','admin.usuarios','Solicitantes, almoxarifado, visualização e administradores'),
@@ -12,10 +23,17 @@
     ('Atividades','admin.atividades','Usadas para classificar as notinhas'),
   ] %}
   {% for titulo, rota, desc in itens %}
-  <div class="col-md-4"><a class="card cad-card h-100 text-decoration-none border-start border-4 border-warning" href="{{ url_for(rota) }}"><div class="card-body">
-    <h6 class="mb-1" style="color:var(--grafite)">{{ titulo }}</h6><p class="small text-muted mb-0">{{ desc }}</p>
+  <div class="col-md-4"><a class="card cad-card h-100 text-decoration-none" href="{{ url_for(rota) }}"><div class="card-body">
+    <h6 class="mb-1">{{ titulo }}</h6><p class="small text-muted mb-0">{{ desc }}</p>
   </div></a></div>
   {% endfor %}
 </div>
-<style>.cad-card{transition:transform .1s,box-shadow .1s}.cad-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.12)}</style>
+
+<style>
+  .cad-card{ transition:transform .1s, box-shadow .1s, border-color .1s; border:1px solid var(--linha); }
+  .cad-card h6{ color:var(--texto); }
+  .cad-card:hover{ transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.18); border-color:var(--coral); }
+  .cad-card:hover h6{ color:var(--coral); }
+  .cad-pendente{ border-left:3px solid var(--coral); }
+</style>
 {% endblock %}

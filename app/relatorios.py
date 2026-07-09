@@ -16,7 +16,7 @@ from datetime import date
 from io import BytesIO
 import re
 
-from flask import Blueprint, render_template, request, abort, send_file, flash, redirect, url_for, current_app
+from flask import Blueprint, render_template, request, abort, send_file, flash, redirect, url_for, current_app, Response
 from flask_login import login_required, current_user
 
 from .extensions import db
@@ -297,15 +297,22 @@ def carga_gerar():
     }
 
     # Cadastro pendente por CNPJ novo (item 145)
-    criados = 0
-    criados += 1 if _garantir_fornecedor_pendente(dados["rem_nome"], f.get("rem_cnpj", ""),
-                                                   f.get("rem_ie", ""), dados["rem_endereco"]) else 0
-    criados += 1 if _garantir_fornecedor_pendente(dados["dest_nome"], f.get("dest_cnpj", ""),
-                                                   f.get("dest_ie", ""), dados["dest_endereco"]) else 0
-    criados += 1 if _garantir_transportadora_pendente(dados["transp_nome"], f.get("transp_cnpj", ""),
-                                                       dados["transp_endereco"]) else 0
-    if criados:
-        db.session.commit()
+    # Cadastro pendente por CNPJ novo (item 145). Protegido: se falhar no banco,
+    # faz rollback e segue gerando o PDF — o relatório é a prioridade, o cadastro
+    # pendente é um bônus e nunca deve derrubar a geração do documento.
+    try:
+        criados = 0
+        criados += 1 if _garantir_fornecedor_pendente(dados["rem_nome"], f.get("rem_cnpj", ""),
+                                                       f.get("rem_ie", ""), dados["rem_endereco"]) else 0
+        criados += 1 if _garantir_fornecedor_pendente(dados["dest_nome"], f.get("dest_cnpj", ""),
+                                                       f.get("dest_ie", ""), dados["dest_endereco"]) else 0
+        criados += 1 if _garantir_transportadora_pendente(dados["transp_nome"], f.get("transp_cnpj", ""),
+                                                           dados["transp_endereco"]) else 0
+        if criados:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Falha ao criar cadastro pendente no relatório de carga (ignorado)")
 
     # Fotos enviadas (item 135) — trafegam ao servidor só para montar o PDF; não são arquivadas.
     fotos = []
@@ -347,5 +354,13 @@ def carga_gerar():
         flash("Não foi possível gerar o PDF (verifique as fotos anexadas e tente novamente). "
               "Se persistir, gere sem as fotos e anexe-as separadamente.", "danger")
         return redirect(url_for("relatorios.carga"))
-    return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
-                     download_name=_nome_arquivo_carga(modo, dados))
+
+    nome = _nome_arquivo_carga(modo, dados)
+    # ASCII-safe para o header (evita erro de encoding no header sob Gunicorn);
+    # o nome com acentos vai no filename* (RFC 5987), tratado pelo Werkzeug.
+    resp = Response(pdf, mimetype="application/pdf")
+    try:
+        resp.headers.set("Content-Disposition", "attachment", filename=nome)
+    except Exception:
+        resp.headers["Content-Disposition"] = 'attachment; filename="relatorio_carga.pdf"'
+    return resp

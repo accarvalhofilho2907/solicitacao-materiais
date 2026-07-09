@@ -37,6 +37,14 @@ def _light_migrate():
             db.session.commit()
         except Exception:
             db.session.rollback()
+        # O email do fornecedor passou a ser opcional (item 145: cadastro pendente vindo do
+        # relatório de carga não tem e-mail). A tabela antiga foi criada com NOT NULL —
+        # remove essa restrição para não quebrar o INSERT do cadastro pendente.
+        try:
+            db.session.execute(text('ALTER TABLE fornecedores ALTER COLUMN email DROP NOT NULL'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     # Backfill: todos os cadastros em MAIÚSCULAS (item 88). Idempotente.
     _maiusculas_cadastros(insp)
 

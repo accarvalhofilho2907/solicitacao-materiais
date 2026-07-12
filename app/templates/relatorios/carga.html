@@ -153,6 +153,7 @@
     <h6>6. Outras fotos da carga</h6>
     <p class="text-muted small mb-2">As fotos da Nota Fiscal e do CT-e aparecem ao preencher os números acima. Aqui você anexa as demais fotos da carga (uma a uma ou várias de uma vez da galeria). Todas entram no PDF, uma por página. Marque "Avariado?" se a foto mostrar problema — gera aviso no cabeçalho e exige observação.</p>
     <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" name="fotos" id="inputFotos" onchange="previewFotos(this)">
+    <span id="avisoMuitasFotos" class="d-none"></span>
     <div id="listaFotos" class="row g-2"></div>
   </div></div>
 
@@ -162,12 +163,74 @@
     <textarea name="observacoes" class="form-control form-control-sm" rows="3" placeholder="S/ observações"></textarea>
   </div></div>
 
-  <button class="btn btn-primary" type="submit" onclick="return validarAvarias()">Gerar PDF</button>
+  <button class="btn btn-primary" type="button" id="btnGerar" onclick="gerarComFotosMenores()">Gerar PDF</button>
+  <span class="small text-muted ms-2" id="msgCompressao"></span>
 </form>
 
 <script>
-var MAPA_FORN = {{ mapa_fornecedores|tojson }};
-var MAPA_TRANSP = {{ mapa_transportadoras|tojson }};
+// Comprime as fotos no próprio navegador ANTES de enviar (item 152).
+// Isso reduz o tamanho do upload e o uso de memória do servidor ao montar o PDF
+// (era a causa do "exceeded its memory limit" no Render com muitas fotos).
+function _comprimirImagem(file, maxLado, qualidade){
+  return new Promise(function(resolve){
+    if(!file || !file.type || file.type.indexOf('image/') !== 0){ resolve(file); return; }
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var img = new Image();
+      img.onload = function(){
+        var w = img.width, h = img.height;
+        if(Math.max(w,h) > maxLado){
+          if(w >= h){ h = Math.round(h * maxLado / w); w = maxLado; }
+          else { w = Math.round(w * maxLado / h); h = maxLado; }
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(function(blob){
+          if(!blob){ resolve(file); return; }
+          // se a "compressão" ficou maior que o original, mantém o original
+          if(blob.size >= file.size){ resolve(file); return; }
+          resolve(new File([blob], (file.name||'foto').replace(/\.[^.]+$/, '') + '.jpg', {type:'image/jpeg'}));
+        }, 'image/jpeg', qualidade);
+      };
+      img.onerror = function(){ resolve(file); };
+      img.src = e.target.result;
+    };
+    reader.onerror = function(){ resolve(file); };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function _comprimirInput(input, maxLado, qualidade){
+  if(!input || !input.files || !input.files.length) return;
+  var dt = new DataTransfer();
+  for(var i=0; i<input.files.length; i++){
+    var menor = await _comprimirImagem(input.files[i], maxLado, qualidade);
+    dt.items.add(menor);
+  }
+  input.files = dt.files;
+}
+
+async function gerarComFotosMenores(){
+  if(!validarAvarias()) return;
+  var btn = document.getElementById('btnGerar');
+  var msg = document.getElementById('msgCompressao');
+  btn.disabled = true;
+  msg.textContent = 'preparando fotos...';
+  try{
+    // 2400px e qualidade 0.9 = alta nitidez (dá pra dar zoom e ler nº de série/etiquetas),
+    // ainda reduzindo a foto original do celular (4000px+) para aliviar a memória do servidor.
+    await _comprimirInput(document.getElementById('fotoNF'), 2400, 0.9);
+    await _comprimirInput(document.getElementById('fotoCTE'), 2400, 0.9);
+    await _comprimirInput(document.getElementById('inputFotos'), 2400, 0.9);
+    msg.textContent = 'gerando PDF...';
+  }catch(err){
+    // se algo falhar na compressão, envia como está (não trava o usuário)
+    msg.textContent = '';
+  }
+  document.getElementById('formCarga').submit();
+  setTimeout(function(){ btn.disabled = false; msg.textContent = ''; }, 4000);
+}
 
 function soDigitos(s){ return (s||'').replace(/\D/g,''); }
 
@@ -279,6 +342,18 @@ function previewFotos(input){
     };
     reader.readAsDataURL(file);
   });
+  // Aviso: muitas fotos de alta resolução podem pesar. Sugere dividir para não travar.
+  var aviso = document.getElementById('avisoMuitasFotos');
+  var total = document.getElementById('inputFotos').files.length;
+  if(aviso){
+    if(total > 20){
+      aviso.textContent = '⚠ Você selecionou ' + total + ' fotos em alta qualidade. Para não sobrecarregar, considere gerar mais de um relatório (ex.: até 20 fotos por vez).';
+      aviso.className = 'small text-warning d-block mb-2';
+    } else {
+      aviso.textContent = '';
+      aviso.className = 'd-none';
+    }
+  }
   // Nota: as imagens vão no envio via o próprio input (multiple). A ordem foto_N segue a ordem de leitura.
 }
 function toggleObs(chk, id){

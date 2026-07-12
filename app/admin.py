@@ -17,7 +17,7 @@ from .storage import salvar_imagem
 from .emails import enviar_email
 from .pdf import gerar_pdf_pedido, gerar_pdf_pedido_lote
 from .pdf_orcamento import extrair_itens, _parse_valor
-from .util import (normalizar_telefone_br, somar_dias_uteis, contem_busca,
+from .util import (normalizar_telefone_br, somar_dias_uteis, contem_busca, sem_acentos,
                    formatar_cnpj, cnpj_valido, formatar_ie, so_digitos)
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -1103,8 +1103,27 @@ def fornecedores():
     if so_incompletos:
         lista = [f for f in lista if f.cadastro_incompleto and f.ativo]
     if busca:
-        lista = [f for f in lista if contem_busca(f.nome, busca) or contem_busca(f.cnpj, busca)
-                 or contem_busca(f.cidade, busca)]
+        bsa = sem_acentos(busca)
+        # a busca reconhece palavras-chave de PAPEL, além de nome/CNPJ/cidade.
+        quer_empresa = any(p in bsa for p in ("empresa", "interna", "empresa interna"))
+        quer_fornecedor = "fornecedor" in bsa
+        quer_sem_cnpj = any(p in bsa for p in ("sem cnpj", "incompleto", "sem cadastro"))
+
+        def _bate(f):
+            # palavra-chave de papel casa direto
+            if quer_empresa and f.is_empresa_interna:
+                return True
+            if quer_fornecedor and f.is_fornecedor:
+                return True
+            if quer_sem_cnpj and f.cadastro_incompleto:
+                return True
+            # texto do cadastro (inclui o papel por extenso, para busca natural)
+            papel_txt = " ".join(["empresa interna" if f.is_empresa_interna else "",
+                                  "fornecedor" if f.is_fornecedor else ""])
+            campos = " ".join([f.nome or "", f.cnpj or "", f.cidade or "", papel_txt])
+            return contem_busca(campos, busca)
+
+        lista = [f for f in lista if _bate(f)]
     return render_template("admin/fornecedores.html", lista=lista, tipos=tipos,
                            busca=busca, so_incompletos=so_incompletos)
 

@@ -192,18 +192,118 @@ def _parse_lojao(linhas):
     return itens
 
 
+# Mundial Tintas: N Codigo Descrição NCM UN Quantidade PrVenda ValorTotal %ICM %RED %IPI Prazo
+# preço unitário ("Pr Venda") tem 3 casas decimais (366,190). Formato BR.
+_MUNDIAL_ITEM = re.compile(
+    r"^\s*(\d+)\s+(\d+)\s+(.+?)\s+"          # N, código, descrição
+    r"(\d{4}\.\d{2}\.\d{2})\s+"              # NCM (com pontos)
+    r"([A-Z]{2})\s+"                         # UN
+    r"(\d{1,3}(?:\.\d{3})*,\d{3})\s+"        # Quantidade (3 casas)
+    r"(\d{1,3}(?:\.\d{3})*,\d{3})\s+"        # Pr Venda (3 casas)
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+")       # Valor Total (2 casas)
+
+
+def _parse_mundial(linhas):
+    itens = []
+    for ln in linhas:
+        m = _MUNDIAL_ITEM.match(ln)
+        if not m:
+            continue
+        n, cod, desc, ncm, un, qtd, unit, total = m.groups()
+        itens.append({"descricao": desc.strip(), "unidade": un,
+                      "quantidade": _val_br(qtd), "valor": _val_br(unit),
+                      "subtotal": _val_br(total), "codigo": cod})
+    return itens
+
+
+# Dimensional/Sonepar: layout embaralhado pelo extrator. A linha de VALORES tem o
+# formato "item NCM icms qtd UNID preçoUnit preçoTotal icmsST prazo"; a DESCRIÇÃO do
+# produto é a linha logo após o cabeçalho de colunas que NÃO começa com "DESCRIÇÃO TÉCNICA".
+_DIM_VALORES = re.compile(
+    r"^\s*(\d+)\s+(\d{8})\s+"                # item, NCM (8 dígitos)
+    r"(\d{1,2},\d{2})\s+"                    # ICMS
+    r"(\d+)\s+([A-Z]{2})\s+"                 # QTDE, UNID
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+"        # preço unitário
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+")       # preço total
+
+
+def _parse_dimensional(linhas):
+    itens = []
+    # coleta as linhas de descrição de produto (após cabeçalho, sem ser DESCRIÇÃO TÉCNICA)
+    descricoes = []
+    achou_cabecalho = False
+    for ln in linhas:
+        s = ln.strip()
+        if s.startswith("ITEM") and "CÓDIGO" in s:
+            achou_cabecalho = True
+            continue
+        if not achou_cabecalho:
+            continue
+        if s.startswith("TOTAL "):
+            break
+        # linha de descrição do produto: tem letras, não é "DESCRIÇÃO TÉCNICA", não é linha de valores nem continuação técnica
+        if (s and not s.startswith("DESCRIÇÃO TÉCNICA") and not _DIM_VALORES.match(ln)
+                and "|" not in s and not re.match(r"^\d{6}$", s)):
+            # heurística: linha com nome de produto costuma ter marca em maiúsculas e vários termos
+            if re.search(r"[A-Z]{2,}", s) and not s.startswith("UNITÁRIO"):
+                descricoes.append(s)
+    # agora casa cada linha de valores com a descrição correspondente (na ordem)
+    idx = 0
+    for ln in linhas:
+        m = _DIM_VALORES.match(ln)
+        if not m:
+            continue
+        item, ncm, icms, qtd, un, unit, total = m.groups()
+        desc = descricoes[idx] if idx < len(descricoes) else f"Item {item}"
+        idx += 1
+        itens.append({"descricao": desc, "unidade": un,
+                      "quantidade": _val_br(qtd), "valor": _val_br(unit),
+                      "subtotal": _val_br(total), "codigo": None})
+    return itens
+
+
+# Iluminar: CÓDIGO DESCRIÇÃO QUANT EMBALAGEM VL TAB VL DESC VL UNIT VL TOTAL
+# (parser escrito pela estrutura conhecida; validar com o PDF real quando disponível)
+_ILUMINAR_ITEM = re.compile(
+    r"^\s*(\d{4,})\s+(.+?)\s+"               # código, descrição
+    r"(\d{1,3}(?:\.\d{3})*,\d{4})\s+"        # QUANT (4 casas: 100,0000)
+    r"([A-Z]{2})\s+"                         # EMBALAGEM (UN)
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+"        # VL TAB
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+"        # VL DESC
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})\s+"        # VL UNIT
+    r"(\d{1,3}(?:\.\d{3})*,\d{2})")          # VL TOTAL
+
+
+def _parse_iluminar(linhas):
+    itens = []
+    for ln in linhas:
+        m = _ILUMINAR_ITEM.match(ln)
+        if not m:
+            continue
+        cod, desc, quant, emb, vtab, vdesc, vunit, vtotal = m.groups()
+        # descrição pode ter 2ª linha "MARCA: ... NCM: ..." — remove se colou
+        desc = re.sub(r"\s*(MARCA:|NCM:).*$", "", desc).strip()
+        itens.append({"descricao": desc, "unidade": emb,
+                      "quantidade": _val_br(quant), "valor": _val_br(vunit),
+                      "subtotal": _val_br(vtotal), "codigo": cod})
+    return itens
+
+
 # CNPJ (só dígitos) -> parser
 _FORNECEDORES = [
     ("17281973000815", _parse_cofermeta),
     ("28933967000145", _parse_fbm),
     ("19544638000111", _parse_ferramentech),
     ("40217808000140", _parse_lojao),
+    ("13421123000148", _parse_mundial),
+    ("06913480001563", _parse_dimensional),
+    ("03534081000106", _parse_iluminar),
 ]
 
 
 def _detectar_fornecedor(linhas):
     """Procura o CNPJ do FORNECEDOR no topo do PDF (primeiras ~8 linhas)."""
-    topo = " ".join(linhas[:8])
+    topo = " ".join(linhas[:10])
     digitos_topo = _so_digitos(topo)
     for cnpj, parser in _FORNECEDORES:
         if cnpj in digitos_topo:

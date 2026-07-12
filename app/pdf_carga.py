@@ -30,24 +30,35 @@ def _normalizar_imagem(raw_bytes):
     """Converte qualquer foto (JPEG/PNG/EXIF-rotacionada/RGBA) em um JPEG RGB limpo,
     com a orientação EXIF já aplicada e o tamanho limitado. Devolve bytes JPEG ou
     None se não for possível abrir (nesse caso a foto é pulada, sem derrubar o PDF).
-    Isso evita o Internal Server Error com fotos de celular (item 135)."""
+    Isso evita o Internal Server Error com fotos de celular (item 135) e reduz o uso
+    de memória no servidor (Render), que era a causa do 'exceeded its memory limit'."""
     if not _TEM_PIL:
         return raw_bytes  # sem Pillow, tenta entregar como veio (ReportLab pode aceitar)
+    im = None
     try:
         im = PILImage.open(BytesIO(raw_bytes))
         im = ImageOps.exif_transpose(im)   # corrige rotação vinda do celular
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")
-        # limita resolução (fotos de celular são enormes; 2000px já é ótimo p/ impressão)
-        max_lado = 2000
+        # Resolução alta o suficiente para dar ZOOM e ler nº de série / etiquetas nas
+        # fotos (2400px), com qualidade JPEG alta (90). É um meio-termo: preserva os
+        # detalhes finos que o usuário precisa, mas ainda reduz a foto original do
+        # celular (que costuma vir com 4000px+ e vários MB), aliviando a memória.
+        max_lado = 2400
         if max(im.size) > max_lado:
             im.thumbnail((max_lado, max_lado))
         out = BytesIO()
-        im.save(out, format="JPEG", quality=85)
-        out.seek(0)
+        im.save(out, format="JPEG", quality=90, optimize=True)
         return out.getvalue()
     except Exception:
         return None
+    finally:
+        # libera o bitmap da memória assim que termina (importante com muitas fotos)
+        try:
+            if im is not None:
+                im.close()
+        except Exception:
+            pass
 
 _ST = getSampleStyleSheet()
 
@@ -268,6 +279,7 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
             if foto.get("avaria"):
                 legenda += "  —  ⚠ AVARIADO"
             img_bytes = _normalizar_imagem(foto.get("bytes"))
+            foto["bytes"] = None  # libera a foto original (pesada) da memória assim que normaliza
             if not img_bytes:
                 # não conseguiu processar a imagem: registra aviso mas NÃO derruba o PDF
                 el.append(PageBreak())

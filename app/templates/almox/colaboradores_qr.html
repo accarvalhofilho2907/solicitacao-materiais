@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><title>QR dos colaboradores</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:12mm}
+  .grid{display:grid;gap:8px}
+  .grid.foto{grid-template-columns:repeat(3,1fr)}
+  .grid.termica{grid-template-columns:repeat(2,1fr)}
+  .cel{border:1px dashed #bbb;border-radius:6px;padding:10px;text-align:center;page-break-inside:avoid}
+  .cel svg{width:110px;height:110px}
+  .termica .cel svg{width:80px;height:80px}
+  .nome{font-weight:bold;font-size:12px;margin-top:6px}
+  .info{font-size:10px;color:#444}
+  .uid{font-size:8px;color:#999}
+  .noprint{margin-bottom:10px}
+  @media print{.noprint{display:none}}
+</style></head><body>
+<div class="noprint">
+  <button onclick="window.print()">🖨️ Imprimir</button>
+  &nbsp;Formato:
+  <a href="?formato=foto{% if request.args.get('ids') %}&ids={{ request.args.get('ids') }}{% endif %}">foto (celular)</a> |
+  <a href="?formato=termica{% if request.args.get('ids') %}&ids={{ request.args.get('ids') }}{% endif %}">etiqueta térmica</a>
+  <span style="font-size:12px;color:#555"> — {{ itens|length }} colaborador(es)</span>
+</div>
+<div class="grid {{ formato }}">
+  {% for c in itens %}
+  <div class="cel">
+    {{ qr_svg('COLAB:' ~ (c.qr_uid or c.id))|safe }}
+    <div class="nome">{{ c.nome }}</div>
+    <div class="info">{{ c.cpf or '' }}{% if c.empresa %} · {{ c.empresa }}{% endif %}</div>
+    <div class="uid">{{ c.qr_uid or '' }}</div>
+  </div>
+  {% else %}
+  <p>Nenhum colaborador.</p>
+  {% endfor %}
+</div>
+</body></html>

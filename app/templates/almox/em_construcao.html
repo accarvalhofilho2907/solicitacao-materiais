@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ topico.nome }} — Em construção{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Voltar ao Almoxarifado</a>
+<div class="card">
+  <div class="card-body text-center py-5">
+    <div style="font-size:52px">{{ topico.icone }}</div>
+    <h4 class="mt-2">{{ topico.nome }}</h4>
+    <span class="badge bg-warning text-dark">Em construção</span>
+    <p class="text-muted mt-3 mb-0">Este tópico faz parte do módulo Almoxarifado e será liberado em uma próxima etapa.</p>
+  </div>
+</div>
+{% endblock %}

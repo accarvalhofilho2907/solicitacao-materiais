@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="{{ url_for('admin.usuarios') }}" class="small">&larr; Usuários</a>
+<h4 class="mt-2 mb-1">Histórico de papéis — {{ u.nome }}</h4>
+<p class="small text-muted">{{ u.email }}</p>
+<div class="card"><div class="table-responsive">
+<table class="table mb-0 align-middle">
+  <thead class="table-light"><tr><th>Papel</th><th>Início</th><th>Fim</th><th>Alterado por</th></tr></thead>
+  <tbody>
+  {% for h in hist %}
+    <tr>
+      <td><span class="badge bg-secondary">{{ h.papel }}</span>{% if not h.fim %} <span class="badge bg-success">vigente</span>{% endif %}</td>
+      <td class="small">{{ h.inicio.strftime('%d/%m/%Y %H:%M') if h.inicio else '—' }}</td>
+      <td class="small">{{ h.fim.strftime('%d/%m/%Y %H:%M') if h.fim else '—' }}</td>
+      <td class="small">{{ h.autor.nome if h.autor else '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="text-muted text-center py-3">Sem histórico registrado.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

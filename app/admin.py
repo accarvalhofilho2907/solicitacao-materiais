@@ -11,6 +11,7 @@ from .extensions import db, csrf
 from .models import (
     Usuario, TipoMaterial, Fornecedor, Solicitacao, Comentario, PedidoCompra, Orcamento,
     Cidade, Transportadora, Empresa, Sugestao, Atividade, Notinha, LogSolicitacao,
+    HistoricoPapel, Colaborador,
     STATUS, STATUS_PADRAO,
 )
 from .storage import salvar_imagem
@@ -899,31 +900,55 @@ def pendente_transportadora_acao(tid):
     return redirect(url_for("admin.cadastros_pendentes"))
 
 
+def _registrar_papel(usuario, novo_papel, autor):
+    """Fecha o período do papel anterior e abre o novo no histórico."""
+    aberto = (HistoricoPapel.query
+              .filter_by(usuario_id=usuario.id, fim=None)
+              .order_by(HistoricoPapel.inicio.desc()).first())
+    if aberto and aberto.papel == novo_papel:
+        return
+    if aberto:
+        aberto.fim = datetime.utcnow()
+    db.session.add(HistoricoPapel(usuario_id=usuario.id, pessoa_nome=usuario.nome,
+                                  papel=novo_papel, alterado_por=autor.id))
+
+
 @admin_bp.route("/usuarios", methods=["GET", "POST"])
 @admin_required
 def usuarios():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
+        papel = request.form.get("papel", "solicitante")
+        if papel == "admin" and not current_user.is_master:
+            flash("Apenas o Admin Master pode criar administradores.", "danger")
+            return redirect(url_for("admin.usuarios"))
         if Usuario.query.filter_by(email=email).first():
             flash("Já existe usuário com esse e-mail.", "warning")
         else:
             u = Usuario(nome=_mai(request.form.get("nome")), email=email,
-                        papel=request.form.get("papel", "solicitante"),
-                        empresa_id=request.form.get("empresa_id") or None,
+                        papel=papel, empresa_id=request.form.get("empresa_id") or None,
                         senha_temporaria=True)
             u.set_senha(request.form.get("senha", ""))
             db.session.add(u)
+            db.session.flush()
+            _registrar_papel(u, papel, current_user)
             db.session.commit()
             flash("Usuário criado. Ele trocará a senha no primeiro acesso.", "success")
         return redirect(url_for("admin.usuarios"))
-    return render_template("admin/usuarios.html", lista=Usuario.query.order_by(Usuario.nome).all(),
-                           empresas=Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all())
+    colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+    return render_template("admin/usuarios.html",
+                           lista=Usuario.query.order_by(Usuario.nome).all(),
+                           empresas=Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all(),
+                           colaboradores=colabs)
 
 
 @admin_bp.route("/usuarios/<int:uid>", methods=["POST"])
 @admin_required
 def usuario_editar(uid):
     u = db.session.get(Usuario, uid) or abort(404)
+    if not current_user.pode_gerir(u):
+        flash("Você não tem permissão para editar este usuário.", "danger")
+        return redirect(url_for("admin.usuarios"))
     novo_email = request.form.get("email", "").strip().lower()
     if novo_email and novo_email != u.email:
         if Usuario.query.filter(Usuario.email == novo_email, Usuario.id != u.id).first():
@@ -931,9 +956,20 @@ def usuario_editar(uid):
             return redirect(url_for("admin.usuarios"))
         u.email = novo_email
     u.nome = _mai(request.form.get("nome")) or u.nome
-    u.papel = request.form.get("papel", u.papel)
+    novo_papel = request.form.get("papel", u.papel)
+    if u.is_master:
+        novo_papel = "admin"   # master é sempre admin; não pode ser rebaixado
+    if novo_papel == "admin" and u.papel != "admin" and not current_user.is_master:
+        flash("Apenas o Admin Master pode promover a administrador.", "danger")
+        return redirect(url_for("admin.usuarios"))
+    if novo_papel != u.papel:
+        u.papel = novo_papel
+        _registrar_papel(u, novo_papel, current_user)
     u.empresa_id = request.form.get("empresa_id") or None
-    u.ativo = request.form.get("ativo") == "1"
+    if u.is_master:
+        u.ativo = True         # master nunca é desativado
+    else:
+        u.ativo = request.form.get("ativo") == "1"
     nova = request.form.get("nova_senha", "").strip()
     if nova:
         u.set_senha(nova)
@@ -942,6 +978,45 @@ def usuario_editar(uid):
     db.session.commit()
     flash("Usuário atualizado.", "success")
     return redirect(url_for("admin.usuarios"))
+
+
+@admin_bp.route("/usuarios/promover-colaborador", methods=["POST"])
+@admin_required
+def promover_colaborador():
+    """Transforma um colaborador de campo em usuário que loga (Etapa 2.5)."""
+    cid = request.form.get("colaborador_id")
+    colab = db.session.get(Colaborador, int(cid)) if cid and cid.isdigit() else None
+    if not colab:
+        flash("Selecione um colaborador válido.", "danger")
+        return redirect(url_for("admin.usuarios"))
+    email = request.form.get("email", "").strip().lower()
+    papel = request.form.get("papel", "solicitante")
+    if papel == "admin" and not current_user.is_master:
+        flash("Apenas o Admin Master pode promover a administrador.", "danger")
+        return redirect(url_for("admin.usuarios"))
+    if not email:
+        flash("Informe o e-mail de acesso do novo usuário.", "danger")
+        return redirect(url_for("admin.usuarios"))
+    if Usuario.query.filter_by(email=email).first():
+        flash("Já existe usuário com esse e-mail.", "warning")
+        return redirect(url_for("admin.usuarios"))
+    u = Usuario(nome=colab.nome, email=email, papel=papel, senha_temporaria=True)
+    u.set_senha(request.form.get("senha", "") or "Trocar@123")
+    db.session.add(u)
+    db.session.flush()
+    _registrar_papel(u, papel, current_user)
+    db.session.commit()
+    flash(f"{colab.nome} agora acessa o sistema como {papel}. Senha provisória definida.", "success")
+    return redirect(url_for("admin.usuarios"))
+
+
+@admin_bp.route("/usuarios/<int:uid>/historico")
+@admin_required
+def usuario_historico(uid):
+    u = db.session.get(Usuario, uid) or abort(404)
+    hist = (HistoricoPapel.query.filter_by(usuario_id=u.id)
+            .order_by(HistoricoPapel.inicio.desc()).all())
+    return render_template("admin/usuario_historico.html", u=u, hist=hist)
 
 
 def _cad_simples(model, template, label, extra=None):

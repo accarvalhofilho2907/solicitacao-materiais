@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Chaves — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+  <div>
+    <h4 class="mb-1">🔑 Controle de chaves</h4>
+    <p class="text-muted small mb-0">Ver, retirar/devolver e cadastrar chaves. Cada chave tem um QR individual; o Quadro de Chaves é o localizador dela.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('almox.quadros_chave') }}" class="btn btn-sm btn-outline-secondary">🗂️ Quadros de Chave</a>
+    <a href="{{ url_for('almox.chaves_qr') }}" target="_blank" class="btn btn-sm btn-outline-secondary">🖨️ Imprimir QR</a>
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovaChave">＋ Nova chave</button>
+  </div>
+</div>
+
+<input id="filtroChave" class="form-control my-2" style="max-width:420px" placeholder="🔎 Filtrar (chave, quadro, quem está com)..." autocomplete="off">
+
+<div class="card mb-4"><div class="table-responsive">
+<table class="table table-hover mb-0 align-middle" id="tabelaChave">
+  <thead class="table-light"><tr><th>Descrição</th><th>Quadro de Chaves</th><th>Status</th><th>Com quem</th><th></th></tr></thead>
+  <tbody>
+    {% for c in itens %}
+    <tr>
+      <td><b>{{ c.descricao }}</b></td>
+      <td>{{ c.quadro_nome }}</td>
+      <td>{% if c.status == 'Disponível' %}<span class="badge bg-success">Disponível</span>{% else %}<span class="badge bg-warning text-dark">Em uso</span>{% endif %}</td>
+      <td>{{ c.com_quem or '—' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('almox.chave_toggle', cid=c.id) }}" class="d-flex gap-1 justify-content-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if c.status == 'Disponível' %}
+          <select class="form-select form-select-sm" name="com_quem" style="max-width:220px" required>
+            <option value="">Com quem?</option>
+            {% for col in colabs %}<option value="{{ col.nome }}">{{ col.nome }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-sm btn-primary">Retirar</button>
+          {% else %}
+          <select class="form-select form-select-sm" name="devolvido_por" style="max-width:220px" title="Quem está devolvendo?">
+            {% for col in colabs %}<option value="{{ col.nome }}" {{ 'selected' if col.nome == c.com_quem }}>{{ col.nome }}</option>{% endfor %}
+            {% if c.com_quem and c.com_quem not in colabs|map(attribute='nome')|list %}<option value="{{ c.com_quem }}" selected>{{ c.com_quem }}</option>{% endif %}
+          </select>
+          <button class="btn btn-sm btn-outline-secondary">Devolver</button>
+          {% endif %}
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-muted text-center py-3">Nenhuma chave cadastrada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<!-- Modal cadastro -->
+<div class="modal fade" id="modalNovaChave" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="{{ url_for('almox.chave_nova') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-header"><h5 class="modal-title">Nova chave</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Descrição *</label>
+          <input class="form-control" name="descricao" placeholder="Ex.: SALA FRIA D6" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Quadro de Chaves</label>
+          <input class="form-control" name="quadro_busca" list="listaQuadros" placeholder="Pesquisar quadro..." autocomplete="off"
+                 oninput="const o=document.querySelector('#listaQuadros option[value=\"'+this.value+'\"]');document.getElementById('quadroId').value=o?o.dataset.id:'';">
+          <datalist id="listaQuadros">
+            {% for qd in quadros %}<option data-id="{{ qd.id }}" value="{{ qd.nome }}">{% endfor %}
+          </datalist>
+          <input type="hidden" name="quadro_chave_id" id="quadroId">
+          <div class="form-text">Não achou? Cadastre em <a href="{{ url_for('almox.quadros_chave') }}">Quadros de Chave</a>.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary">Cadastrar</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+
+<script>
+(function(){
+  var inp = document.getElementById('filtroChave');
+  var linhas = document.querySelectorAll('#tabelaChave tbody tr');
+  function norm(s){ return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  inp.addEventListener('input', function(){
+    var t = norm(inp.value);
+    linhas.forEach(function(tr){
+      tr.style.display = norm(tr.textContent).indexOf(t) >= 0 ? '' : 'none';
+    });
+  });
+})();
+</script>
+{% endblock %}

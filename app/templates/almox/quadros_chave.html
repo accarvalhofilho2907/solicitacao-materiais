@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Quadros de Chave — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary mb-3">← Chaves</a>
+<h4 class="mb-1">🗂️ Quadros de Chave</h4>
+<p class="text-muted small">Localizadores das chaves. Alimentam a lista pesquisável no cadastro de chave.</p>
+
+<div class="card mb-4" style="max-width:520px"><div class="card-body">
+  <h6>Cadastrar Quadro de Chaves</h6>
+  <form method="post" action="{{ url_for('almox.quadro_novo') }}" class="d-flex gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input class="form-control" name="nome" placeholder="Ex.: QUADRO DE CHAVES — D6" required>
+    <button class="btn btn-primary">Cadastrar</button>
+  </form>
+</div></div>
+
+<div class="card" style="max-width:520px"><div class="table-responsive">
+<table class="table table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Quadro de Chaves</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for qd in quadros %}
+    <tr>
+      <td>{{ qd.nome }}</td>
+      <td>{% if qd.ativo %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
+      <td class="text-end">
+        <form method="post" action="{{ url_for('almox.quadro_toggle', qid=qd.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar' if qd.ativo else 'Reativar' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="text-muted text-center py-3">Nenhum quadro cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

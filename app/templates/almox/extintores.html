@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Extintores — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+  <div>
+    <h4 class="mb-1">🧯 Extintores</h4>
+    <p class="text-muted small mb-0">{{ linhas|length }} extintor(es). Clique em um para abrir a ficha, checklist e ações.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('almox.pendencias_etiqueta') }}" class="btn btn-sm btn-outline-warning">🏷 Pendências{% if n_pend %} <span class="badge bg-danger">{{ n_pend }}</span>{% endif %}</a>
+    <a href="{{ url_for('almox.extintores_pdf', predio=predio) }}" class="btn btn-sm btn-outline-danger" target="_blank">⬇ PDF</a>
+    <a href="{{ url_for('almox.extintores_qr') }}" class="btn btn-sm btn-outline-secondary" target="_blank">🖨️ QR</a>
+  </div>
+</div>
+
+<form class="row g-2 my-2" method="get">
+  <div class="col-6 col-md-2"><select name="predio" class="form-select form-select-sm" onchange="this.form.submit()">
+    <option value="">Todos prédios</option>
+    {% for p in predios %}<option value="{{ p }}" {{ 'selected' if predio==p }}>{{ predio_label.get(p, p) }}</option>{% endfor %}
+  </select></div>
+  <div class="col-6 col-md-3"><select name="tipo" class="form-select form-select-sm" onchange="this.form.submit()">
+    <option value="">Todos tipos/carga</option>
+    {% for t in tipos %}<option value="{{ t }}" {{ 'selected' if tipo==t }}>{{ t }}</option>{% endfor %}
+  </select></div>
+  <div class="col-6 col-md-3"><select name="situacao" class="form-select form-select-sm" onchange="this.form.submit()">
+    <option value="">Todas situações</option>
+    {% for k, v in situacao_label.items() %}<option value="{{ k }}" {{ 'selected' if situacao==k }}>{{ v[0] }}</option>{% endfor %}
+  </select></div>
+  <div class="col-6 col-md-2"><input name="local" class="form-control form-control-sm" value="{{ local }}" placeholder="Local contém..." onchange="this.form.submit()"></div>
+  <div class="col-md-2"><a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
+</form>
+
+<input id="filtroExt" class="form-control form-control-sm my-2" style="max-width:420px" placeholder="🔎 Filtrar na lista (código, local, tipo)..." autocomplete="off">
+
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle" id="tabelaExt">
+  <thead class="table-light"><tr><th>Código</th><th>Prédio</th><th>Local</th><th>Tipo/Carga</th><th>Validade</th><th>TH</th><th>Situação</th></tr></thead>
+  <tbody>
+    {% for e, k, lbl, cls in linhas %}
+    <tr style="cursor:pointer" onclick="location.href='{{ url_for('almox.extintor_ficha', eid=e.id) }}'">
+      <td><b>{{ e.codigo or '—' }}</b></td>
+      <td class="small">{{ predio_label.get(e.predio, e.predio) }}</td>
+      <td class="small">{{ e.local or '—' }}</td>
+      <td class="small">{{ e.tipo or '—' }}</td>
+      <td class="small">{{ competencia(e.validade) }}</td>
+      <td class="small">{{ competencia(e.teste_hidrostatico) }}</td>
+      <td><span class="badge bg-{{ cls }}">{{ lbl }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="text-muted text-center py-3">Nenhum extintor no filtro.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<script>
+(function(){
+  var inp=document.getElementById('filtroExt');
+  var linhas=document.querySelectorAll('#tabelaExt tbody tr');
+  function norm(s){return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  inp.addEventListener('input',function(){
+    var t=norm(inp.value);
+    linhas.forEach(function(tr){tr.style.display=norm(tr.textContent).indexOf(t)>=0?'':'none';});
+  });
+})();
+</script>
+{% endblock %}

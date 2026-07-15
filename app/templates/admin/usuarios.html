@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="{{ url_for('admin.cadastros') }}" class="small">&larr; Cadastros</a>
-<h4 class="mt-2 mb-3">Usuários</h4>
+<h4 class="mt-2 mb-3">Usuários {% if current_user.is_master %}<span class="badge bg-danger">Você é o Admin Master</span>{% endif %}</h4>
 <div class="row g-3">
-  <div class="col-md-5"><div class="card"><div class="card-body">
+  <div class="col-md-5">
+    <div class="card mb-3"><div class="card-body">
     <h6>Novo usuário</h6>
     <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-2"><input name="nome" class="form-control" placeholder="Nome" required></div>
@@ -11,34 +12,68 @@
       <div class="mb-2"><input name="senha" type="text" class="form-control" placeholder="Senha provisória" required></div>
       <div class="mb-2"><select name="papel" class="form-select">
         <option value="solicitante">Solicitante</option><option value="almoxarifado">Almoxarifado</option>
-        <option value="visualizador">Somente visualização</option><option value="admin">Administrador</option></select></div>
+        <option value="visualizador">Somente visualização</option>
+        {% if current_user.is_master %}<option value="admin">Administrador</option>{% endif %}</select></div>
       <div class="mb-2 d-flex gap-1">
         <select name="empresa_id" class="form-select" id="selEmpresa"><option value="">— empresa —</option>
           {% for e in empresas %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}</select>
         <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('empresa','selEmpresa')">+</button></div>
-      <div class="form-text mb-2">O usuário troca a senha no primeiro acesso.</div>
+      <div class="form-text mb-2">O usuário troca a senha no primeiro acesso.{% if not current_user.is_master %} Só o Admin Master cria administradores.{% endif %}</div>
       <button class="btn btn-primary">Criar</button></form>
-  </div></div></div>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h6>Dar acesso a um colaborador</h6>
+      <p class="small text-muted mb-2">Transforma um colaborador de campo em usuário que loga no sistema.</p>
+      <form method="post" action="{{ url_for('admin.promover_colaborador') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-2"><select name="colaborador_id" class="form-select" required>
+          <option value="">— colaborador —</option>
+          {% for c in colaboradores %}<option value="{{ c.id }}">{{ c.nome }}{% if c.cpf %} ({{ c.cpf }}){% endif %}</option>{% endfor %}
+        </select></div>
+        <div class="mb-2"><input name="email" type="email" class="form-control" placeholder="E-mail de acesso" required></div>
+        <div class="mb-2"><input name="senha" type="text" class="form-control" placeholder="Senha provisória (padrão Trocar@123)"></div>
+        <div class="mb-2"><select name="papel" class="form-select">
+          <option value="solicitante">Solicitante</option><option value="almoxarifado">Almoxarifado</option>
+          <option value="visualizador">Somente visualização</option>
+          {% if current_user.is_master %}<option value="admin">Administrador</option>{% endif %}</select></div>
+        <button class="btn btn-outline-primary">Dar acesso</button>
+      </form>
+    </div></div>
+  </div>
+
   <div class="col-md-7"><div class="card"><div class="table-responsive">
     <table class="table mb-0 align-middle"><thead class="table-light"><tr><th>Nome</th><th>Papel</th><th></th></tr></thead>
     <tbody>{% for u in lista %}
       <tr><td>{{ u.nome }}{% if not u.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}<div class="small text-muted">{{ u.email }}{% if u.empresa %} · {{ u.empresa.nome }}{% endif %}</div></td>
-        <td><span class="badge bg-secondary">{{ u.papel }}</span></td>
-        <td><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#u{{ u.id }}">Editar</button></td></tr>
+        <td>
+          {% if u.is_master %}<span class="badge bg-danger">MASTER</span>
+          {% else %}<span class="badge bg-secondary">{{ u.papel }}</span>{% endif %}
+        </td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.usuario_historico', uid=u.id) }}">Histórico</a>
+          {% if current_user.pode_gerir(u) %}
+          <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#u{{ u.id }}">Editar</button>
+          {% else %}<span class="small text-muted">sem permissão</span>{% endif %}
+        </td></tr>
+      {% if current_user.pode_gerir(u) %}
       <tr class="collapse" id="u{{ u.id }}"><td colspan="3">
         <form method="post" action="{{ url_for('admin.usuario_editar', uid=u.id) }}" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-md-4"><input name="nome" class="form-control form-control-sm" value="{{ u.nome }}" placeholder="Nome"></div>
           <div class="col-md-4"><input name="email" type="email" class="form-control form-control-sm" value="{{ u.email }}" placeholder="E-mail"></div>
-          <div class="col-md-3"><select name="papel" class="form-select form-select-sm">
-            {% for pp in ['solicitante','almoxarifado','visualizador','admin'] %}<option value="{{ pp }}" {{ 'selected' if u.papel==pp }}>{{ pp }}</option>{% endfor %}</select></div>
-          <div class="col-md-3"><select name="empresa_id" class="form-select form-select-sm"><option value="">— empresa —</option>
+          <div class="col-md-4"><select name="papel" class="form-select form-select-sm" {{ 'disabled' if u.is_master }}>
+            {% for pp in ['solicitante','almoxarifado','visualizador'] %}<option value="{{ pp }}" {{ 'selected' if u.papel==pp }}>{{ pp }}</option>{% endfor %}
+            {% if current_user.is_master %}<option value="admin" {{ 'selected' if u.papel=='admin' }}>admin</option>{% endif %}
+          </select>{% if u.is_master %}<div class="form-text">Master não pode ser rebaixado.</div>{% endif %}</div>
+          <div class="col-md-5"><select name="empresa_id" class="form-select form-select-sm"><option value="">— empresa —</option>
             {% for e in empresas %}<option value="{{ e.id }}" {{ 'selected' if u.empresa_id==e.id }}>{{ e.nome }}</option>{% endfor %}</select></div>
-          <div class="col-md-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if u.ativo }}><label class="form-check-label small">Ativo</label></div></div>
-          <div class="col-md-6"><input name="nova_senha" class="form-control form-control-sm" placeholder="Resetar senha (deixe vazio p/ manter)"></div>
-          <div class="col-md-6 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div>
+          <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if u.ativo }} {{ 'disabled' if u.is_master }}><label class="form-check-label small">Ativo</label></div></div>
+          <div class="col-md-8"><input name="nova_senha" class="form-control form-control-sm" placeholder="Resetar senha (deixe vazio p/ manter)"></div>
+          <div class="col-md-4 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div>
         </form>
       </td></tr>
+      {% endif %}
     {% endfor %}</tbody></table>
   </div></div></div>
 </div>

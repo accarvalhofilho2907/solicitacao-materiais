@@ -10,6 +10,8 @@ Redesenhado (item 135) com a paleta oficial Serena e layout profissional:
 Não é salvo no banco — só gera o PDF na hora (decisão do usuário, 08/07/2026).
 """
 from io import BytesIO
+import os
+import tempfile
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -26,12 +28,12 @@ except Exception:
     _TEM_PIL = False
 
 
-def _normalizar_imagem(raw_bytes):
+def _normalizar_imagem(raw_bytes, max_lado=2400, quality=90):
     """Converte qualquer foto (JPEG/PNG/EXIF-rotacionada/RGBA) em um JPEG RGB limpo,
-    com a orientação EXIF já aplicada e o tamanho limitado. Devolve bytes JPEG ou
-    None se não for possível abrir (nesse caso a foto é pulada, sem derrubar o PDF).
-    Isso evita o Internal Server Error com fotos de celular (item 135) e reduz o uso
-    de memória no servidor (Render), que era a causa do 'exceeded its memory limit'."""
+    com a orientação EXIF já aplicada. Mantém resolução ALTA (2400px, q90) para dar
+    zoom e ler nº de série / etiquetas. Devolve bytes JPEG ou None se não abrir.
+    O controle de memória com muitas fotos é feito por STREAMING (uma foto por vez)
+    em gerar_pdf_relatorio_carga, não reduzindo a qualidade."""
     if not _TEM_PIL:
         return raw_bytes  # sem Pillow, tenta entregar como veio (ReportLab pode aceitar)
     im = None
@@ -40,15 +42,10 @@ def _normalizar_imagem(raw_bytes):
         im = ImageOps.exif_transpose(im)   # corrige rotação vinda do celular
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")
-        # Resolução alta o suficiente para dar ZOOM e ler nº de série / etiquetas nas
-        # fotos (2400px), com qualidade JPEG alta (90). É um meio-termo: preserva os
-        # detalhes finos que o usuário precisa, mas ainda reduz a foto original do
-        # celular (que costuma vir com 4000px+ e vários MB), aliviando a memória.
-        max_lado = 2400
         if max(im.size) > max_lado:
             im.thumbnail((max_lado, max_lado))
         out = BytesIO()
-        im.save(out, format="JPEG", quality=90, optimize=True)
+        im.save(out, format="JPEG", quality=quality, optimize=True)
         return out.getvalue()
     except Exception:
         return None
@@ -156,6 +153,7 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0, bottomMargin=15 * mm,
                             leftMargin=16 * mm, rightMargin=16 * mm)
     el = []
+    _temp_fotos = []   # arquivos temporários das fotos (limpos após build)
 
     is_receb = (modo == "recebimento")
     status_txt = "RECEBIMENTO" if is_receb else "ENVIO"
@@ -271,7 +269,9 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
                              ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
     el.append(box)
 
-    # ---------- Fotos (uma por página, boa resolução — item 135) ----------
+    # ---------- Fotos (uma por página, alta resolução — item 135) ----------
+    # Memória controlada por streaming: cada foto é normalizada, escrita e liberada
+    # antes da próxima (o pico é de UMA foto por vez, não de todas somadas).
     fotos = fotos or []
     if fotos:
         for foto in fotos:
@@ -292,7 +292,14 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
                 iw, ih = img_reader.getSize()
                 max_w, max_h = 178 * mm, 205 * mm
                 ratio = min(max_w / iw, max_h / ih)
-                img = Image(BytesIO(img_bytes), width=iw * ratio, height=ih * ratio)
+                # Grava em arquivo temporário e usa Image por caminho com lazy=2:
+                # o ReportLab abre a imagem só na hora de desenhar e libera depois,
+                # mantendo o pico de memória em ~uma foto por vez (não todas juntas).
+                tf = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+                tf.write(img_bytes); tf.close()
+                _temp_fotos.append(tf.name)
+                img_bytes = None  # libera a versão em memória
+                img = Image(tf.name, width=iw * ratio, height=ih * ratio, lazy=2)
                 img.hAlign = "CENTER"
                 el.append(PageBreak())
                 el.append(_faixa_secao(legenda))
@@ -316,5 +323,11 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
         canvas.restoreState()
 
     doc.build(el, onFirstPage=_rodape, onLaterPages=_rodape)
+    # remove os arquivos temporários das fotos
+    for _p in _temp_fotos:
+        try:
+            os.unlink(_p)
+        except Exception:
+            pass
     buf.seek(0)
     return buf.getvalue()

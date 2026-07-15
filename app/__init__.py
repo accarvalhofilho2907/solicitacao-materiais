@@ -30,6 +30,30 @@ def _light_migrate():
         if insp.has_table(tabela) and "aprovacao" in {c["name"] for c in insp.get_columns(tabela)}:
             db.session.execute(text(f"UPDATE \"{tabela}\" SET aprovacao = 'aprovado' WHERE aprovacao IS NULL"))
     db.session.commit()
+    # Roadmap §3 — papel RONDA foi removido. Usuários antigos com 'ronda' passam a 'almoxarifado'
+    # (mantêm acesso ao módulo; as tarefas de campo agora são do "Colaborador diverso" via QR).
+    if insp.has_table("usuarios"):
+        try:
+            db.session.execute(text("UPDATE usuarios SET papel = 'almoxarifado' WHERE papel = 'ronda'"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    # Etapa 2.5 — garante exatamente UM Admin Master. Se ninguém for master ainda,
+    # elege antonio.carvalho@srna.co (ou o primeiro admin) como master.
+    if insp.has_table("usuarios") and "is_master" in {c["name"] for c in insp.get_columns("usuarios")}:
+        try:
+            from .models import Usuario as _U
+            db.session.execute(text("UPDATE usuarios SET is_master = FALSE WHERE is_master IS NULL"))
+            db.session.commit()
+            if _U.query.filter_by(is_master=True).first() is None:
+                alvo = (_U.query.filter_by(email="antonio.carvalho@srna.co").first()
+                        or _U.query.filter_by(papel="admin").order_by(_U.id).first())
+                if alvo:
+                    alvo.papel = "admin"
+                    alvo.is_master = True
+                    db.session.commit()
+        except Exception:
+            db.session.rollback()
     # Garante que o link aceite URLs longas (ex.: Mercado Livre) no PostgreSQL.
     if db.engine.dialect.name == "postgresql":
         try:
@@ -146,6 +170,101 @@ def _seed_tipos():
         db.session.commit()
 
 
+def _seed_almox():
+    """Popula o módulo Almoxarifado na primeira vez (idempotente).
+    - Extintores: 246 reais extraídos da planilha CONTROLE_DE_EXTINTORES_DMA.
+    - Chaves: poucas de exemplo (não havia base real).
+    - Colaboradores: vazio (sem base real ainda)."""
+    from datetime import datetime as _dt
+    from .models import Extintor, Chave, QuadroChave
+    import secrets
+    try:
+        if Extintor.query.first() is None:
+            from .seed_extintores import EXTINTORES_SEED
+            novos = []
+            for e in EXTINTORES_SEED:
+                val = None
+                if e.get("validade"):
+                    try:
+                        val = _dt.strptime(e["validade"], "%Y-%m-%d").date()
+                    except ValueError:
+                        val = None
+                novos.append(Extintor(codigo=e["codigo"], predio=e["predio"], local=e["local"],
+                                      tipo=e["tipo"], classe=e["classe"], validade=val,
+                                      status="No Local", ativo=True))
+            db.session.add_all(novos)
+            db.session.commit()
+        # Quadros de Chave padrão (localizadores)
+        if QuadroChave.query.first() is None:
+            db.session.add_all([QuadroChave(nome=n) for n in
+                                ["QUADRO DE CHAVES — D6", "QUADRO DE CHAVES — MIR", "QUADRO DE CHAVES — SEPN"]])
+            db.session.commit()
+        if Chave.query.first() is None:
+            qd6 = QuadroChave.query.filter(QuadroChave.nome.like("%D6%")).first()
+            qmir = QuadroChave.query.filter(QuadroChave.nome.like("%MIR%")).first()
+            exemplo = [
+                Chave(descricao="SALA FRIA D6", quadro_chave_id=qd6.id if qd6 else None, status="Disponível"),
+                Chave(descricao="CONTAINER MIR", quadro_chave_id=qmir.id if qmir else None, status="Disponível"),
+                Chave(descricao="GALPÃO D6", quadro_chave_id=qd6.id if qd6 else None, status="Disponível"),
+            ]
+            db.session.add_all(exemplo)
+            db.session.commit()
+        # Backfill do QR individual das chaves que ainda não têm
+        faltando = Chave.query.filter((Chave.qr_uid.is_(None)) | (Chave.qr_uid == "")).all()
+        if faltando:
+            usados = {c.qr_uid for c in Chave.query.all() if c.qr_uid}
+            for c in faltando:
+                uid = "CH-" + secrets.token_hex(4).upper()
+                while uid in usados:
+                    uid = "CH-" + secrets.token_hex(4).upper()
+                usados.add(uid)
+                c.qr_uid = uid
+            db.session.commit()
+        # Papel de colaborador padrão "COLABORADOR DIVERSO" com todas as tarefas de campo
+        from .models import PapelColaborador, Colaborador, TAREFAS_COLABORADOR
+        if PapelColaborador.query.filter(db.func.upper(PapelColaborador.nome) == "COLABORADOR DIVERSO").first() is None:
+            todas = ",".join(k for k, _ in TAREFAS_COLABORADOR)
+            db.session.add(PapelColaborador(nome="COLABORADOR DIVERSO", tarefas=todas))
+            db.session.commit()
+        # Backfill dos colaboradores existentes: papel, cargo (do funcao) e QR
+        cols = Colaborador.query.all()
+        if cols:
+            usados_c = {c.qr_uid for c in cols if c.qr_uid}
+            mudou = False
+            for c in cols:
+                if not c.papel:
+                    c.papel = "COLABORADOR DIVERSO"; mudou = True
+                if not c.cargo and c.funcao:
+                    c.cargo = c.funcao; mudou = True
+                if not c.qr_uid:
+                    uid = "COL-" + secrets.token_hex(4).upper()
+                    while uid in usados_c:
+                        uid = "COL-" + secrets.token_hex(4).upper()
+                    usados_c.add(uid); c.qr_uid = uid; mudou = True
+            if mudou:
+                db.session.commit()
+        # Etapa 3 — backfill do QR e situação dos extintores
+        from .models import Extintor as _Ext
+        exts = _Ext.query.all()
+        if exts:
+            usados_e = {e.qr_uid for e in exts if e.qr_uid}
+            mud_e = False
+            for e in exts:
+                if not e.qr_uid:
+                    uid = "EXT-" + secrets.token_hex(4).upper()
+                    while uid in usados_e:
+                        uid = "EXT-" + secrets.token_hex(4).upper()
+                    usados_e.add(uid); e.qr_uid = uid; mud_e = True
+                if not e.situacao:
+                    e.situacao = "NO_PRAZO"; mud_e = True
+            if mud_e:
+                db.session.commit()
+    except Exception:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception("Falha no seed do módulo Almoxarifado — mantido estado anterior")
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
@@ -226,5 +345,6 @@ def create_app():
         db.create_all()
         _light_migrate()
         _seed_tipos()
+        _seed_almox()
 
     return app

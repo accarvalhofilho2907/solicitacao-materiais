@@ -1,0 +1,165 @@
+{% extends "base.html" if not campo else "base_min.html" %}
+{% block title %}Extintor {{ e.codigo }} — Ficha{% endblock %}
+{% block content %}
+{% if campo %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <span class="small text-muted">{% if ator_colab %}Inspecionando como <b>{{ ator_colab.nome }}</b>{% elif current_user.is_authenticated %}Logado como <b>{{ current_user.nome }}</b>{% endif %}</span>
+    {% if ator_colab %}<a href="{{ url_for('almox.extintor_campo_sair', qr_uid=e.qr_uid) }}" class="btn btn-sm btn-outline-secondary">Sair</a>{% endif %}
+  </div>
+{% else %}
+  <a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Extintores</a>
+{% endif %}
+
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <h4 class="mb-1">🧯 {{ e.codigo or 'Extintor' }} <span class="badge bg-{{ sit_cls }}">{{ sit_lbl }}</span></h4>
+      <div class="small text-muted">QR: {{ e.qr_uid or '—' }}</div>
+    </div>
+  </div>
+  <div class="row g-2 mt-2 small">
+    <div class="col-6 col-md-3"><b>Prédio:</b> {{ e.predio or '—' }}</div>
+    <div class="col-6 col-md-5"><b>Local:</b> {{ e.local or '—' }}</div>
+    <div class="col-6 col-md-2"><b>Tipo/Carga:</b> {{ e.tipo or '—' }}</div>
+    <div class="col-6 col-md-2"><b>Classe:</b> {{ e.classe or '—' }}</div>
+    <div class="col-6 col-md-3"><b>Validade carga:</b> {{ competencia(e.validade) }}</div>
+    <div class="col-6 col-md-3"><b>Teste hidrostático:</b> {{ competencia(e.teste_hidrostatico) }}</div>
+    <div class="col-6 col-md-3"><b>Última inspeção:</b> {{ e.inspecao.strftime('%d/%m/%Y') if e.inspecao else '—' }}</div>
+    {% if e.retirado_por %}<div class="col-6 col-md-3"><b>Retirado por:</b> {{ e.retirado_por }}</div>{% endif %}
+  </div>
+</div></div>
+
+{% macro campo_quem() %}
+  {% if current_user.is_authenticated %}
+  <div class="mb-2"><label class="form-label small">Responsável (colaborador). Em branco = você ({{ current_user.nome }}).</label>
+    <input class="form-control form-control-sm" name="colaborador_nome" placeholder="Nome do colaborador (opcional)"></div>
+  {% endif %}
+{% endmacro %}
+
+{% macro checklist(prefixo) %}
+  {% for item in check %}
+  <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+    <span class="small">{{ loop.index }}. {{ item }}</span>
+    <div class="btn-group btn-group-sm" role="group">
+      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="{{ prefixo }}_{{ loop.index0 }}_ok" value="ok" checked>
+      <label class="btn btn-outline-success" for="{{ prefixo }}_{{ loop.index0 }}_ok">OK</label>
+      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="{{ prefixo }}_{{ loop.index0 }}_nok" value="nok">
+      <label class="btn btn-outline-danger" for="{{ prefixo }}_{{ loop.index0 }}_nok">Não</label>
+      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="{{ prefixo }}_{{ loop.index0 }}_na" value="na">
+      <label class="btn btn-outline-secondary" for="{{ prefixo }}_{{ loop.index0 }}_na">N/A</label>
+    </div>
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro item_etiqueta_bloco() %}
+  <div class="alert alert-warning py-2 mt-2 mb-0">
+    <div class="small fw-bold mb-1">{{ item_etiqueta }}</div>
+    <div class="btn-group btn-group-sm" role="group">
+      <input type="radio" class="btn-check" name="etiqueta_ok" id="et_sim" value="sim" checked>
+      <label class="btn btn-outline-success" for="et_sim">Sim</label>
+      <input type="radio" class="btn-check" name="etiqueta_ok" id="et_nao" value="nao">
+      <label class="btn btn-outline-danger" for="et_nao">Não (abre pendência)</label>
+    </div>
+  </div>
+{% endmacro %}
+
+<div class="row g-3">
+  {# ---- Estados operacionais determinam as ações disponíveis ---- #}
+  {% if sit_k in ['NO_PRAZO','PROX_VENC','VENCIDO','IRREGULAR'] %}
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Inspecionar</h6>
+    <form method="post" action="{{ url_for('almox.extintor_inspecionar', eid=e.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ campo_quem() }}
+      {{ checklist('insp') }}
+      <div class="mt-2"><textarea class="form-control form-control-sm" name="obs" rows="2" placeholder="Observações (opcional)"></textarea></div>
+      <button class="btn btn-primary btn-sm mt-2">Registrar inspeção</button>
+    </form>
+  </div></div></div>
+  {% endif %}
+
+  {% if sit_k in ['VENCIDO','IRREGULAR'] %}
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Regularizar</h6>
+    <p class="small text-muted">Escolha o que foi feito com o extintor irregular.</p>
+    <form method="post" action="{{ url_for('almox.extintor_regularizar', eid=e.id) }}" class="mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="levado_d6">
+      {{ campo_quem() }}
+      <button class="btn btn-outline-info btn-sm">Levado ao Almox D6 (recarga)</button>
+    </form>
+    <hr>
+    <form method="post" action="{{ url_for('almox.extintor_regularizar', eid=e.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="reposto_local">
+      <div class="small fw-bold mb-1">Reposto no local (refazer checklist):</div>
+      {{ checklist('rep') }}
+      {{ item_etiqueta_bloco() }}
+      <button class="btn btn-success btn-sm mt-2">Confirmar reposição no local</button>
+    </form>
+  </div></div></div>
+  {% endif %}
+
+  {% if sit_k == 'EM_RECARGA' and pode_gerir %}
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Conferir no Almoxarifado</h6>
+    <p class="small text-muted">Voltou da recarga. Confira e marque a etiqueta QR. Fica Pronto p/ reposição.</p>
+    <form method="post" action="{{ url_for('almox.extintor_conferir', eid=e.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ campo_quem() }}
+      {{ checklist('conf') }}
+      {{ item_etiqueta_bloco() }}
+      <button class="btn btn-primary btn-sm mt-2">Marcar Pronto p/ reposição</button>
+    </form>
+  </div></div></div>
+  {% endif %}
+
+  {% if sit_k == 'PRONTO_REPO' and pode_gerir %}
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Repor no local</h6>
+    <p class="small text-muted">Informe a nova validade da carga e/ou do teste hidrostático.</p>
+    <form method="post" action="{{ url_for('almox.extintor_repor', eid=e.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ campo_quem() }}
+      <div class="row g-2">
+        <div class="col-6"><label class="form-label small">Validade carga</label>
+          <div class="d-flex gap-1">
+            <select name="mes_validade" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
+            <select name="ano_validade" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+          </div>
+        </div>
+        <div class="col-6"><label class="form-label small">Teste hidrostático</label>
+          <div class="d-flex gap-1">
+            <select name="mes_th" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
+            <select name="ano_th" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-success btn-sm mt-2">Concluir reposição</button>
+    </form>
+  </div></div></div>
+  {% endif %}
+
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Histórico</h6>
+    <div class="table-responsive" style="max-height:360px;overflow:auto">
+    <table class="table table-sm mb-0 align-middle">
+      <thead class="table-light"><tr><th>Quando</th><th>O quê</th><th>Result.</th><th>Por</th></tr></thead>
+      <tbody>
+        {% for h in hist %}
+        <tr>
+          <td class="small">{{ h.criado_em.strftime('%d/%m/%y %H:%M') if h.criado_em else '—' }}</td>
+          <td class="small">{{ h.tipo }}</td>
+          <td>{% if h.resultado=='conforme' %}<span class="badge bg-success">conforme</span>{% elif h.resultado=='irregular' %}<span class="badge bg-danger">irregular</span>{% else %}—{% endif %}</td>
+          <td class="small">{{ h.colaborador_nome or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted text-center py-3">Sem registros ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div></div></div>
+</div>
+{% endblock %}

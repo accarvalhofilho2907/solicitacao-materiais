@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Pendências de etiqueta — Extintores{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Extintores</a>
+<h4 class="mb-1">🏷 Pendências de etiqueta</h4>
+<p class="text-muted small">Extintores cujo QR ainda precisa ser colado (marcado "Não" na conferência/reposição).</p>
+
+<div class="card mb-4"><div class="card-header fw-bold">Abertas ({{ abertas|length }})</div><div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Código</th><th>Prédio</th><th>Local</th><th>Aberta em</th><th>Por</th><th></th></tr></thead>
+  <tbody>
+    {% for p in abertas %}
+    <tr>
+      <td><b>{{ p.extintor_cod or '—' }}</b></td>
+      <td class="small">{{ p.predio or '—' }}</td>
+      <td class="small">{{ p.local or '—' }}</td>
+      <td class="small">{{ p.aberta_em.strftime('%d/%m/%Y %H:%M') if p.aberta_em else '—' }}</td>
+      <td class="small">{{ p.aberta_por or '—' }}</td>
+      <td class="text-end">
+        <form method="post" action="{{ url_for('almox.pendencia_baixar', pid=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-success">Marcar etiqueta colada</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted text-center py-3">Nenhuma pendência aberta. 👍</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+{% if resolvidas %}
+<div class="card"><div class="card-header fw-bold text-muted">Resolvidas recentes</div><div class="table-responsive">
+<table class="table table-sm mb-0 align-middle">
+  <thead class="table-light"><tr><th>Código</th><th>Local</th><th>Resolvida em</th><th>Por</th></tr></thead>
+  <tbody>
+    {% for p in resolvidas %}
+    <tr><td class="small">{{ p.extintor_cod }}</td><td class="small">{{ p.local }}</td>
+      <td class="small">{{ p.resolvida_em.strftime('%d/%m/%Y %H:%M') if p.resolvida_em else '—' }}</td>
+      <td class="small">{{ p.resolvida_por or '—' }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endif %}
+{% endblock %}

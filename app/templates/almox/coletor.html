@@ -1,0 +1,149 @@
+{% extends "base_min.html" %}
+{% block title %}Coletor — Almoxarifado{% endblock %}
+{% block content %}
+<style>
+  .col-wrap{max-width:480px;margin:0 auto}
+  .big-btn{display:block;width:100%;padding:22px;font-size:1.1rem;border-radius:14px;margin-bottom:12px}
+  #reader{width:100%;border-radius:12px;overflow:hidden}
+  .basket-item{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eee;padding:8px 0}
+  .step{display:none}
+  .step.on{display:block}
+  .muted{color:#777;font-size:.85rem}
+</style>
+<div class="col-wrap">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">📲 Coletor</h5>
+    <a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary">Sair</a>
+  </div>
+  <input type="hidden" id="csrf" value="{{ csrf_token() }}">
+
+  <!-- HOME -->
+  <div id="s_home" class="step on">
+    <p class="muted">Escolha a operação. O aparelho está logado como <b>{{ current_user.nome }}</b>.</p>
+    <button class="btn btn-primary big-btn" onclick="iniciar('retirar_devolver')">🔑 Retirar / Devolver chave</button>
+    <button class="btn btn-outline-secondary big-btn" onclick="alert('Movimentação (estocagem de fim de dia) entra na próxima fase do coletor.')">🔄 Movimentação (em breve)</button>
+    <button class="btn btn-outline-secondary big-btn" onclick="alert('Retirada de material entra quando o módulo de material estiver pronto.')">📦 Material (em breve)</button>
+  </div>
+
+  <!-- 1) COLABORADOR -->
+  <div id="s_colab" class="step">
+    <h6>1) Identifique o colaborador</h6>
+    <p class="muted">Aponte a câmera para o QR do crachá do colaborador.</p>
+    <div id="reader"></div>
+    <div class="mt-2"><input id="colabManual" class="form-control form-control-sm" placeholder="Ou digite o código (COL-...)">
+      <button class="btn btn-sm btn-outline-primary mt-1" onclick="manual('colab')">Usar código</button></div>
+    <button class="btn btn-link mt-2" onclick="voltarHome()">← Cancelar</button>
+  </div>
+
+  <!-- 2) CHAVES -->
+  <div id="s_chaves" class="step">
+    <h6>2) Colaborador: <span id="colabNome" class="text-primary"></span></h6>
+    <p class="muted">Leia o QR de cada chave. Retira as disponíveis e devolve as que estão com o colaborador.</p>
+    <div id="reader2"></div>
+    <div class="mt-2"><input id="chaveManual" class="form-control form-control-sm" placeholder="Ou digite o código (CH-...)">
+      <button class="btn btn-sm btn-outline-primary mt-1" onclick="manual('chave')">Adicionar</button></div>
+    <div id="cesta" class="mt-3"></div>
+    <button class="btn btn-success w-100 mt-2" id="btnFinalizar" onclick="irConfirmar()" disabled>Finalizar →</button>
+    <button class="btn btn-link mt-1" onclick="voltarHome()">← Cancelar</button>
+  </div>
+
+  <!-- 3) CONFIRMAÇÃO -->
+  <div id="s_confirma" class="step">
+    <h6>3) Confirmar com a senha do colaborador</h6>
+    <div id="resumo" class="mb-2"></div>
+    <input id="senha" class="form-control mb-2" type="password" placeholder="Senha do colaborador">
+    <div class="muted mb-2">Se for o primeiro uso, digite uma senha nova (mín. 4 dígitos) — ela valerá também no extintor.</div>
+    <button class="btn btn-success w-100" onclick="confirmar()">Confirmar operação</button>
+    <button class="btn btn-link mt-1" onclick="voltarHome()">← Cancelar</button>
+  </div>
+
+  <!-- OK -->
+  <div id="s_ok" class="step text-center">
+    <div style="font-size:3rem">✅</div>
+    <h5>Operação registrada</h5>
+    <div id="okResumo" class="muted"></div>
+    <button class="btn btn-primary mt-3" onclick="voltarHome()">Nova operação</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const CSRF=document.getElementById('csrf').value;
+let colab=null, cesta=[], scanner=null;
+function show(id){document.querySelectorAll('.step').forEach(s=>s.classList.remove('on'));document.getElementById(id).classList.add('on');}
+function stopScanner(){ if(scanner){ scanner.stop().catch(()=>{}); scanner=null; } }
+function voltarHome(){ stopScanner(); colab=null; cesta=[]; document.getElementById('senha').value=''; show('s_home'); }
+
+function iniciar(op){ colab=null; cesta=[]; show('s_colab'); startScan('reader', onColab); }
+
+function startScan(elId, cb){
+  stopScanner();
+  scanner=new Html5Qrcode(elId);
+  scanner.start({facingMode:"environment"},{fps:10,qrbox:220}, txt=>{ cb(txt); },()=>{})
+    .catch(e=>{ console.log(e); });
+}
+function uidLimpo(t){ return t.includes(':')? t.split(':')[1].trim() : t.trim(); }
+
+async function onColab(txt){
+  stopScanner();
+  await carregarColab(uidLimpo(txt));
+}
+async function carregarColab(uid){
+  try{
+    const r=await fetch(`{{ url_for('almox.coletor') }}/api/colaborador/${encodeURIComponent(uid)}`);
+    const d=await r.json();
+    if(!d.ok){ alert(d.erro||'Colaborador não encontrado'); show('s_colab'); startScan('reader',onColab); return; }
+    colab=d; document.getElementById('colabNome').textContent=d.nome;
+    show('s_chaves'); startScan('reader2', onChave); renderCesta();
+  }catch(e){ alert('Falha ao buscar colaborador.'); }
+}
+async function onChave(txt){ await carregarChave(uidLimpo(txt)); }
+async function carregarChave(uid){
+  try{
+    const r=await fetch(`{{ url_for('almox.coletor') }}/api/chave/${encodeURIComponent(uid)}`);
+    const d=await r.json();
+    if(!d.ok){ return; }
+    if(cesta.find(x=>x.id===d.id)) return; // já na cesta
+    const acao = d.status==='Disponível' ? 'retirar' : 'devolver';
+    cesta.push({id:d.id, descricao:d.descricao, acao:acao, status:d.status});
+    renderCesta();
+  }catch(e){}
+}
+function manual(tipo){
+  if(tipo==='colab'){ const v=document.getElementById('colabManual').value.trim(); if(v) carregarColab(uidLimpo(v)); }
+  else { const v=document.getElementById('chaveManual').value.trim(); if(v){ carregarChave(uidLimpo(v)); document.getElementById('chaveManual').value=''; } }
+}
+function renderCesta(){
+  const box=document.getElementById('cesta');
+  box.innerHTML = cesta.length? '' : '<div class="muted">Nenhuma chave lida ainda.</div>';
+  cesta.forEach((c,i)=>{
+    const el=document.createElement('div'); el.className='basket-item';
+    el.innerHTML=`<span><b>${c.descricao}</b><br><span class="muted">${c.acao==='retirar'?'Retirar':'Devolver'}</span></span>`;
+    const b=document.createElement('button'); b.className='btn btn-sm btn-outline-danger'; b.textContent='✕';
+    b.onclick=()=>{ cesta.splice(i,1); renderCesta(); }; el.appendChild(b); box.appendChild(el);
+  });
+  document.getElementById('btnFinalizar').disabled = cesta.length===0;
+}
+function irConfirmar(){
+  stopScanner();
+  const r=document.getElementById('resumo');
+  r.innerHTML='<b>'+colab.nome+'</b><ul>'+cesta.map(c=>`<li>${c.acao==='retirar'?'Retirar':'Devolver'}: ${c.descricao}</li>`).join('')+'</ul>';
+  show('s_confirma');
+}
+async function confirmar(){
+  const senha=document.getElementById('senha').value;
+  if(!senha){ alert('Digite a senha do colaborador.'); return; }
+  try{
+    const r=await fetch(`{{ url_for('almox.coletor_api_confirmar') }}`,{
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({colaborador_id:colab.id, senha:senha, acoes:cesta.map(c=>({chave_id:c.id,acao:c.acao}))})
+    });
+    const d=await r.json();
+    if(!d.ok){ alert(d.erro||'Falha ao confirmar.'); return; }
+    document.getElementById('okResumo').innerHTML=(d.resumo||[]).join('<br>');
+    show('s_ok');
+    setTimeout(voltarHome, 4000);
+  }catch(e){ alert('Falha de rede ao confirmar.'); }
+}
+</script>
+{% endblock %}

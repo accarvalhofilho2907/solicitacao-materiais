@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Relatório de chaves — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary mb-3">← Chaves</a>
+<h4 class="mb-1">📈 Relatório de chaves</h4>
+<p class="text-muted small">Histórico de retiradas e devoluções. Filtros combináveis por período, chave, colaborador e quadro.</p>
+
+<form class="card mb-3" method="get"><div class="card-body row g-2 align-items-end">
+  <div class="col-6 col-md-2"><label class="form-label small">De</label><input type="date" class="form-control" name="data_ini" value="{{ ctx.data_ini }}"></div>
+  <div class="col-6 col-md-2"><label class="form-label small">Até</label><input type="date" class="form-control" name="data_fim" value="{{ ctx.data_fim }}"></div>
+  <div class="col-6 col-md-3"><label class="form-label small">Chave</label>
+    <select class="form-select" name="chave_id">
+      <option value="">Todas</option>
+      {% for c in chaves %}<option value="{{ c.id }}" {{ 'selected' if ctx.chave_id == c.id|string }}>{{ c.descricao }}</option>{% endfor %}
+    </select></div>
+  <div class="col-6 col-md-2"><label class="form-label small">Colaborador</label><input class="form-control" name="colaborador" value="{{ ctx.colaborador }}" placeholder="nome..."></div>
+  <div class="col-6 col-md-2"><label class="form-label small">Quadro</label><input class="form-control" name="quadro" value="{{ ctx.quadro }}" placeholder="quadro..."></div>
+  <div class="col-6 col-md-1"><label class="form-label small">Ação</label>
+    <select class="form-select" name="acao">
+      <option value="">Todas</option>
+      <option value="retirada" {{ 'selected' if ctx.acao=='retirada' }}>Retirada</option>
+      <option value="devolucao" {{ 'selected' if ctx.acao=='devolucao' }}>Devolução</option>
+    </select></div>
+  <div class="col-12 d-flex gap-2">
+    <button class="btn btn-primary">Filtrar</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('almox.relatorio_chaves') }}">Limpar</a>
+    <a class="btn btn-outline-success" href="{{ url_for('almox.relatorio_chaves_csv', **ctx) }}">⬇ CSV/Excel</a>
+    <a class="btn btn-outline-danger" href="{{ url_for('almox.relatorio_chaves_pdf', **ctx) }}">⬇ PDF</a>
+  </div>
+</div></form>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h4 mb-0">{{ total_retiradas }}</div><div class="small text-muted">retiradas no filtro</div></div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h4 mb-0">{{ colabs_distintos }}</div><div class="small text-muted">colaboradores distintos</div></div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h4 mb-0">{{ em_uso|length }}</div><div class="small text-muted">chaves em uso agora</div></div></div></div>
+  <div class="col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h4 mb-0">{{ movs|length }}</div><div class="small text-muted">movimentações no filtro</div></div></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Chaves mais retiradas</h6>
+    <ol class="mb-0 small">{% for nome, n in rk_chaves %}<li>{{ nome }} — <b>{{ n }}</b></li>{% else %}<li class="text-muted">sem dados</li>{% endfor %}</ol>
+  </div></div></div>
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Colaboradores que mais pegaram</h6>
+    <ol class="mb-0 small">{% for nome, n in rk_colabs %}<li>{{ nome }} — <b>{{ n }}</b></li>{% else %}<li class="text-muted">sem dados</li>{% endfor %}</ol>
+  </div></div></div>
+</div>
+
+{% if em_uso %}
+<div class="card mb-3"><div class="card-body">
+  <h6>Em uso agora</h6>
+  <ul class="mb-0 small">{% for c in em_uso %}<li>{{ c.descricao }} — com <b>{{ c.com_quem or '—' }}</b> ({{ c.quadro_nome }})</li>{% endfor %}</ul>
+</div></div>
+{% endif %}
+
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Data/Hora</th><th>Ação</th><th>Chave</th><th>Quadro</th><th>Colaborador</th><th>Operador</th></tr></thead>
+  <tbody>
+    {% for m in movs %}
+    <tr>
+      <td class="small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') if m.criado_em else '—' }}</td>
+      <td>{% if m.acao=='retirada' %}<span class="badge bg-warning text-dark">Retirada</span>{% else %}<span class="badge bg-success">Devolução</span>{% endif %}</td>
+      <td class="small">{{ m.chave_desc or '—' }}</td>
+      <td class="small">{{ m.quadro_nome or '—' }}</td>
+      <td class="small">{{ m.colaborador_nome or '—' }}{% if m.acao=='devolucao' and m.retirado_por and m.retirado_por != m.colaborador_nome %} <span class="text-muted">(estava com {{ m.retirado_por }})</span>{% endif %}</td>
+      <td class="small">{{ m.operador.nome if m.operador else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted text-center py-3">Nenhuma movimentação no filtro.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

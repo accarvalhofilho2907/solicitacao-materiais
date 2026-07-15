@@ -137,6 +137,16 @@
         </ul>
       </div>
 
+      <div class="dropdown">
+        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">📦 Almoxarifado</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="{{ url_for('almox.home') }}">Visão geral</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('almox.chaves') }}">🔑 Chaves</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('almox.extintores') }}">🧯 Extintores</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('almox.colaboradores') }}">👤 Colaboradores</a></li>
+        </ul>
+      </div>
+
       <div class="dropdown bell-wrap">
         <a class="nav-link" href="#" data-bs-toggle="dropdown" title="Notificações">
           🔔{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}
@@ -199,6 +209,17 @@
             <li><a class="dropdown-item" href="{{ url_for('relatorios.carga') }}">📑 Relatório de carga (recebimento/envio)</a></li>
           </ul>
         </div>
+      {% endif %}
+      {% if current_user.pode_almox_modulo %}
+      <div class="dropdown">
+        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">📦 Almoxarifado</a>
+        <ul class="dropdown-menu">
+          <li><a class="dropdown-item" href="{{ url_for('almox.home') }}">Visão geral</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('almox.chaves') }}">🔑 Chaves</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('almox.extintores') }}">🧯 Extintores</a></li>
+          {% if current_user.pode_colaboradores %}<li><a class="dropdown-item" href="{{ url_for('almox.colaboradores') }}">👤 Colaboradores</a></li>{% endif %}
+        </ul>
+      </div>
       {% endif %}
       <div class="dropdown">
         <a class="nav-link dropdown-toggle d-inline-flex align-items-center gap-1" href="#" data-bs-toggle="dropdown">

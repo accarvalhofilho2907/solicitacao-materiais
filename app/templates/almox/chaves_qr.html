@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><title>QR das chaves</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:12mm}
+  .noprint{margin-bottom:12px}
+  @media print{.noprint{display:none}}
+
+  /* A4: grade para recortar e colar */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .cel{border:1px dashed #bbb;border-radius:4px;padding:8px;text-align:center;page-break-inside:avoid}
+  .cel svg{width:80px;height:80px}
+  .desc{font-weight:bold;font-size:11px;margin-top:4px}
+  .quad{font-size:9px;color:#444}
+  .uid{font-size:8px;color:#888}
+
+  /* Térmica: etiquetas maiores, uma ao lado da outra */
+  .termica{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .termica .cel svg{width:90px;height:90px}
+
+  /* Dobrável (chaveiro): tira com QR em cima, vinco no meio, nome embaixo espelhado */
+  .dob{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .tira{border:1px solid #999;border-radius:6px;width:34mm;overflow:hidden;page-break-inside:avoid;margin:auto}
+  .tira .lado{height:26mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .tira .qr svg{width:20mm;height:20mm}
+  .tira .vinco{border-top:2px dashed #666;position:relative}
+  .tira .vinco::after{content:"✂ dobre aqui";position:absolute;left:50%;top:-8px;transform:translateX(-50%);
+      background:#fff;font-size:7px;color:#666;padding:0 4px}
+  .tira .nome{transform:rotate(180deg);text-align:center;font-weight:bold;font-size:11px;padding:0 3px;line-height:1.15}
+  .tira .nome small{font-weight:normal;font-size:8px;color:#333}
+</style></head><body>
+<div class="noprint">
+  <button onclick="window.print()">🖨️ Imprimir</button>
+  &nbsp;Formato:
+  {% set q = ('&ids=' ~ request.args.get('ids')) if request.args.get('ids') else '' %}
+  <a href="?formato=a4{{ q }}">Folha A4</a> |
+  <a href="?formato=termica{{ q }}">Etiqueta térmica</a> |
+  <a href="?formato=dobravel{{ q }}">Etiqueta dobrável (chaveiro)</a>
+  <span style="font-size:12px;color:#555"> — {{ itens|length }} chave(s)</span>
+  {% if formato == 'dobravel' %}<div style="font-size:12px;color:#555;margin-top:6px">Recorte cada tira, dobre na linha pontilhada: o QR fica de um lado e o nome do outro — encaixa no chaveiro identificador.</div>{% endif %}
+</div>
+
+{% if formato == 'dobravel' %}
+  <div class="dob">
+    {% for c in itens %}
+    <div class="tira">
+      <div class="lado qr">{{ qr_svg('CHAVE:' ~ (c.qr_uid or c.id))|safe }}</div>
+      <div class="vinco"></div>
+      <div class="lado nome">{{ c.descricao }}<br><small>{{ c.quadro_nome }}</small></div>
+    </div>
+    {% else %}<p>Nenhuma chave para imprimir.</p>{% endfor %}
+  </div>
+{% else %}
+  <div class="{{ 'termica' if formato == 'termica' else 'grid' }}">
+    {% for c in itens %}
+    <div class="cel">
+      {{ qr_svg('CHAVE:' ~ (c.qr_uid or c.id))|safe }}
+      <div class="desc">{{ c.descricao }}</div>
+      <div class="quad">{{ c.quadro_nome }}</div>
+      <div class="uid">{{ c.qr_uid or '' }}</div>
+    </div>
+    {% else %}<p>Nenhuma chave para imprimir.</p>{% endfor %}
+  </div>
+{% endif %}
+</body></html>

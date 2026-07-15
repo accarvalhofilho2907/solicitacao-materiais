@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Almoxarifado{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
+  <h4 class="mb-0">📦 Almoxarifado</h4>
+  <span class="badge bg-secondary">Perfil: {{ current_user.papel }}</span>
+</div>
+<p class="text-muted small">Liberados nesta versão: <b>Chaves</b>, <b>Extintores</b>{% if current_user.pode_colaboradores %} e <b>Colaboradores</b>{% endif %}. Os demais tópicos estão em construção.</p>
+
+<div class="row g-3">
+  {% for t in topicos %}
+  <div class="col-6 col-md-4 col-lg-3">
+    {% if t.liberado %}
+    <a href="{{ url_for(t.endpoint) }}" class="card h-100 text-decoration-none">
+      <div class="card-body text-center">
+        <div style="font-size:30px">{{ t.icone }}</div>
+        <div class="fw-semibold mt-1">{{ t.nome }}</div>
+        <span class="badge bg-success mt-2">Liberado</span>
+      </div>
+    </a>
+    {% else %}
+    <a href="{{ url_for('almox.em_construcao', slug=t.slug) }}" class="card h-100 text-decoration-none" style="opacity:.7">
+      <div class="card-body text-center">
+        <div style="font-size:30px">{{ t.icone }}</div>
+        <div class="fw-semibold mt-1">{{ t.nome }}</div>
+        <span class="badge bg-warning text-dark mt-2">Em construção</span>
+      </div>
+    </a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

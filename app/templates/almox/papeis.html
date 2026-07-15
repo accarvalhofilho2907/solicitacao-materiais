@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Papéis de colaborador — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.colaboradores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Colaboradores</a>
+<h4 class="mb-1">🎭 Papéis de colaborador</h4>
+<p class="text-muted small">Cada papel tem um conjunto de tarefas que o colaborador pode fazer.</p>
+
+<div class="card mb-4" style="max-width:640px"><div class="card-body">
+  <h6>Cadastrar papel</h6>
+  <form method="post" action="{{ url_for('almox.papel_novo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-2"><input class="form-control" name="nome" placeholder="Nome do papel (ex.: INSPETOR DE EXTINTOR)" required></div>
+    <div class="mb-2">
+      <div class="form-label small text-muted">Tarefas que este papel pode fazer:</div>
+      {% for chave, rotulo in tarefas %}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="tarefas" value="{{ chave }}" id="nova_{{ chave }}">
+        <label class="form-check-label" for="nova_{{ chave }}">{{ rotulo }}</label>
+      </div>
+      {% endfor %}
+    </div>
+    <button class="btn btn-primary">Cadastrar papel</button>
+  </form>
+</div></div>
+
+<div class="row g-3">
+  {% for p in itens %}
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <h6 class="mb-1">{{ p.nome }} {% if not p.ativo %}<span class="badge bg-secondary">inativo</span>{% endif %}</h6>
+        <form method="post" action="{{ url_for('almox.papel_toggle', pid=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar' if p.ativo else 'Reativar' }}</button>
+        </form>
+      </div>
+      <form method="post" action="{{ url_for('almox.papel_editar', pid=p.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for chave, rotulo in tarefas %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="tarefas" value="{{ chave }}"
+                 id="p{{ p.id }}_{{ chave }}" {{ 'checked' if chave in p.lista_tarefas }}>
+          <label class="form-check-label" for="p{{ p.id }}_{{ chave }}">{{ rotulo }}</label>
+        </div>
+        {% endfor %}
+        <button class="btn btn-sm btn-primary mt-2">Salvar tarefas</button>
+      </form>
+    </div></div>
+  </div>
+  {% else %}
+  <p class="text-muted">Nenhum papel cadastrado.</p>
+  {% endfor %}
+</div>
+{% endblock %}

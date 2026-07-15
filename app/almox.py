@@ -108,7 +108,8 @@ def marcar_chegada(sid):
 from datetime import date
 from .models import (Chave, Extintor, Colaborador, AlmoxLog, QuadroChave,
                      PapelColaborador, MovimentacaoChave, TAREFAS_COLABORADOR, TAREFAS_DICT,
-                     InspecaoExtintor, PendenciaEtiqueta, CHECK_EXTINTOR, ITEM_ETIQUETA_EXTINTOR)
+                     InspecaoExtintor, PendenciaEtiqueta, CHECK_EXTINTOR, ITEM_ETIQUETA_EXTINTOR,
+                     ProdutoAlmox, MovimentacaoMaterial, LocalAlmox)
 
 
 def _qr_svg(texto, box=8, border=2):
@@ -144,6 +145,8 @@ TOPICOS = [
     {"slug": "qr",          "nome": "QR de colaboradores",             "icone": "▨",  "liberado": False},
     {"slug": "log",         "nome": "Log de ações",                    "icone": "📜", "liberado": False},
     {"slug": "coletor",     "nome": "Coletor",                         "icone": "📲", "liberado": True, "endpoint": "almox.coletor"},
+    {"slug": "materiais",   "nome": "Material (estoque)",              "icone": "📦", "liberado": True, "endpoint": "almox.materiais"},
+    {"slug": "mat_mov",     "nome": "Movimentações de material",       "icone": "📊", "liberado": True, "endpoint": "almox.materiais_mov"},
     {"slug": "chaves",      "nome": "Chaves",                          "icone": "🔑", "liberado": True, "endpoint": "almox.chaves"},
     {"slug": "relatorio_chaves","nome": "Relatório de chaves",         "icone": "📈", "liberado": True, "endpoint": "almox.relatorio_chaves"},
     {"slug": "extintores",  "nome": "Extintores",                      "icone": "🧯", "liberado": True, "endpoint": "almox.extintores"},
@@ -199,7 +202,22 @@ def home():
     topicos = [t for t in TOPICOS
                if not (t.get("somente_colab") and not current_user.pode_colaboradores)
                and not (t.get("somente_admin") and not current_user.is_admin)]
-    return render_template("almox/home.html", topicos=topicos)
+    # Painel: números do dia a dia (usa dados já existentes)
+    resumo = {"chaves_em_uso": 0, "ext_irregular": 0, "ext_prox": 0,
+              "mat_baixo": 0, "pend_etiqueta": 0}
+    try:
+        resumo["chaves_em_uso"] = Chave.query.filter_by(ativo=True, status="Em uso").count()
+        for e in Extintor.query.filter_by(ativo=True).all():
+            k = _situacao_extintor(e)[0]
+            if k in ("IRREGULAR", "VENCIDO", "EM_RECARGA"):
+                resumo["ext_irregular"] += 1
+            elif k == "PROX_VENC":
+                resumo["ext_prox"] += 1
+        resumo["mat_baixo"] = sum(1 for p in ProdutoAlmox.query.filter_by(ativo=True).all() if p.abaixo_minimo)
+        resumo["pend_etiqueta"] = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
+    except Exception:
+        pass
+    return render_template("almox/home.html", topicos=topicos, resumo=resumo)
 
 
 @almox_bp.route("/em-construcao/<slug>")
@@ -1110,3 +1128,442 @@ def coletor_api_confirmar():
     _log("Coletor", f"{colab.nome}: " + "; ".join(feitas) if feitas else f"{colab.nome}: sem ações válidas")
     db.session.commit()
     return jsonify(ok=True, resumo=feitas, colaborador=colab.nome)
+
+
+# ==================== MATERIAL (estoque com quantidade) ====================
+def _num(v, default=0.0):
+    try:
+        return float(str(v).replace(",", "."))
+    except (TypeError, ValueError):
+        return default
+
+
+@almox_bp.route("/materiais")
+@_guard("pode_almox_modulo")
+def materiais():
+    itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+    n_baixo = sum(1 for p in itens if p.abaixo_minimo)
+    locais = LocalAlmox.query.filter_by(ativo=True).order_by(LocalAlmox.nome).all()
+    return render_template("almox/materiais.html", itens=itens, n_baixo=n_baixo, locais=locais)
+
+
+@almox_bp.route("/materiais/novo", methods=["POST"])
+@_guard("pode_almox_modulo")
+def material_novo():
+    import secrets
+    nome = (request.form.get("nome") or "").strip()
+    if not nome:
+        flash("Informe o nome do material.", "danger")
+        return redirect(url_for("almox.materiais"))
+    uid = "MAT-" + secrets.token_hex(4).upper()
+    while ProdutoAlmox.query.filter_by(qr_uid=uid).first():
+        uid = "MAT-" + secrets.token_hex(4).upper()
+    local_id = request.form.get("local_id") or None
+    if not local_id:
+        temp = LocalAlmox.query.filter_by(temporaria=True).first()
+        local_id = temp.id if temp else None
+    p = ProdutoAlmox(codigo=(request.form.get("codigo") or "").strip().upper(),
+                     nome=nome.upper(), unidade=(request.form.get("unidade") or "UN").strip().upper(),
+                     categoria=(request.form.get("categoria") or "").strip().upper(),
+                     saldo=_num(request.form.get("saldo_inicial"), 0),
+                     saldo_minimo=_num(request.form.get("saldo_minimo"), 0),
+                     local_id=int(local_id) if local_id else None, qr_uid=uid)
+    db.session.add(p)
+    db.session.flush()
+    if p.saldo:
+        db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="entrada",
+                       quantidade=p.saldo, saldo_apos=p.saldo, operador_id=current_user.id,
+                       obs="Saldo inicial de cadastro"))
+    _log("Material", f"Material cadastrado: {p.nome} (saldo {p.saldo} {p.unidade})")
+    db.session.commit()
+    flash("Material cadastrado.", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+# ----- Locais de estocagem -----
+@almox_bp.route("/materiais/locais")
+@_guard("pode_almox_modulo")
+def locais():
+    itens = LocalAlmox.query.order_by(LocalAlmox.nome).all()
+    return render_template("almox/locais.html", itens=itens)
+
+
+@almox_bp.route("/materiais/locais/novo", methods=["POST"])
+@_guard("pode_almox_modulo")
+def local_novo():
+    nome = (request.form.get("nome") or "").strip()
+    if not nome:
+        flash("Informe o nome do local.", "danger")
+        return redirect(url_for("almox.locais"))
+    if LocalAlmox.query.filter(db.func.upper(LocalAlmox.nome) == nome.upper()).first():
+        flash("Já existe um local com esse nome.", "warning")
+        return redirect(url_for("almox.locais"))
+    db.session.add(LocalAlmox(nome=nome.upper()))
+    _log("Material", f"Local cadastrado: {nome.upper()}")
+    db.session.commit()
+    flash("Local cadastrado.", "success")
+    return redirect(url_for("almox.locais"))
+
+
+@almox_bp.route("/materiais/locais/<int:lid>/toggle", methods=["POST"])
+@_guard("pode_almox_modulo")
+def local_toggle(lid):
+    l = db.session.get(LocalAlmox, lid) or abort(404)
+    l.ativo = not l.ativo
+    db.session.commit()
+    return redirect(url_for("almox.locais"))
+
+
+@almox_bp.route("/materiais/<int:pid>/mover", methods=["POST"])
+@_guard("pode_almox_modulo")
+def material_mover(pid):
+    p = db.session.get(ProdutoAlmox, pid) or abort(404)
+    destino_id = request.form.get("local_id")
+    destino = db.session.get(LocalAlmox, int(destino_id)) if destino_id and destino_id.isdigit() else None
+    if not destino:
+        flash("Selecione o local de destino.", "danger")
+        return redirect(url_for("almox.materiais"))
+    de = p.local_nome
+    p.local_id = destino.id
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="movimentacao",
+                   quantidade=0, saldo_apos=p.saldo, local_de=de, local_para=destino.nome,
+                   operador_id=current_user.id, obs=(request.form.get("obs") or "").strip()))
+    _log("Material", f"{p.nome}: movido de {de} para {destino.nome}")
+    db.session.commit()
+    flash(f"{p.nome} movido para {destino.nome}.", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+@almox_bp.route("/materiais/<int:pid>/entrada", methods=["POST"])
+@_guard("pode_almox_modulo")
+def material_entrada(pid):
+    p = db.session.get(ProdutoAlmox, pid) or abort(404)
+    qtd = _num(request.form.get("quantidade"))
+    if qtd <= 0:
+        flash("Quantidade inválida.", "danger")
+        return redirect(url_for("almox.materiais"))
+    p.saldo = (p.saldo or 0) + qtd
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="entrada",
+                   quantidade=qtd, saldo_apos=p.saldo, operador_id=current_user.id,
+                   obs=(request.form.get("obs") or "").strip()))
+    _log("Material", f"Entrada {qtd} {p.unidade} de {p.nome} (saldo {p.saldo})")
+    db.session.commit()
+    flash(f"Entrada registrada. Saldo de {p.nome}: {p.saldo:g} {p.unidade}.", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+@almox_bp.route("/materiais/<int:pid>/saida", methods=["POST"])
+@_guard("pode_almox_modulo")
+def material_saida(pid):
+    p = db.session.get(ProdutoAlmox, pid) or abort(404)
+    qtd = _num(request.form.get("quantidade"))
+    if qtd <= 0:
+        flash("Quantidade inválida.", "danger")
+        return redirect(url_for("almox.materiais"))
+    # Prevenção de estoque negativo (item roadmap §9)
+    if qtd > (p.saldo or 0):
+        flash(f"Saída bloqueada: saldo de {p.nome} é {p.saldo:g} {p.unidade}, "
+              f"menor que {qtd:g}. Faça entrada/ajuste antes.", "danger")
+        return redirect(url_for("almox.materiais"))
+    nome = (request.form.get("colaborador_nome") or "").strip().upper()
+    colab = Colaborador.query.filter(db.func.upper(Colaborador.nome) == nome).first() if nome else None
+    p.saldo = (p.saldo or 0) - qtd
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="saida",
+                   quantidade=qtd, saldo_apos=p.saldo, colaborador_id=(colab.id if colab else None),
+                   colaborador_nome=(nome or None), operador_id=current_user.id,
+                   obs=(request.form.get("obs") or "").strip()))
+    _log("Material", f"Saída {qtd} {p.unidade} de {p.nome} p/ {nome or '—'} (saldo {p.saldo})")
+    db.session.commit()
+    flash(f"Saída registrada. Saldo de {p.nome}: {p.saldo:g} {p.unidade}.", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+@almox_bp.route("/materiais/<int:pid>/ajuste", methods=["POST"])
+@_guard("pode_almox_modulo")
+def material_ajuste(pid):
+    p = db.session.get(ProdutoAlmox, pid) or abort(404)
+    novo = _num(request.form.get("saldo"))
+    antigo = p.saldo or 0
+    p.saldo = novo
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="ajuste",
+                   quantidade=novo - antigo, saldo_apos=novo, operador_id=current_user.id,
+                   obs=(request.form.get("obs") or f"Ajuste de {antigo:g} para {novo:g}").strip()))
+    _log("Material", f"Ajuste de saldo {p.nome}: {antigo:g} → {novo:g}")
+    db.session.commit()
+    flash(f"Saldo de {p.nome} ajustado para {novo:g} {p.unidade}.", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+@almox_bp.route("/materiais/<int:pid>/desativar", methods=["POST"])
+@_guard("pode_almox_modulo")
+def material_desativar(pid):
+    p = db.session.get(ProdutoAlmox, pid) or abort(404)
+    p.ativo = False
+    _log("Material", f"Material desativado: {p.nome}")
+    db.session.commit()
+    flash("Material desativado.", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+def _filtra_mov_material():
+    from datetime import datetime as _dt
+    qy = MovimentacaoMaterial.query
+    pid = request.args.get("produto_id") or ""
+    tipo = request.args.get("tipo") or ""
+    di = request.args.get("data_ini") or ""
+    dfim = request.args.get("data_fim") or ""
+    if pid.isdigit():
+        qy = qy.filter(MovimentacaoMaterial.produto_id == int(pid))
+    if tipo in ("entrada", "saida", "ajuste"):
+        qy = qy.filter(MovimentacaoMaterial.tipo == tipo)
+    if di:
+        try: qy = qy.filter(MovimentacaoMaterial.criado_em >= _dt.strptime(di, "%Y-%m-%d"))
+        except ValueError: pass
+    if dfim:
+        try:
+            fim = _dt.strptime(dfim, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            qy = qy.filter(MovimentacaoMaterial.criado_em <= fim)
+        except ValueError: pass
+    movs = qy.order_by(MovimentacaoMaterial.criado_em.desc()).limit(2000).all()
+    ctx = dict(produto_id=pid, tipo=tipo, data_ini=di, data_fim=dfim)
+    return movs, ctx
+
+
+@almox_bp.route("/materiais/movimentacoes")
+@_guard("pode_almox_modulo")
+def materiais_mov():
+    movs, ctx = _filtra_mov_material()
+    produtos = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+    return render_template("almox/materiais_mov.html", movs=movs, produtos=produtos, ctx=ctx)
+
+
+@almox_bp.route("/materiais/movimentacoes/csv")
+@_guard("pode_almox_modulo")
+def materiais_mov_csv():
+    import csv, io
+    from flask import Response
+    movs, _ = _filtra_mov_material()
+    buf = io.StringIO(); buf.write("\ufeff")
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Data/Hora", "Tipo", "Material", "Quantidade", "Saldo após", "Colaborador", "Operador", "Obs"])
+    for m in movs:
+        w.writerow([m.criado_em.strftime("%d/%m/%Y %H:%M") if m.criado_em else "", m.tipo,
+                    m.produto_nome or "", ("%g" % (m.quantidade or 0)), ("%g" % (m.saldo_apos or 0)),
+                    m.colaborador_nome or "", (m.operador.nome if m.operador else ""), m.obs or ""])
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=movimentacoes_material.csv"})
+
+
+@almox_bp.route("/materiais/movimentacoes/pdf")
+@_guard("pode_almox_modulo")
+def materiais_mov_pdf():
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    import io
+    from flask import Response
+    movs, ctx = _filtra_mov_material()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=12*mm, bottomMargin=12*mm,
+                            leftMargin=10*mm, rightMargin=10*mm)
+    styles = getSampleStyleSheet()
+    elems = [Paragraph("Movimentações de material", styles["Title"]),
+             Paragraph(f"Período: {ctx['data_ini'] or 'início'} a {ctx['data_fim'] or 'hoje'}", styles["Normal"]),
+             Spacer(1, 6)]
+    data = [["Data/Hora", "Tipo", "Material", "Qtd", "Saldo após", "Colaborador", "Operador"]]
+    for m in movs:
+        data.append([m.criado_em.strftime("%d/%m/%y %H:%M") if m.criado_em else "", m.tipo,
+                     m.produto_nome or "", ("%g" % (m.quantidade or 0)), ("%g" % (m.saldo_apos or 0)),
+                     m.colaborador_nome or "", (m.operador.nome if m.operador else "")])
+    if len(data) == 1:
+        data.append(["—"] * 7)
+    t = Table(data, repeatRows=1, colWidths=[26*mm, 18*mm, 70*mm, 20*mm, 24*mm, 40*mm, 40*mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#FF5246")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f4f4")]),
+    ]))
+    elems.append(t)
+    doc.build(elems)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename=movimentacoes_material.pdf"})
+
+
+@almox_bp.route("/materiais/saldo/csv")
+@_guard("pode_almox_modulo")
+def materiais_saldo_csv():
+    import csv, io
+    from flask import Response
+    itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+    buf = io.StringIO(); buf.write("\ufeff")
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Código", "Material", "Unidade", "Categoria", "Saldo", "Saldo mínimo", "Abaixo do mínimo?"])
+    for p in itens:
+        w.writerow([p.codigo or "", p.nome, p.unidade, p.categoria or "",
+                    ("%g" % (p.saldo or 0)), ("%g" % (p.saldo_minimo or 0)),
+                    "SIM" if p.abaixo_minimo else ""])
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=saldo_material.csv"})
+
+
+@almox_bp.route("/materiais/qr")
+@_guard("pode_almox_modulo")
+def materiais_qr():
+    ids = request.args.get("ids") or ""
+    consulta = ProdutoAlmox.query.filter_by(ativo=True)
+    if ids.strip():
+        lista_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+        consulta = consulta.filter(ProdutoAlmox.id.in_(lista_ids))
+    itens = consulta.order_by(ProdutoAlmox.nome).all()
+    formato = request.args.get("formato", "a4")
+    return render_template("almox/materiais_qr.html", itens=itens, qr_svg=_qr_svg, formato=formato)
+
+
+# ----- Coletor: saída de MATERIAL (via QR do colaborador + QR do produto) -----
+@almox_bp.route("/coletor/api/produto/<path:qr_uid>")
+@modulo_required
+def coletor_api_produto(qr_uid):
+    uid = _uid_limpo(qr_uid)
+    p = ProdutoAlmox.query.filter_by(qr_uid=uid, ativo=True).first()
+    if not p:
+        return jsonify(ok=False, erro="Material não encontrado."), 404
+    return jsonify(ok=True, id=p.id, nome=p.nome, unidade=p.unidade, saldo=p.saldo or 0)
+
+
+@almox_bp.route("/coletor/api/material-saida", methods=["POST"])
+@modulo_required
+def coletor_api_material_saida():
+    """payload: {colaborador_id, senha, itens:[{produto_id, qtd}]}"""
+    data = request.get_json(silent=True) or {}
+    colab = db.session.get(Colaborador, data.get("colaborador_id") or 0)
+    if not colab or not colab.ativo:
+        return jsonify(ok=False, erro="Colaborador inválido."), 400
+    senha = data.get("senha") or ""
+    if not colab.tem_senha:
+        if len(senha) < 4:
+            return jsonify(ok=False, erro="Primeiro uso: defina uma senha de ao menos 4 dígitos."), 400
+        colab.set_senha(senha)
+    elif not colab.check_senha(senha):
+        return jsonify(ok=False, erro="Senha do colaborador inválida."), 403
+    itens = data.get("itens") or []
+    if not itens:
+        return jsonify(ok=False, erro="Nenhum material para confirmar."), 400
+    # Valida saldo ANTES de aplicar (prevenção de estoque negativo)
+    faltas = []
+    plano = []
+    for it in itens:
+        p = db.session.get(ProdutoAlmox, it.get("produto_id") or 0)
+        q = _num(it.get("qtd"))
+        if not p or q <= 0:
+            continue
+        if q > (p.saldo or 0):
+            faltas.append(f"{p.nome} (saldo {p.saldo:g}, pedido {q:g})")
+        else:
+            plano.append((p, q))
+    if faltas:
+        return jsonify(ok=False, erro="Saldo insuficiente: " + "; ".join(faltas)), 400
+    feitas = []
+    for p, q in plano:
+        p.saldo = (p.saldo or 0) - q
+        db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="saida",
+                       quantidade=q, saldo_apos=p.saldo, colaborador_id=colab.id,
+                       colaborador_nome=colab.nome, operador_id=current_user.id, obs="Coletor"))
+        feitas.append(f"{q:g} {p.unidade} de {p.nome}")
+    _log("Coletor", f"{colab.nome}: saída de material — " + "; ".join(feitas))
+    db.session.commit()
+    return jsonify(ok=True, resumo=feitas, colaborador=colab.nome)
+
+
+# ----- Estoque negativo (detecção/resolução — roadmap §9) -----
+@almox_bp.route("/materiais/negativos")
+@_guard("pode_almox_modulo")
+def materiais_negativos():
+    negativos = (ProdutoAlmox.query.filter(ProdutoAlmox.ativo == True, ProdutoAlmox.saldo < 0)
+                 .order_by(ProdutoAlmox.nome).all())
+    return render_template("almox/materiais_negativos.html", negativos=negativos)
+
+
+# ----- Coletor: MOVIMENTAÇÃO de material entre locais -----
+@almox_bp.route("/coletor/api/locais")
+@modulo_required
+def coletor_api_locais():
+    locais = LocalAlmox.query.filter_by(ativo=True).order_by(LocalAlmox.nome).all()
+    return jsonify(ok=True, locais=[{"id": l.id, "nome": l.nome} for l in locais])
+
+
+@almox_bp.route("/coletor/api/mover", methods=["POST"])
+@modulo_required
+def coletor_api_mover():
+    data = request.get_json(silent=True) or {}
+    p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
+    destino = db.session.get(LocalAlmox, data.get("local_id") or 0)
+    if not p or not p.ativo:
+        return jsonify(ok=False, erro="Material inválido."), 400
+    if not destino:
+        return jsonify(ok=False, erro="Local de destino inválido."), 400
+    de = p.local_nome
+    p.local_id = destino.id
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="movimentacao",
+                   quantidade=0, saldo_apos=p.saldo, local_de=de, local_para=destino.nome,
+                   operador_id=current_user.id, obs="Coletor"))
+    _log("Coletor", f"{p.nome}: movido de {de} para {destino.nome}")
+    db.session.commit()
+    return jsonify(ok=True, resumo=[f"{p.nome}: {de} → {destino.nome}"])
+
+
+# ==================== INVENTÁRIO DE MATERIAL ====================
+@almox_bp.route("/materiais/inventario", methods=["GET"])
+@_guard("pode_almox_modulo")
+def inventario():
+    itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+    return render_template("almox/inventario.html", itens=itens)
+
+
+@almox_bp.route("/materiais/inventario", methods=["POST"])
+@_guard("pode_almox_modulo")
+def inventario_salvar():
+    itens = ProdutoAlmox.query.filter_by(ativo=True).all()
+    ajustados = 0
+    for p in itens:
+        raw = request.form.get(f"contado_{p.id}")
+        if raw is None or str(raw).strip() == "":
+            continue                     # item não contado nesta rodada: ignora
+        contado = _num(raw)
+        if contado != (p.saldo or 0):
+            dif = contado - (p.saldo or 0)
+            p.saldo = contado
+            db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="inventario",
+                           quantidade=dif, saldo_apos=contado, operador_id=current_user.id,
+                           obs="Inventário (conferência)"))
+            ajustados += 1
+    _log("Material", f"Inventário aplicado: {ajustados} item(ns) ajustado(s)")
+    db.session.commit()
+    flash(f"Inventário concluído. {ajustados} item(ns) ajustado(s).", "success")
+    return redirect(url_for("almox.materiais"))
+
+
+@almox_bp.route("/coletor/api/inventario", methods=["POST"])
+@modulo_required
+def coletor_api_inventario():
+    """payload: {produto_id, contado}"""
+    data = request.get_json(silent=True) or {}
+    p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
+    if not p or not p.ativo:
+        return jsonify(ok=False, erro="Material inválido."), 400
+    contado = _num(data.get("contado"), None if data.get("contado") in (None, "") else 0)
+    if contado is None:
+        return jsonify(ok=False, erro="Quantidade contada inválida."), 400
+    antigo = p.saldo or 0
+    dif = contado - antigo
+    p.saldo = contado
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="inventario",
+                   quantidade=dif, saldo_apos=contado, operador_id=current_user.id, obs="Inventário (coletor)"))
+    _log("Coletor", f"Inventário {p.nome}: {antigo:g} → {contado:g}")
+    db.session.commit()
+    return jsonify(ok=True, resumo=[f"{p.nome}: {antigo:g} → {contado:g}"], nome=p.nome,
+                   antigo=antigo, novo=contado)

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Material — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+  <div>
+    <h4 class="mb-1">📦 Material (estoque)</h4>
+    <p class="text-muted small mb-0">{{ itens|length }} item(ns).{% if n_baixo %} <span class="text-danger">{{ n_baixo }} abaixo do mínimo.</span>{% endif %}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('almox.locais') }}" class="btn btn-sm btn-outline-secondary">🗂️ Locais</a>
+    <a href="{{ url_for('almox.materiais_mov') }}" class="btn btn-sm btn-outline-secondary">📊 Movimentações</a>
+    <a href="{{ url_for('almox.inventario') }}" class="btn btn-sm btn-outline-secondary">🧮 Inventário</a>
+    <a href="{{ url_for('almox.materiais_saldo_csv') }}" class="btn btn-sm btn-outline-success">⬇ Saldo (CSV)</a>
+    {% if n_baixo %}<a href="{{ url_for('almox.materiais_negativos') }}" class="btn btn-sm btn-outline-danger">⚠️ Negativos</a>{% endif %}
+    <a href="{{ url_for('almox.materiais_qr') }}" target="_blank" class="btn btn-sm btn-outline-secondary">🖨️ QR</a>
+    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoMat">＋ Novo material</button>
+  </div>
+</div>
+
+<input id="filtroMat" class="form-control my-2" style="max-width:420px" placeholder="🔎 Filtrar (nome, código, categoria, local)..." autocomplete="off">
+
+<div class="card mb-4"><div class="table-responsive">
+<table class="table table-hover mb-0 align-middle" id="tabelaMat">
+  <thead class="table-light"><tr><th>Material</th><th>Categoria</th><th>Local</th><th>Saldo</th><th>Mínimo</th><th></th></tr></thead>
+  <tbody>
+    {% for p in itens %}
+    <tr>
+      <td><b>{{ p.nome }}</b>{% if p.codigo %} <span class="text-muted small">({{ p.codigo }})</span>{% endif %}</td>
+      <td class="small">{{ p.categoria or '—' }}</td>
+      <td class="small">{{ p.local_nome }}</td>
+      <td><span class="badge bg-{{ 'danger' if p.abaixo_minimo else 'success' }}">{{ '%g'|format(p.saldo or 0) }} {{ p.unidade }}</span></td>
+      <td class="small">{{ '%g'|format(p.saldo_minimo or 0) }}</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#e{{ p.id }}">Entrada</button>
+        <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#s{{ p.id }}">Saída</button>
+        <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#m{{ p.id }}">Mover</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#a{{ p.id }}">Ajuste</button>
+      </td>
+    </tr>
+    <tr class="collapse" id="e{{ p.id }}"><td colspan="6">
+      <form method="post" action="{{ url_for('almox.material_entrada', pid=p.id) }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-auto"><label class="form-label small">Entrada ({{ p.unidade }})</label><input name="quantidade" class="form-control form-control-sm" type="number" step="any" min="0" required></div>
+        <div class="col"><label class="form-label small">Obs</label><input name="obs" class="form-control form-control-sm" placeholder="NF, fornecedor..."></div>
+        <div class="col-auto"><button class="btn btn-sm btn-success">Registrar entrada</button></div>
+      </form></td></tr>
+    <tr class="collapse" id="s{{ p.id }}"><td colspan="6">
+      <form method="post" action="{{ url_for('almox.material_saida', pid=p.id) }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-auto"><label class="form-label small">Saída ({{ p.unidade }})</label><input name="quantidade" class="form-control form-control-sm" type="number" step="any" min="0" required></div>
+        <div class="col"><label class="form-label small">Colaborador (opcional)</label><input name="colaborador_nome" class="form-control form-control-sm" placeholder="Quem retirou"></div>
+        <div class="col"><label class="form-label small">Obs</label><input name="obs" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button class="btn btn-sm btn-warning">Registrar saída</button></div>
+      </form></td></tr>
+    <tr class="collapse" id="m{{ p.id }}"><td colspan="6">
+      <form method="post" action="{{ url_for('almox.material_mover', pid=p.id) }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-auto"><label class="form-label small">De</label><input class="form-control form-control-sm" value="{{ p.local_nome }}" disabled></div>
+        <div class="col-auto"><label class="form-label small">Para</label>
+          <select name="local_id" class="form-select form-select-sm" required>
+            <option value="">— destino —</option>
+            {% for l in locais %}{% if l.id != p.local_id %}<option value="{{ l.id }}">{{ l.nome }}</option>{% endif %}{% endfor %}
+          </select></div>
+        <div class="col"><label class="form-label small">Obs</label><input name="obs" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button class="btn btn-sm btn-info">Mover</button></div>
+      </form></td></tr>
+    <tr class="collapse" id="a{{ p.id }}"><td colspan="6">
+      <div class="d-flex flex-wrap gap-3 align-items-end">
+      <form method="post" action="{{ url_for('almox.material_ajuste', pid=p.id) }}" class="row g-2 align-items-end flex-grow-1">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-auto"><label class="form-label small">Novo saldo ({{ p.unidade }})</label><input name="saldo" class="form-control form-control-sm" type="number" step="any" value="{{ '%g'|format(p.saldo or 0) }}" required></div>
+        <div class="col"><label class="form-label small">Motivo</label><input name="obs" class="form-control form-control-sm" placeholder="Inventário, correção..."></div>
+        <div class="col-auto"><button class="btn btn-sm btn-secondary">Ajustar saldo</button></div>
+      </form>
+      <form method="post" action="{{ url_for('almox.material_desativar', pid=p.id) }}" onsubmit="return confirm('Desativar {{ p.nome }}?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger">Desativar item</button>
+      </form>
+      </div></td></tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted text-center py-3">Nenhum material cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<div class="modal fade" id="modalNovoMat" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="{{ url_for('almox.material_novo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header"><h5 class="modal-title">Novo material</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div class="mb-2"><label class="form-label">Nome *</label><input class="form-control" name="nome" required></div>
+      <div class="row g-2">
+        <div class="col-6 mb-2"><label class="form-label">Código</label><input class="form-control" name="codigo"></div>
+        <div class="col-6 mb-2"><label class="form-label">Unidade</label><input class="form-control" name="unidade" value="UN"></div>
+      </div>
+      <div class="mb-2"><label class="form-label">Categoria</label><input class="form-control" name="categoria"></div>
+      <div class="mb-2"><label class="form-label">Local</label>
+        <select class="form-select" name="local_id">
+          {% for l in locais %}<option value="{{ l.id }}" {{ 'selected' if l.temporaria }}>{{ l.nome }}</option>{% endfor %}
+        </select>
+        <div class="form-text">Padrão: Estocagem Temporária. Gerencie em <a href="{{ url_for('almox.locais') }}">Locais</a>.</div>
+      </div>
+      <div class="row g-2">
+        <div class="col-6 mb-2"><label class="form-label">Saldo inicial</label><input class="form-control" name="saldo_inicial" type="number" step="any" value="0"></div>
+        <div class="col-6 mb-2"><label class="form-label">Saldo mínimo</label><input class="form-control" name="saldo_minimo" type="number" step="any" value="0"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Cadastrar</button></div>
+  </form>
+</div></div></div>
+
+<script>
+(function(){
+  var inp=document.getElementById('filtroMat');
+  var linhas=document.querySelectorAll('#tabelaMat tbody tr:not(.collapse)');
+  function norm(s){return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  inp.addEventListener('input',function(){
+    var t=norm(inp.value);
+    linhas.forEach(function(tr){tr.style.display=norm(tr.textContent).indexOf(t)>=0?'':'none';});
+  });
+})();
+</script>
+{% endblock %}

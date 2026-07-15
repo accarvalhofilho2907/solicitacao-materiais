@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Locais de estocagem{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.materiais') }}" class="btn btn-sm btn-outline-secondary mb-3">← Material</a>
+<h4 class="mb-1">🗂️ Locais de estocagem</h4>
+<p class="text-muted small">Prateleiras e armazéns. A <b>Estocagem Temporária</b> é o local padrão de entrada/devolução.</p>
+
+<div class="card mb-4" style="max-width:520px"><div class="card-body">
+  <form method="post" action="{{ url_for('almox.local_novo') }}" class="d-flex gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input class="form-control" name="nome" placeholder="Ex.: ARMAZÉM D6 — PRATELEIRA A" required>
+    <button class="btn btn-primary">Cadastrar</button>
+  </form>
+</div></div>
+
+<div class="card" style="max-width:520px"><div class="table-responsive">
+<table class="table table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Local</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for l in itens %}
+    <tr>
+      <td>{{ l.nome }}{% if l.temporaria %} <span class="badge bg-info text-dark">Temporária</span>{% endif %}</td>
+      <td>{% if l.ativo %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
+      <td class="text-end">
+        {% if not l.temporaria %}
+        <form method="post" action="{{ url_for('almox.local_toggle', lid=l.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar' if l.ativo else 'Reativar' }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="3" class="text-muted text-center py-3">Nenhum local.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

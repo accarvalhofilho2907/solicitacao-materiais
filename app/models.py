@@ -396,6 +396,62 @@ class Extintor(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class LocalAlmox(db.Model):
+    """Local de estocagem (prateleira/armazém). Um deles é a Estocagem Temporária."""
+    __tablename__ = "almox_locais"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), unique=True, nullable=False)
+    temporaria = db.Column(db.Boolean, default=False)   # local padrão de entrada/devolução
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ProdutoAlmox(db.Model):
+    """Item de estoque com quantidade (entrada/saída/saldo) e um local atual."""
+    __tablename__ = "almox_produtos"
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(40))
+    nome = db.Column(db.String(160), nullable=False)
+    unidade = db.Column(db.String(12), default="UN")
+    categoria = db.Column(db.String(80))
+    saldo = db.Column(db.Float, default=0)
+    saldo_minimo = db.Column(db.Float, default=0)
+    local_id = db.Column(db.ForeignKey("almox_locais.id"))
+    qr_uid = db.Column(db.String(20), unique=True)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    local = db.relationship("LocalAlmox")
+
+    @property
+    def abaixo_minimo(self):
+        return self.saldo_minimo and self.saldo <= self.saldo_minimo
+
+    @property
+    def local_nome(self):
+        return self.local.nome if self.local else "—"
+
+
+class MovimentacaoMaterial(db.Model):
+    """Histórico de entrada/saída/ajuste/movimentação/inventário de material."""
+    __tablename__ = "almox_mov_material"
+    id = db.Column(db.Integer, primary_key=True)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
+    produto_nome = db.Column(db.String(160))
+    tipo = db.Column(db.String(14))               # entrada | saida | ajuste | movimentacao | inventario
+    quantidade = db.Column(db.Float)
+    saldo_apos = db.Column(db.Float)
+    local_de = db.Column(db.String(120))          # movimentação: origem
+    local_para = db.Column(db.String(120))        # movimentação: destino
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    colaborador_nome = db.Column(db.String(160))
+    operador_id = db.Column(db.ForeignKey("usuarios.id"))
+    obs = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    operador = db.relationship("Usuario")
+
+
 class InspecaoExtintor(db.Model):
     """Registro de inspeção / conferência / reposição no local do extintor."""
     __tablename__ = "almox_insp_extintor"

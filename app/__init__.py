@@ -243,7 +243,17 @@ def _seed_almox():
                     usados_c.add(uid); c.qr_uid = uid; mudou = True
             if mudou:
                 db.session.commit()
-        # Etapa 3 — backfill do QR e situação dos extintores
+        # Etapa material — local padrão "Estocagem Temporária"
+        from .models import LocalAlmox as _Loc, ProdutoAlmox as _Prod
+        if _Loc.query.filter_by(temporaria=True).first() is None:
+            db.session.add(_Loc(nome="ESTOCAGEM TEMPORÁRIA", temporaria=True))
+            db.session.commit()
+        temp = _Loc.query.filter_by(temporaria=True).first()
+        sem_local = _Prod.query.filter(_Prod.local_id.is_(None)).all()
+        if sem_local and temp:
+            for p in sem_local:
+                p.local_id = temp.id
+            db.session.commit()
         from .models import Extintor as _Ext
         exts = _Ext.query.all()
         if exts:

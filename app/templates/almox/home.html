@@ -5,7 +5,23 @@
   <h4 class="mb-0">📦 Almoxarifado</h4>
   <span class="badge bg-secondary">Perfil: {{ current_user.papel }}</span>
 </div>
-<p class="text-muted small">Liberados nesta versão: <b>Chaves</b>, <b>Extintores</b>{% if current_user.pode_colaboradores %} e <b>Colaboradores</b>{% endif %}. Os demais tópicos estão em construção.</p>
+<p class="text-muted small">Painel do dia a dia e atalhos do módulo.</p>
+
+{% if resumo %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3"><a href="{{ url_for('almox.relatorio_chaves') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
+    <div class="h4 mb-0 text-warning">{{ resumo.chaves_em_uso }}</div><div class="small text-muted">chaves em uso agora</div></div></a></div>
+  <div class="col-6 col-md-3"><a href="{{ url_for('almox.extintores', situacao='IRREGULAR') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
+    <div class="h4 mb-0 text-danger">{{ resumo.ext_irregular }}</div><div class="small text-muted">extintores irregulares/recarga</div></div></a></div>
+  <div class="col-6 col-md-3"><a href="{{ url_for('almox.extintores', situacao='PROX_VENC') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
+    <div class="h4 mb-0 text-warning">{{ resumo.ext_prox }}</div><div class="small text-muted">extintores a vencer</div></div></a></div>
+  <div class="col-6 col-md-3"><a href="{{ url_for('almox.materiais') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
+    <div class="h4 mb-0 {{ 'text-danger' if resumo.mat_baixo else 'text-success' }}">{{ resumo.mat_baixo }}</div><div class="small text-muted">materiais abaixo do mínimo</div></div></a></div>
+</div>
+{% if resumo.pend_etiqueta %}
+<div class="alert alert-warning py-2"><a href="{{ url_for('almox.pendencias_etiqueta') }}" class="text-decoration-none">🏷 {{ resumo.pend_etiqueta }} pendência(s) de etiqueta de extintor abertas — resolver</a></div>
+{% endif %}
+{% endif %}
 
 <div class="row g-3">
   {% for t in topicos %}

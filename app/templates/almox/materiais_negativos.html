@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Estoque negativo{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.materiais') }}" class="btn btn-sm btn-outline-secondary mb-3">← Material</a>
+<h4 class="mb-1">⚠️ Estoque negativo</h4>
+<p class="text-muted small">O sistema previne saldo negativo nas saídas (desktop e coletor). Se algum item aparecer aqui (ex.: por importação/ajuste), corrija o saldo.</p>
+{% if negativos %}
+<div class="card"><div class="table-responsive">
+<table class="table table-sm mb-0 align-middle">
+  <thead class="table-light"><tr><th>Material</th><th>Saldo</th><th>Corrigir</th></tr></thead>
+  <tbody>
+    {% for p in negativos %}
+    <tr>
+      <td><b>{{ p.nome }}</b></td>
+      <td><span class="badge bg-danger">{{ '%g'|format(p.saldo) }} {{ p.unidade }}</span></td>
+      <td>
+        <form method="post" action="{{ url_for('almox.material_ajuste', pid=p.id) }}" class="d-flex gap-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input name="saldo" class="form-control form-control-sm" style="max-width:120px" type="number" step="any" value="0" required>
+          <input name="obs" class="form-control form-control-sm" placeholder="motivo" value="Correção de estoque negativo">
+          <button class="btn btn-sm btn-primary">Ajustar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% else %}
+<div class="alert alert-success">Nenhum item com estoque negativo. 👍</div>
+{% endif %}
+{% endblock %}

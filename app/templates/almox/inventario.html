@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Inventário de material{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.materiais') }}" class="btn btn-sm btn-outline-secondary mb-3">← Material</a>
+<h4 class="mb-1">🧮 Inventário de material</h4>
+<p class="text-muted small">Digite a quantidade contada de cada item. Deixe em branco os que não vai conferir agora. Ao salvar, o sistema ajusta os saldos diferentes e registra no histórico.</p>
+
+<input id="filtroInv" class="form-control my-2" style="max-width:420px" placeholder="🔎 Filtrar item..." autocomplete="off">
+
+<form method="post" action="{{ url_for('almox.inventario_salvar') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="card mb-3"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle" id="tabelaInv">
+  <thead class="table-light"><tr><th>Material</th><th>Local</th><th>Saldo sistema</th><th>Contado</th><th>Diferença</th></tr></thead>
+  <tbody>
+    {% for p in itens %}
+    <tr>
+      <td><b>{{ p.nome }}</b></td>
+      <td class="small">{{ p.local_nome }}</td>
+      <td class="small" data-saldo="{{ p.saldo or 0 }}">{{ '%g'|format(p.saldo or 0) }} {{ p.unidade }}</td>
+      <td><input name="contado_{{ p.id }}" class="form-control form-control-sm contado" data-saldo="{{ p.saldo or 0 }}" type="number" step="any" style="max-width:110px" placeholder="—"></td>
+      <td class="small dif">—</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-muted text-center py-3">Nenhum material.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+<button class="btn btn-primary">Salvar inventário e ajustar saldos</button>
+</form>
+
+<script>
+(function(){
+  document.querySelectorAll('#tabelaInv tbody tr').forEach(function(tr){
+    var inp=tr.querySelector('.contado'); if(!inp) return;
+    var dif=tr.querySelector('.dif'); var saldo=parseFloat(inp.dataset.saldo||'0');
+    inp.addEventListener('input',function(){
+      if(inp.value===''){ dif.textContent='—'; dif.className='small dif'; return; }
+      var d=parseFloat(inp.value)-saldo;
+      dif.textContent=(d>0?'+':'')+ (Math.round(d*1000)/1000);
+      dif.className='small dif ' + (d===0?'text-muted':(d>0?'text-success':'text-danger'));
+    });
+  });
+  var f=document.getElementById('filtroInv');
+  var linhas=document.querySelectorAll('#tabelaInv tbody tr');
+  function norm(s){return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  f.addEventListener('input',function(){var t=norm(f.value);linhas.forEach(function(tr){tr.style.display=norm(tr.textContent).indexOf(t)>=0?'':'none';});});
+})();
+</script>
+{% endblock %}

@@ -27,19 +27,18 @@
       <td>{% if c.status == 'Disponível' %}<span class="badge bg-success">Disponível</span>{% else %}<span class="badge bg-warning text-dark">Em uso</span>{% endif %}</td>
       <td>{{ c.com_quem or '—' }}</td>
       <td>
-        <form method="post" action="{{ url_for('almox.chave_toggle', cid=c.id) }}" class="d-flex gap-1 justify-content-end">
+        <form method="post" action="{{ url_for('almox.chave_toggle', cid=c.id) }}" class="d-flex gap-1 justify-content-end flex-wrap">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if c.status == 'Disponível' %}
-          <select class="form-select form-select-sm" name="com_quem" style="max-width:220px" required>
-            <option value="">Com quem?</option>
-            {% for col in colabs %}<option value="{{ col.nome }}">{{ col.nome }}</option>{% endfor %}
-          </select>
+          <input list="listaColab" name="com_quem" class="form-control form-control-sm" style="max-width:180px"
+                 placeholder="Nome, CPF ou QR" autocomplete="off" required>
+          <input type="password" name="senha" class="form-control form-control-sm" style="max-width:130px" placeholder="Senha do colab." required>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="biparQR(this)" title="Bipar QR do colaborador">📷</button>
           <button class="btn btn-sm btn-primary">Retirar</button>
           {% else %}
-          <select class="form-select form-select-sm" name="devolvido_por" style="max-width:220px" title="Quem está devolvendo?">
-            {% for col in colabs %}<option value="{{ col.nome }}" {{ 'selected' if col.nome == c.com_quem }}>{{ col.nome }}</option>{% endfor %}
-            {% if c.com_quem and c.com_quem not in colabs|map(attribute='nome')|list %}<option value="{{ c.com_quem }}" selected>{{ c.com_quem }}</option>{% endif %}
-          </select>
+          <input list="listaColab" name="devolvido_por" class="form-control form-control-sm" style="max-width:180px"
+                 value="{{ c.com_quem or '' }}" placeholder="Quem devolve" autocomplete="off">
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="biparQR(this)" title="Bipar QR do colaborador">📷</button>
           <button class="btn btn-sm btn-outline-secondary">Devolver</button>
           {% endif %}
         </form>
@@ -83,6 +82,19 @@
   </div></div>
 </div>
 
+<datalist id="listaColab">
+  {% for col in colabs %}<option value="{{ col.nome }}">{{ col.cpf or '' }}</option>{% endfor %}
+</datalist>
+
+<!-- Modal câmera p/ bipar QR do colaborador -->
+<div class="modal fade" id="modalQR" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Bipar QR do colaborador</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="pararQR()"></button></div>
+  <div class="modal-body"><div id="leitorQR" style="width:100%"></div>
+    <p class="small text-muted mt-2">Aponte a câmera para o QR do crachá. (A câmera exige HTTPS.)</p></div>
+</div></div></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 (function(){
   var inp = document.getElementById('filtroChave');
@@ -90,10 +102,24 @@
   function norm(s){ return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
   inp.addEventListener('input', function(){
     var t = norm(inp.value);
-    linhas.forEach(function(tr){
-      tr.style.display = norm(tr.textContent).indexOf(t) >= 0 ? '' : 'none';
-    });
+    linhas.forEach(function(tr){ tr.style.display = norm(tr.textContent).indexOf(t) >= 0 ? '' : 'none'; });
   });
 })();
+
+var qrScanner=null, alvoInput=null, modalQR=null;
+function biparQR(btn){
+  alvoInput = btn.closest('form').querySelector('input[name="com_quem"], input[name="devolvido_por"]');
+  modalQR = modalQR || new bootstrap.Modal(document.getElementById('modalQR'));
+  modalQR.show();
+  setTimeout(function(){
+    qrScanner = new Html5Qrcode("leitorQR");
+    qrScanner.start({facingMode:"environment"}, {fps:10, qrbox:220}, function(txt){
+      if(alvoInput){ alvoInput.value = txt.indexOf(':')>=0 ? txt.split(':')[1].trim() : txt.trim(); }
+      pararQR(); if(modalQR) modalQR.hide();
+    }, function(){});
+  }, 300);
+}
+function pararQR(){ if(qrScanner){ qrScanner.stop().then(()=>{qrScanner.clear();qrScanner=null;}).catch(()=>{qrScanner=null;}); } }
+document.getElementById('modalQR').addEventListener('hidden.bs.modal', pararQR);
 </script>
 {% endblock %}

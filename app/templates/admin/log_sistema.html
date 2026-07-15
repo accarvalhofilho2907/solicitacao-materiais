@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Log do sistema{% endblock %}
+{% block content %}
+<h4 class="mb-1">🧾 Log do sistema</h4>
+<p class="text-muted small">Histórico de ações registradas (últimos 1000 do filtro). Acesso restrito a administradores.</p>
+
+<form class="row g-2 my-2" method="get">
+  <div class="col-6 col-md-3"><select name="categoria" class="form-select form-select-sm">
+    <option value="">Todas as categorias</option>
+    {% for c in categorias %}<option value="{{ c }}" {{ 'selected' if ctx.categoria==c }}>{{ c }}</option>{% endfor %}
+  </select></div>
+  <div class="col-6 col-md-3"><input name="q" class="form-control form-control-sm" value="{{ ctx.q }}" placeholder="Buscar (detalhe ou autor)"></div>
+  <div class="col-6 col-md-2"><input type="date" name="data_ini" class="form-control form-control-sm" value="{{ ctx.data_ini }}"></div>
+  <div class="col-6 col-md-2"><input type="date" name="data_fim" class="form-control form-control-sm" value="{{ ctx.data_fim }}"></div>
+  <div class="col-auto"><button class="btn btn-sm btn-primary">Filtrar</button></div>
+  <div class="col-auto"><a href="{{ url_for('admin.log_sistema') }}" class="btn btn-sm btn-outline-secondary">Limpar</a></div>
+</form>
+
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Data/Hora</th><th>Categoria</th><th>Detalhe</th><th>Autor</th></tr></thead>
+  <tbody>
+    {% for l in logs %}
+    <tr>
+      <td class="small text-nowrap">{{ l.criado_em.strftime('%d/%m/%y %H:%M') if l.criado_em else '—' }}</td>
+      <td class="small"><span class="badge bg-secondary">{{ l.categoria or '—' }}</span></td>
+      <td class="small">{{ l.detalhe or '' }}</td>
+      <td class="small">{{ l.autor_nome or (l.autor.nome if l.autor else '—') }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-muted text-center py-3">Nenhum registro no filtro.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

@@ -593,7 +593,7 @@ class Colaborador(UserMixin, db.Model):
     @property
     def is_master(self): return False
     @property
-    def is_viewer(self): return False
+    def is_viewer(self): return self._p == "visualizador"
     @property
     def is_almox(self): return self._p == "almoxarifado"
     @property
@@ -631,10 +631,11 @@ class MovimentacaoChave(db.Model):
 
 
 class AlmoxLog(db.Model):
-    """Log de ações do módulo (chaves, extintores, colaboradores)."""
+    """Log de ações do sistema (chaves, extintores, material, colaboradores, compras...)."""
     __tablename__ = "almox_log"
     id = db.Column(db.Integer, primary_key=True)
     autor_id = db.Column(db.ForeignKey("usuarios.id"))
+    autor_nome = db.Column(db.String(160))       # nome do ator (usuário OU colaborador)
     categoria = db.Column(db.String(30))
     detalhe = db.Column(db.String(400))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)

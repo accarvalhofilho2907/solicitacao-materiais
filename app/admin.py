@@ -71,9 +71,14 @@ def _prazo_cotacao():
 
 
 def _log(s, evento):
-    """Registra um evento na linha do tempo da solicitação."""
+    """Registra um evento na linha do tempo da solicitação (e no log do sistema)."""
     db.session.add(LogSolicitacao(solicitacao_id=s.id, evento=evento,
                                   autor_id=current_user.id if current_user.is_authenticated else None))
+    try:
+        from .logsys import registrar as _logsys
+        _logsys("Solicitação", f"#{s.id}: {evento}")
+    except Exception:
+        pass
 
 
 def _link_curto(s):
@@ -846,6 +851,35 @@ def backup():
         headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"})
 
 
+@admin_bp.route("/log-sistema")
+@admin_required
+def log_sistema():
+    from .models import AlmoxLog
+    cat = (request.args.get("categoria") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    di = request.args.get("data_ini") or ""
+    dfim = request.args.get("data_fim") or ""
+    qy = AlmoxLog.query
+    if cat:
+        qy = qy.filter(AlmoxLog.categoria == cat)
+    if q:
+        like = f"%{q.upper()}%"
+        qy = qy.filter(db.func.upper(AlmoxLog.detalhe).like(like) |
+                       db.func.upper(AlmoxLog.autor_nome).like(like))
+    if di:
+        try: qy = qy.filter(AlmoxLog.criado_em >= datetime.strptime(di, "%Y-%m-%d"))
+        except ValueError: pass
+    if dfim:
+        try:
+            fim = datetime.strptime(dfim, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            qy = qy.filter(AlmoxLog.criado_em <= fim)
+        except ValueError: pass
+    logs = qy.order_by(AlmoxLog.criado_em.desc()).limit(1000).all()
+    categorias = sorted({l[0] for l in db.session.query(AlmoxLog.categoria).distinct().all() if l[0]})
+    ctx = dict(categoria=cat, q=q, data_ini=di, data_fim=dfim)
+    return render_template("admin/log_sistema.html", logs=logs, categorias=categorias, ctx=ctx)
+
+
 @admin_bp.route("/cadastros")
 @admin_required
 def cadastros():
@@ -916,6 +950,9 @@ def _registrar_papel(usuario, novo_papel, autor):
 @admin_bp.route("/usuarios", methods=["GET", "POST"])
 @admin_required
 def usuarios():
+    if not current_user.is_master:
+        flash("A tela de Usuários - Antigo é acessível apenas ao Admin Master.", "warning")
+        return redirect(url_for("admin.cadastros"))
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         papel = request.form.get("papel", "solicitante")

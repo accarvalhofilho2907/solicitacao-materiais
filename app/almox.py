@@ -179,7 +179,10 @@ def _guard(prop):
 
 
 def _log(categoria, detalhe):
-    db.session.add(AlmoxLog(autor_id=getattr(current_user, "id", None), categoria=categoria, detalhe=detalhe))
+    from .models import Usuario as _U
+    autor_id = current_user.id if isinstance(current_user, _U) else None
+    db.session.add(AlmoxLog(autor_id=autor_id, autor_nome=getattr(current_user, "nome", None),
+                            categoria=categoria, detalhe=detalhe))
 
 
 def _venc_info(validade):
@@ -263,28 +266,68 @@ def chave_nova():
     return redirect(url_for("almox.chaves"))
 
 
+def _op_id():
+    """id do operador para gravar em operador_id (FK usuarios). None se for colaborador."""
+    from .models import Usuario as _U
+    return current_user.id if isinstance(current_user, _U) else None
+
+
+def _resolver_colaborador(termo):
+    """Acha o colaborador por QR (COL-...), CPF (só dígitos) ou nome. Devolve Colaborador ou None."""
+    t = (termo or "").strip()
+    if not t:
+        return None
+    # QR: 'COLAB:COL-XXXX' ou 'COL-XXXX'
+    uid = t.split(":", 1)[1] if ":" in t else t
+    c = Colaborador.query.filter_by(qr_uid=uid, ativo=True).first()
+    if c:
+        return c
+    # CPF (só dígitos)
+    dig = "".join(ch for ch in t if ch.isdigit())
+    if dig:
+        for col in Colaborador.query.filter(Colaborador.ativo.is_(True)).all():
+            if "".join(ch for ch in (col.cpf or "") if ch.isdigit()) == dig:
+                return col
+    # Nome (exato, ignorando caixa)
+    return Colaborador.query.filter(db.func.upper(Colaborador.nome) == t.upper(),
+                                    Colaborador.ativo.is_(True)).first()
+
+
 @almox_bp.route("/chaves/<int:cid>/toggle", methods=["POST"])
 @_guard("pode_chaves")
 def chave_toggle(cid):
     c = db.session.get(Chave, cid) or abort(404)
     if c.status == "Disponível":
-        nome = (request.form.get("com_quem") or "").strip().upper() or "—"
+        termo = request.form.get("com_quem") or ""
+        colab = _resolver_colaborador(termo)
+        if not colab:
+            flash("Informe quem vai retirar (nome, CPF ou bipe o QR de um colaborador cadastrado).", "danger")
+            return redirect(url_for("almox.chaves"))
+        # Retirada pede a senha do colaborador
+        senha = request.form.get("senha") or ""
+        if not colab.tem_senha:
+            flash(f"{colab.nome} ainda não definiu a senha. Ele define no 1º acesso (login por CPF) ou peça reset.", "warning")
+            return redirect(url_for("almox.chaves"))
+        if not colab.check_senha(senha):
+            flash("Senha do colaborador inválida. Retirada não confirmada.", "danger")
+            return redirect(url_for("almox.chaves"))
         c.status = "Em uso"
-        c.com_quem = nome
-        colab = Colaborador.query.filter(db.func.upper(Colaborador.nome) == nome).first()
+        c.com_quem = colab.nome
         db.session.add(MovimentacaoChave(
             chave_id=c.id, chave_desc=c.descricao, quadro_nome=c.quadro_nome,
-            colaborador_id=(colab.id if colab else None), colaborador_nome=nome,
-            acao="retirada", operador_id=current_user.id))
-        _log("Chave", f"Chave {c.descricao} retirada por {nome}")
+            colaborador_id=colab.id, colaborador_nome=colab.nome,
+            acao="retirada", operador_id=_op_id()))
+        _log("Chave", f"Chave {c.descricao} retirada por {colab.nome}")
     else:
         retirou = c.com_quem or "—"
-        devolvedor = (request.form.get("devolvido_por") or "").strip().upper() or retirou
-        colab = Colaborador.query.filter(db.func.upper(Colaborador.nome) == devolvedor).first()
+        termo = request.form.get("devolvido_por") or ""
+        colab = _resolver_colaborador(termo)
+        devolvedor = colab.nome if colab else (termo.strip().upper() or retirou)
         db.session.add(MovimentacaoChave(
             chave_id=c.id, chave_desc=c.descricao, quadro_nome=c.quadro_nome,
             colaborador_id=(colab.id if colab else None), colaborador_nome=devolvedor,
-            retirado_por=retirou, acao="devolucao", operador_id=current_user.id))
+            retirado_por=retirou, acao="devolucao",
+            operador_id=_op_id()))
         _log("Chave", f"Chave {c.descricao} devolvida por {devolvedor}" +
              (f" (estava com {retirou})" if devolvedor != retirou else ""))
         c.status = "Disponível"
@@ -904,7 +947,9 @@ def extintores_pdf():
 
 # ---------- COLABORADORES ----------
 PAPEIS_COLAB = [("COLABORADOR DIVERSO", "Colaborador diverso"),
+                ("SOLICITANTE", "Solicitante"),
                 ("ALMOXARIFADO", "Almoxarifado"),
+                ("VISUALIZADOR", "Visualizador"),
                 ("ADMIN", "Admin")]
 
 
@@ -1246,8 +1291,7 @@ def _uid_limpo(qr_uid):
 @almox_bp.route("/coletor/api/colaborador/<path:qr_uid>")
 @modulo_required
 def coletor_api_colaborador(qr_uid):
-    uid = _uid_limpo(qr_uid)
-    c = Colaborador.query.filter_by(qr_uid=uid, ativo=True).first()
+    c = _resolver_colaborador(_uid_limpo(qr_uid)) or _resolver_colaborador(qr_uid)
     if not c:
         return jsonify(ok=False, erro="Colaborador não encontrado."), 404
     return jsonify(ok=True, id=c.id, nome=c.nome, tem_senha=c.tem_senha)
@@ -1297,7 +1341,7 @@ def coletor_api_confirmar():
             db.session.add(MovimentacaoChave(chave_id=c.id, chave_desc=c.descricao,
                            quadro_nome=c.quadro_nome, colaborador_id=colab.id,
                            colaborador_nome=colab.nome, acao="retirada",
-                           operador_id=current_user.id))
+                           operador_id=_op_id()))
             feitas.append(f"Retirou {c.descricao}")
         elif acao == "devolver" and c.status == "Em uso":
             retirou = c.com_quem or "—"
@@ -1306,7 +1350,7 @@ def coletor_api_confirmar():
             db.session.add(MovimentacaoChave(chave_id=c.id, chave_desc=c.descricao,
                            quadro_nome=c.quadro_nome, colaborador_id=colab.id,
                            colaborador_nome=colab.nome, retirado_por=retirou,
-                           acao="devolucao", operador_id=current_user.id))
+                           acao="devolucao", operador_id=_op_id()))
             feitas.append(f"Devolveu {c.descricao}")
     _log("Coletor", f"{colab.nome}: " + "; ".join(feitas) if feitas else f"{colab.nome}: sem ações válidas")
     db.session.commit()
@@ -1355,7 +1399,7 @@ def material_novo():
     db.session.flush()
     if p.saldo:
         db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="entrada",
-                       quantidade=p.saldo, saldo_apos=p.saldo, operador_id=current_user.id,
+                       quantidade=p.saldo, saldo_apos=p.saldo, operador_id=_op_id(),
                        obs="Saldo inicial de cadastro"))
     _log("Material", f"Material cadastrado: {p.nome} (saldo {p.saldo} {p.unidade})")
     db.session.commit()
@@ -1410,7 +1454,7 @@ def material_mover(pid):
     p.local_id = destino.id
     db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="movimentacao",
                    quantidade=0, saldo_apos=p.saldo, local_de=de, local_para=destino.nome,
-                   operador_id=current_user.id, obs=(request.form.get("obs") or "").strip()))
+                   operador_id=_op_id(), obs=(request.form.get("obs") or "").strip()))
     _log("Material", f"{p.nome}: movido de {de} para {destino.nome}")
     db.session.commit()
     flash(f"{p.nome} movido para {destino.nome}.", "success")
@@ -1427,7 +1471,7 @@ def material_entrada(pid):
         return redirect(url_for("almox.materiais"))
     p.saldo = (p.saldo or 0) + qtd
     db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="entrada",
-                   quantidade=qtd, saldo_apos=p.saldo, operador_id=current_user.id,
+                   quantidade=qtd, saldo_apos=p.saldo, operador_id=_op_id(),
                    obs=(request.form.get("obs") or "").strip()))
     _log("Material", f"Entrada {qtd} {p.unidade} de {p.nome} (saldo {p.saldo})")
     db.session.commit()
@@ -1453,7 +1497,7 @@ def material_saida(pid):
     p.saldo = (p.saldo or 0) - qtd
     db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="saida",
                    quantidade=qtd, saldo_apos=p.saldo, colaborador_id=(colab.id if colab else None),
-                   colaborador_nome=(nome or None), operador_id=current_user.id,
+                   colaborador_nome=(nome or None), operador_id=_op_id(),
                    obs=(request.form.get("obs") or "").strip()))
     _log("Material", f"Saída {qtd} {p.unidade} de {p.nome} p/ {nome or '—'} (saldo {p.saldo})")
     db.session.commit()
@@ -1469,7 +1513,7 @@ def material_ajuste(pid):
     antigo = p.saldo or 0
     p.saldo = novo
     db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="ajuste",
-                   quantidade=novo - antigo, saldo_apos=novo, operador_id=current_user.id,
+                   quantidade=novo - antigo, saldo_apos=novo, operador_id=_op_id(),
                    obs=(request.form.get("obs") or f"Ajuste de {antigo:g} para {novo:g}").strip()))
     _log("Material", f"Ajuste de saldo {p.nome}: {antigo:g} → {novo:g}")
     db.session.commit()
@@ -1655,7 +1699,7 @@ def coletor_api_material_saida():
         p.saldo = (p.saldo or 0) - q
         db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="saida",
                        quantidade=q, saldo_apos=p.saldo, colaborador_id=colab.id,
-                       colaborador_nome=colab.nome, operador_id=current_user.id, obs="Coletor"))
+                       colaborador_nome=colab.nome, operador_id=_op_id(), obs="Coletor"))
         feitas.append(f"{q:g} {p.unidade} de {p.nome}")
     _log("Coletor", f"{colab.nome}: saída de material — " + "; ".join(feitas))
     db.session.commit()
@@ -1693,7 +1737,7 @@ def coletor_api_mover():
     p.local_id = destino.id
     db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="movimentacao",
                    quantidade=0, saldo_apos=p.saldo, local_de=de, local_para=destino.nome,
-                   operador_id=current_user.id, obs="Coletor"))
+                   operador_id=_op_id(), obs="Coletor"))
     _log("Coletor", f"{p.nome}: movido de {de} para {destino.nome}")
     db.session.commit()
     return jsonify(ok=True, resumo=[f"{p.nome}: {de} → {destino.nome}"])
@@ -1721,7 +1765,7 @@ def inventario_salvar():
             dif = contado - (p.saldo or 0)
             p.saldo = contado
             db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="inventario",
-                           quantidade=dif, saldo_apos=contado, operador_id=current_user.id,
+                           quantidade=dif, saldo_apos=contado, operador_id=_op_id(),
                            obs="Inventário (conferência)"))
             ajustados += 1
     _log("Material", f"Inventário aplicado: {ajustados} item(ns) ajustado(s)")
@@ -1745,7 +1789,7 @@ def coletor_api_inventario():
     dif = contado - antigo
     p.saldo = contado
     db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="inventario",
-                   quantidade=dif, saldo_apos=contado, operador_id=current_user.id, obs="Inventário (coletor)"))
+                   quantidade=dif, saldo_apos=contado, operador_id=_op_id(), obs="Inventário (coletor)"))
     _log("Coletor", f"Inventário {p.nome}: {antigo:g} → {contado:g}")
     db.session.commit()
     return jsonify(ok=True, resumo=[f"{p.nome}: {antigo:g} → {contado:g}"], nome=p.nome,

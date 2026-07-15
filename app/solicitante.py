@@ -82,6 +82,11 @@ def nova():
                 db.session.add(Imagem(solicitacao_id=s.id, url=url))
         db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=current_user.id,
                                       evento="Solicitação criada (aguardando aprovação)"))
+        try:
+            from .logsys import registrar as _logsys
+            _logsys("Solicitação", f"#{s.id}: criada — {s.material} (qtd {s.quantidade})")
+        except Exception:
+            pass
         db.session.commit()
         enviar_email(current_app.config.get("ADMIN_EMAIL"),
                      f"Nova solicitação Nº {s.id} (aguardando aprovação)",

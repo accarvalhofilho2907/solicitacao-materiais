@@ -14,7 +14,7 @@
 
 <div class="row g-3">
   {% set itens = [
-    ('Usuários','admin.usuarios','Solicitantes, almoxarifado, visualização e administradores'),
+    ('Colaboradores','almox.colaboradores','Cadastro de pessoas (CPF, e-mail, cargo, empresa, papel) — login por CPF'),
     ('Empresas','admin.empresas','Empresas vinculadas aos usuários'),
     ('Tipos de material','admin.tipos','Categorias das solicitações e fornecedores'),
     ('Fornecedores','admin.fornecedores','Razão social, contato, WhatsApp e tipos'),
@@ -28,6 +28,18 @@
   </div></a></div>
   {% endfor %}
 </div>
+
+{% if current_user.is_master %}
+<hr class="my-4">
+<p class="small text-muted mb-2">Em desuso (só o Admin Master):</p>
+<div class="row g-3">
+  <div class="col-md-4"><a class="card cad-card h-100 text-decoration-none" href="{{ url_for('admin.usuarios') }}" style="opacity:.7">
+    <div class="card-body">
+      <h6 class="mb-1">Usuários - Antigo</h6>
+      <p class="small text-muted mb-0">Base antiga de login por e-mail. Mantida só para transição; cadastre novas pessoas em Colaboradores.</p>
+    </div></a></div>
+</div>
+{% endif %}
 
 <style>
   .cad-card{ transition:transform .1s, box-shadow .1s, border-color .1s; border:1px solid var(--linha); }

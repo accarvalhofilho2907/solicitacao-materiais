@@ -3,7 +3,7 @@
 {% block content %}
 {% if campo %}
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <span class="small text-muted">{% if ator_colab %}Inspecionando como <b>{{ ator_colab.nome }}</b>{% elif current_user.is_authenticated %}Logado como <b>{{ current_user.nome }}</b>{% endif %}</span>
+    <span class="small text-muted">{% if ator_colab %}Como <b>{{ ator_colab.nome }}</b>{% elif current_user.is_authenticated %}Como <b>{{ current_user.nome }}</b>{% endif %}</span>
     {% if ator_colab %}<a href="{{ url_for('almox.extintor_campo_sair', qr_uid=e.qr_uid) }}" class="btn btn-sm btn-outline-secondary">Sair</a>{% endif %}
   </div>
 {% else %}
@@ -16,6 +16,12 @@
       <h4 class="mb-1">🧯 {{ e.codigo or 'Extintor' }} <span class="badge bg-{{ sit_cls }}">{{ sit_lbl }}</span></h4>
       <div class="small text-muted">QR: {{ e.qr_uid or '—' }}</div>
     </div>
+    {% if pode_gerir and not campo %}
+    <form method="post" action="{{ url_for('almox.extintor_desativar', eid=e.id) }}" onsubmit="return confirm('Desativar este extintor?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-outline-danger">Desativar</button>
+    </form>
+    {% endif %}
   </div>
   <div class="row g-2 mt-2 small">
     <div class="col-6 col-md-3"><b>Prédio:</b> {{ e.predio or '—' }}</div>
@@ -29,137 +35,161 @@
   </div>
 </div></div>
 
-{% macro campo_quem() %}
-  {% if current_user.is_authenticated %}
-  <div class="mb-2"><label class="form-label small">Responsável (colaborador). Em branco = você ({{ current_user.nome }}).</label>
-    <input class="form-control form-control-sm" name="colaborador_nome" placeholder="Nome do colaborador (opcional)"></div>
-  {% endif %}
-{% endmacro %}
-
-{% macro checklist(prefixo) %}
-  {% for item in check %}
+{% macro checklist(prefixo, itens) %}
+  {% for item in itens %}
+  {% set idx = check.index(item) %}
   <div class="d-flex justify-content-between align-items-center border-bottom py-1">
     <span class="small">{{ loop.index }}. {{ item }}</span>
     <div class="btn-group btn-group-sm" role="group">
-      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="{{ prefixo }}_{{ loop.index0 }}_ok" value="ok" checked>
-      <label class="btn btn-outline-success" for="{{ prefixo }}_{{ loop.index0 }}_ok">OK</label>
-      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="{{ prefixo }}_{{ loop.index0 }}_nok" value="nok">
-      <label class="btn btn-outline-danger" for="{{ prefixo }}_{{ loop.index0 }}_nok">Não</label>
-      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="{{ prefixo }}_{{ loop.index0 }}_na" value="na">
-      <label class="btn btn-outline-secondary" for="{{ prefixo }}_{{ loop.index0 }}_na">N/A</label>
+      <input type="radio" class="btn-check" name="item_{{ idx }}" id="{{ prefixo }}_{{ idx }}_ok" value="ok">
+      <label class="btn btn-outline-success" for="{{ prefixo }}_{{ idx }}_ok">OK</label>
+      <input type="radio" class="btn-check" name="item_{{ idx }}" id="{{ prefixo }}_{{ idx }}_nok" value="nok">
+      <label class="btn btn-outline-danger" for="{{ prefixo }}_{{ idx }}_nok">Não</label>
+      <input type="radio" class="btn-check" name="item_{{ idx }}" id="{{ prefixo }}_{{ idx }}_na" value="na">
+      <label class="btn btn-outline-secondary" for="{{ prefixo }}_{{ idx }}_na">N/A</label>
     </div>
   </div>
   {% endfor %}
 {% endmacro %}
 
-{% macro item_etiqueta_bloco() %}
-  <div class="alert alert-warning py-2 mt-2 mb-0">
-    <div class="small fw-bold mb-1">{{ item_etiqueta }}</div>
+{% macro item_etiqueta_bloco(prefixo) %}
+  <div class="d-flex justify-content-between align-items-center py-2 mt-1">
+    <span class="small fw-bold">{{ item_etiqueta }}</span>
     <div class="btn-group btn-group-sm" role="group">
-      <input type="radio" class="btn-check" name="etiqueta_ok" id="et_sim" value="sim" checked>
-      <label class="btn btn-outline-success" for="et_sim">Sim</label>
-      <input type="radio" class="btn-check" name="etiqueta_ok" id="et_nao" value="nao">
-      <label class="btn btn-outline-danger" for="et_nao">Não (abre pendência)</label>
+      <input type="radio" class="btn-check" name="item_etiqueta" id="{{ prefixo }}_et_ok" value="ok">
+      <label class="btn btn-outline-success" for="{{ prefixo }}_et_ok">OK</label>
+      <input type="radio" class="btn-check" name="item_etiqueta" id="{{ prefixo }}_et_nok" value="nok">
+      <label class="btn btn-outline-danger" for="{{ prefixo }}_et_nok">Não</label>
+      <input type="radio" class="btn-check" name="item_etiqueta" id="{{ prefixo }}_et_na" value="na">
+      <label class="btn btn-outline-secondary" for="{{ prefixo }}_et_na">N/A</label>
     </div>
   </div>
 {% endmacro %}
 
+{% macro selects_validade() %}
+  <div class="row g-2">
+    <div class="col-6"><label class="form-label small">Validade carga</label>
+      <div class="d-flex gap-1">
+        <select name="mes_validade" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
+        <select name="ano_validade" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+      </div></div>
+    <div class="col-6"><label class="form-label small">Teste hidrostático</label>
+      <div class="d-flex gap-1">
+        <select name="mes_th" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
+        <select name="ano_th" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+      </div></div>
+  </div>
+{% endmacro %}
+
 <div class="row g-3">
-  {# ---- Estados operacionais determinam as ações disponíveis ---- #}
-  {% if sit_k in ['NO_PRAZO','PROX_VENC','VENCIDO','IRREGULAR'] %}
-  <div class="col-md-6"><div class="card h-100"><div class="card-body">
-    <h6>Inspecionar</h6>
-    <form method="post" action="{{ url_for('almox.extintor_inspecionar', eid=e.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {{ campo_quem() }}
-      {{ checklist('insp') }}
-      <div class="mt-2"><textarea class="form-control form-control-sm" name="obs" rows="2" placeholder="Observações (opcional)"></textarea></div>
-      <button class="btn btn-primary btn-sm mt-2">Registrar inspeção</button>
-    </form>
-  </div></div></div>
+  {# ------- Escolha inicial: Inspeção ou Reposição ------- #}
+  {% if sit_k in ['NO_PRAZO','PROX_VENC','ATENCAO'] %}
+  <div class="col-12">
+    <div class="card"><div class="card-body">
+      <h6 class="mb-2">O que deseja fazer?</h6>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-primary" type="button" onclick="mostra('formInsp')">Fazer inspeção</button>
+        <button class="btn btn-outline-primary" type="button" onclick="mostra('formRepo')">Fazer reposição (troca programada)</button>
+      </div>
+
+      <form method="post" id="formInsp" action="{{ url_for('almox.extintor_inspecionar', eid=e.id) }}" class="mt-3" style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <h6 class="small text-muted">Inspeção — marque cada item</h6>
+        {{ checklist('insp', check) }}
+        {{ item_etiqueta_bloco('insp') }}
+        <textarea class="form-control form-control-sm mt-2" name="obs" rows="2" placeholder="Observações (opcional)"></textarea>
+        <button class="btn btn-primary btn-sm mt-2">Registrar inspeção</button>
+      </form>
+
+      <form method="post" id="formRepo" action="{{ url_for('almox.extintor_reposicao', eid=e.id) }}" class="mt-3" style="display:none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <h6 class="small text-muted">Reposição (troca) — checklist do NOVO extintor + nova validade</h6>
+        {{ checklist('repo', check) }}
+        {{ item_etiqueta_bloco('repo') }}
+        <div class="mt-2">{{ selects_validade() }}</div>
+        <button class="btn btn-success btn-sm mt-2">Confirmar reposição</button>
+      </form>
+    </div></div>
+  </div>
   {% endif %}
 
-  {% if sit_k in ['VENCIDO','IRREGULAR'] %}
+  {# ------- Irregular/Vencido: só "Levado ao Almox D6" ------- #}
+  {% if sit_k in ['IRREGULAR','VENCIDO'] %}
   <div class="col-md-6"><div class="card h-100"><div class="card-body">
-    <h6>Regularizar</h6>
-    <p class="small text-muted">Escolha o que foi feito com o extintor irregular.</p>
-    <form method="post" action="{{ url_for('almox.extintor_regularizar', eid=e.id) }}" class="mb-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="acao" value="levado_d6">
-      {{ campo_quem() }}
-      <button class="btn btn-outline-info btn-sm">Levado ao Almox D6 (recarga)</button>
-    </form>
-    <hr>
+    <h6>Extintor irregular</h6>
+    <p class="small text-muted">Regularize levando ao Almox D6 para recarga. O responsável é você — não precisa digitar nome.</p>
     <form method="post" action="{{ url_for('almox.extintor_regularizar', eid=e.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="acao" value="reposto_local">
-      <div class="small fw-bold mb-1">Reposto no local (refazer checklist):</div>
-      {{ checklist('rep') }}
-      {{ item_etiqueta_bloco() }}
-      <button class="btn btn-success btn-sm mt-2">Confirmar reposição no local</button>
+      <button class="btn btn-info">Levado ao Almox D6 p/ Recarga</button>
     </form>
   </div></div></div>
   {% endif %}
 
+  {# ------- Em recarga: conferência do almoxarifado no retorno ------- #}
   {% if sit_k == 'EM_RECARGA' and pode_gerir %}
   <div class="col-md-6"><div class="card h-100"><div class="card-body">
-    <h6>Conferir no Almoxarifado</h6>
-    <p class="small text-muted">Voltou da recarga. Confira e marque a etiqueta QR. Fica Pronto p/ reposição.</p>
+    <h6>Conferência do Almoxarifado (retorno)</h6>
+    <p class="small text-muted">Extintor voltou da recarga. Confira e marque a etiqueta. Fica Pronto p/ reposição.</p>
     <form method="post" action="{{ url_for('almox.extintor_conferir', eid=e.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {{ campo_quem() }}
-      {{ checklist('conf') }}
-      {{ item_etiqueta_bloco() }}
+      {{ checklist('conf', check_retorno) }}
+      {{ item_etiqueta_bloco('conf') }}
       <button class="btn btn-primary btn-sm mt-2">Marcar Pronto p/ reposição</button>
     </form>
   </div></div></div>
   {% endif %}
 
+  {# ------- Pronto p/ reposição: repor com nova validade ------- #}
   {% if sit_k == 'PRONTO_REPO' and pode_gerir %}
   <div class="col-md-6"><div class="card h-100"><div class="card-body">
     <h6>Repor no local</h6>
     <p class="small text-muted">Informe a nova validade da carga e/ou do teste hidrostático.</p>
     <form method="post" action="{{ url_for('almox.extintor_repor', eid=e.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {{ campo_quem() }}
-      <div class="row g-2">
-        <div class="col-6"><label class="form-label small">Validade carga</label>
-          <div class="d-flex gap-1">
-            <select name="mes_validade" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
-            <select name="ano_validade" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
-          </div>
-        </div>
-        <div class="col-6"><label class="form-label small">Teste hidrostático</label>
-          <div class="d-flex gap-1">
-            <select name="mes_th" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
-            <select name="ano_th" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
-          </div>
-        </div>
-      </div>
+      {{ selects_validade() }}
       <button class="btn btn-success btn-sm mt-2">Concluir reposição</button>
     </form>
   </div></div></div>
   {% endif %}
 
+  {# ------- Histórico clicável ------- #}
   <div class="col-md-6"><div class="card h-100"><div class="card-body">
     <h6>Histórico</h6>
-    <div class="table-responsive" style="max-height:360px;overflow:auto">
-    <table class="table table-sm mb-0 align-middle">
-      <thead class="table-light"><tr><th>Quando</th><th>O quê</th><th>Result.</th><th>Por</th></tr></thead>
-      <tbody>
-        {% for h in hist %}
-        <tr>
-          <td class="small">{{ h.criado_em.strftime('%d/%m/%y %H:%M') if h.criado_em else '—' }}</td>
-          <td class="small">{{ h.tipo }}</td>
-          <td>{% if h.resultado=='conforme' %}<span class="badge bg-success">conforme</span>{% elif h.resultado=='irregular' %}<span class="badge bg-danger">irregular</span>{% else %}—{% endif %}</td>
-          <td class="small">{{ h.colaborador_nome or '—' }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="text-muted text-center py-3">Sem registros ainda.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="accordion" id="histAcc">
+    {% for reg in hist %}
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed py-2 small" type="button" data-bs-toggle="collapse" data-bs-target="#h{{ reg.h.id }}">
+            {{ reg.h.criado_em.strftime('%d/%m/%y %H:%M') if reg.h.criado_em else '—' }} · {{ reg.h.tipo }}
+            {% if reg.h.resultado=='conforme' %}<span class="badge bg-success ms-2">conforme</span>{% elif reg.h.resultado=='irregular' %}<span class="badge bg-danger ms-2">irregular</span>{% endif %}
+          </button>
+        </h2>
+        <div id="h{{ reg.h.id }}" class="accordion-collapse collapse" data-bs-parent="#histAcc">
+          <div class="accordion-body small">
+            <div class="text-muted mb-1">Por: {{ reg.h.colaborador_nome or '—' }}</div>
+            {% if reg.itens %}
+              {% for nome_item, val in reg.itens.items() %}
+              <div class="d-flex justify-content-between border-bottom py-1">
+                <span>{{ nome_item }}</span>
+                <span class="badge bg-{{ 'success' if val=='ok' else ('danger' if val=='nok' else 'secondary') }}">{{ {'ok':'OK','nok':'Não','na':'N/A'}.get(val, val) }}</span>
+              </div>
+              {% endfor %}
+            {% else %}<div class="text-muted">Sem checklist neste registro.</div>{% endif %}
+            {% if reg.h.obs %}<div class="mt-1"><b>Obs:</b> {{ reg.h.obs }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="text-muted small py-2">Sem registros ainda.</div>
+    {% endfor %}
     </div>
   </div></div></div>
 </div>
+
+<script>
+function mostra(id){
+  document.getElementById('formInsp').style.display = (id==='formInsp')?'block':'none';
+  document.getElementById('formRepo').style.display = (id==='formRepo')?'block':'none';
+}
+</script>
 {% endblock %}

@@ -149,14 +149,15 @@
 
       <div class="dropdown bell-wrap">
         <a class="nav-link" href="#" data-bs-toggle="dropdown" title="Notificações">
-          🔔{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}
+          🔔{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) + (n_pend_extintor or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}
         </a>
         <ul class="dropdown-menu dropdown-menu-end" style="min-width:260px;">
           <li><h6 class="dropdown-header">Pendências com você</h6></li>
           {% if n_aprovacoes %}<li><a class="dropdown-item" href="{{ url_for('admin.aprovacoes') }}">📋 {{ n_aprovacoes }} aprovação(ões) pendente(s)</a></li>{% endif %}
           {% if n_cotacao %}<li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">💬 {{ n_cotacao }} cotação(ões) para enviar</a></li>{% endif %}
           {% if n_cadastros_incompletos %}<li><a class="dropdown-item" href="{{ url_for('admin.fornecedores', incompletos='1') }}">🏢 {{ n_cadastros_incompletos }} cadastro(s) sem CNPJ — completar</a></li>{% endif %}
-          {% if not n_aprovacoes and not n_cotacao and not n_cadastros_incompletos %}<li><span class="dropdown-item-text text-muted small">Nenhuma pendência agora 🎉</span></li>{% endif %}
+          {% if n_pend_extintor %}<li><a class="dropdown-item" href="{{ url_for('almox.pendencias_etiqueta') }}">🧯 {{ n_pend_extintor }} extintor(es) em pendência (irregular/atenção/recarga)</a></li>{% endif %}
+          {% if not n_aprovacoes and not n_cotacao and not n_cadastros_incompletos and not n_pend_extintor %}<li><span class="dropdown-item-text text-muted small">Nenhuma pendência agora 🎉</span></li>{% endif %}
         </ul>
       </div>
 

@@ -65,6 +65,7 @@ class Usuario(UserMixin, db.Model):
 
     def set_senha(self, s): self.senha_hash = generate_password_hash(s)
     def check_senha(self, s): return check_password_hash(self.senha_hash, s)
+    def get_id(self): return f"U:{self.id}"
     @property
     def is_admin(self): return self.papel == "admin"
 
@@ -497,7 +498,7 @@ CHECK_EXTINTOR = [
     "Validade da carga vigente",
     "Teste hidrostático dentro do prazo",
 ]
-ITEM_ETIQUETA_EXTINTOR = "Colada a etiqueta QR Code?"
+ITEM_ETIQUETA_EXTINTOR = "Etiqueta grudada e em bom estado?"
 
 
 # Tarefas que um Papel de colaborador de campo pode ter (a "caixinha").
@@ -544,17 +545,19 @@ class PapelColaborador(db.Model):
         return [TAREFAS_DICT.get(t, t) for t in self.lista_tarefas]
 
 
-class Colaborador(db.Model):
+class Colaborador(UserMixin, db.Model):
     __tablename__ = "almox_colaboradores"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(160), nullable=False)
     cpf = db.Column(db.String(20))
+    email = db.Column(db.String(180))        # opcional — permite login por e-mail também
     empresa = db.Column(db.String(160))
     funcao = db.Column(db.String(120))       # legado — mantido; "cargo" é o campo novo
     cargo = db.Column(db.String(120))
     papel = db.Column(db.String(120), default="COLABORADOR DIVERSO")
     qr_uid = db.Column(db.String(20), unique=True)
-    senha_hash = db.Column(db.String(255))   # senha de confirmação (coletor) e login do extintor
+    senha_hash = db.Column(db.String(255))   # senha de confirmação (coletor), login do extintor e do sistema
+    tema_preferido = db.Column(db.String(10), default="escuro")
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -565,6 +568,34 @@ class Colaborador(db.Model):
     def tem_senha(self): return bool(self.senha_hash)
     @property
     def cargo_exib(self): return self.cargo or self.funcao or "—"
+
+    # ---- Login no sistema: get_id prefixado p/ conviver com Usuario ----
+    def get_id(self): return f"C:{self.id}"
+
+    # ---- Camada de compatibilidade (para as telas não quebrarem) ----
+    @property
+    def is_admin(self): return False
+    @property
+    def is_master(self): return False
+    @property
+    def is_viewer(self): return False
+    @property
+    def is_almox(self): return (self.papel or "").strip().lower() == "almoxarifado"
+    @property
+    def pode_solicitar(self): return True
+    @property
+    def senha_temporaria(self): return False
+    @property
+    def _papel_modulo(self): return (self.papel or "").strip().lower() in ("admin", "almoxarifado")
+    @property
+    def pode_almox_modulo(self): return self._papel_modulo
+    @property
+    def pode_chaves(self): return self._papel_modulo
+    @property
+    def pode_extintores(self): return self._papel_modulo
+    @property
+    def pode_colaboradores(self): return self._papel_modulo
+    def pode_gerir(self, alvo): return False
 
 
 class MovimentacaoChave(db.Model):

@@ -289,7 +289,17 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(uid):
-        return db.session.get(Usuario, int(uid))
+        from .models import Colaborador
+        s = str(uid)
+        if s.startswith("C:"):
+            return db.session.get(Colaborador, int(s[2:]))
+        if s.startswith("U:"):
+            return db.session.get(Usuario, int(s[2:]))
+        # sessões antigas (sem prefixo) = Usuario
+        try:
+            return db.session.get(Usuario, int(s))
+        except (TypeError, ValueError):
+            return None
 
     from .auth import auth_bp
     from .solicitante import sol_bp
@@ -348,6 +358,23 @@ def create_app():
                     .count())
             except Exception:
                 ctx["n_cadastros_incompletos"] = 0
+        return ctx
+
+    @app.context_processor
+    def inject_pendencias_extintor():
+        ctx = {"n_pend_extintor": 0}
+        from flask_login import current_user
+        try:
+            if current_user.is_authenticated and getattr(current_user, "pode_extintores", False):
+                from .models import Extintor, PendenciaEtiqueta
+                irregulares = Extintor.query.filter(
+                    Extintor.ativo.is_(True),
+                    Extintor.situacao.in_(["IRREGULAR", "ATENCAO", "EM_RECARGA", "PRONTO_REPO"])).count()
+                etiqueta = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
+                ctx["n_pend_extintor"] = irregulares
+                ctx["n_pend_etiqueta"] = etiqueta
+        except Exception:
+            pass
         return ctx
 
     with app.app_context():

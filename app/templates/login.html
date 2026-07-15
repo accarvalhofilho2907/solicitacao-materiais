@@ -8,14 +8,22 @@
         <form method="post">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
-            <label class="form-label">E-mail</label>
-            <input type="email" name="email" class="form-control" required autofocus>
+            <label class="form-label">CPF ou e-mail</label>
+            <input type="text" name="email" class="form-control" value="{{ ident or '' }}" required autofocus>
+            <div class="form-text">Use seu CPF (só números) ou o e-mail cadastrado.</div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Senha</label>
+            <label class="form-label">{{ 'Crie sua senha (1º acesso)' if definir else 'Senha' }}</label>
             <input type="password" name="senha" class="form-control" required>
           </div>
-          <button class="btn btn-primary w-100">Entrar</button>
+          {% if definir %}
+          <div class="mb-3">
+            <label class="form-label">Confirmar senha</label>
+            <input type="password" name="confirma" class="form-control" required>
+            <div class="form-text">Primeiro acesso: defina uma senha (mín. 4 dígitos). Ela vale também no coletor e no extintor.</div>
+          </div>
+          {% endif %}
+          <button class="btn btn-primary w-100">{{ 'Definir senha e entrar' if definir else 'Entrar' }}</button>
         </form>
       </div>
     </div>

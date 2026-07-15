@@ -354,7 +354,8 @@ SITUACAO_LABEL = {
     "NO_PRAZO": ("No prazo", "success"),
     "PROX_VENC": ("Próximo do vencimento", "warning"),
     "VENCIDO": ("Irregular / Vencido", "danger"),
-    "IRREGULAR": ("Irregular", "danger"),
+    "IRREGULAR": ("Irregular / Vencido", "danger"),
+    "ATENCAO": ("Atenção (etiqueta)", "info"),
     "EM_RECARGA": ("Em recarga", "info"),
     "PRONTO_REPO": ("Pronto p/ reposição", "primary"),
 }
@@ -373,13 +374,11 @@ def _meses_ate(d):
 
 
 def _situacao_extintor(e):
-    """Espelha o ciclo do protótipo. Estados operacionais (IRREGULAR/EM_RECARGA/
-    PRONTO_REPO) vêm gravados em e.situacao; NO_PRAZO deriva PROX/VENCIDO das datas
-    (carga E teste hidrostático). Próximo do vencimento = na competência anterior."""
+    """Ciclo do extintor. Estados operacionais gravados em e.situacao
+    (IRREGULAR/ATENCAO/EM_RECARGA/PRONTO_REPO); NO_PRAZO deriva PROX/VENCIDO das datas."""
     s = e.situacao or "NO_PRAZO"
-    if s in ("EM_RECARGA", "PRONTO_REPO", "IRREGULAR"):
+    if s in ("EM_RECARGA", "PRONTO_REPO", "IRREGULAR", "ATENCAO"):
         return (s,) + SITUACAO_LABEL[s]
-    # NO_PRAZO: checa validade da carga e do teste hidrostático
     piores = []
     for d in (e.validade, e.teste_hidrostatico):
         m = _meses_ate(d)
@@ -486,139 +485,173 @@ def extintores():
 @almox_bp.route("/extintores/<int:eid>")
 @_ext_acesso
 def extintor_ficha(eid):
+    import json as _json
     e = db.session.get(Extintor, eid) or abort(404)
     k, lbl, cls = _situacao_extintor(e)
-    hist = (InspecaoExtintor.query.filter_by(extintor_id=e.id)
-            .order_by(InspecaoExtintor.criado_em.desc()).limit(20).all())
+    hist_raw = (InspecaoExtintor.query.filter_by(extintor_id=e.id)
+                .order_by(InspecaoExtintor.criado_em.desc()).limit(30).all())
+    hist = []
+    for h in hist_raw:
+        try:
+            itens = _json.loads(h.itens_json) if h.itens_json else {}
+        except Exception:
+            itens = {}
+        hist.append({"h": h, "itens": itens})
     colab = _colab_sessao() if not current_user.is_authenticated else None
+    # itens do checklist de retorno (almox) = sem "Acesso e sinalização"
+    check_retorno = [c for c in CHECK_EXTINTOR if not c.lower().startswith("acesso")]
     return render_template("almox/extintor_ficha.html", e=e, sit_k=k, sit_lbl=lbl, sit_cls=cls,
-                           check=CHECK_EXTINTOR, item_etiqueta=ITEM_ETIQUETA_EXTINTOR,
+                           check=CHECK_EXTINTOR, check_retorno=check_retorno,
+                           item_etiqueta=ITEM_ETIQUETA_EXTINTOR,
                            hist=hist, competencia=_competencia, meses=MESES_PT,
                            anos=_anos_range(), pode_gerir=_pode_gerir_ext(),
-                           campo=False, ator_colab=colab)
+                           campo=(not current_user.is_authenticated), ator_colab=colab)
 
 
 def _coletar_checklist(form):
-    """Lê o checklist do formulário. Devolve (itens_dict, tudo_conforme)."""
+    """Lê o checklist. Devolve (itens_dict, core_nok, etiqueta_nok).
+    O item da etiqueta é separado (regra especial de 'Atenção')."""
     itens = {}
-    tudo_ok = True
+    core_nok = False
     for i, item in enumerate(CHECK_EXTINTOR):
-        v = form.get(f"item_{i}", "na")   # ok | nok | na
+        v = form.get(f"item_{i}")
+        if v is None:
+            continue                      # item não exibido nesse checklist (ex.: retorno)
         itens[item] = v
         if v == "nok":
-            tudo_ok = False
-    return itens, tudo_ok
-
+            core_nok = True
+    et = form.get("item_etiqueta", "na")
+    itens[ITEM_ETIQUETA_EXTINTOR] = et
+    return itens, core_nok, (et == "nok")
 
 
 def _quem(form):
-    """Nome de quem operou. Prioridade: colaborador de campo (sessão) > nome informado > usuário logado."""
+    """Quem operou: colaborador de campo (sessão) ou o usuário logado. Não usa mais campo de texto."""
     colab = _colab_sessao()
     if colab and not current_user.is_authenticated:
         return colab.nome, colab.id
-    nome = (form.get("colaborador_nome") or "").strip().upper()
-    if nome:
-        c = Colaborador.query.filter(db.func.upper(Colaborador.nome) == nome).first()
-        return nome, (c.id if c else None)
     if current_user.is_authenticated:
         return current_user.nome, None
     return ("—", None)
 
 
+def _aplicar_resultado(e, core_nok, et_nok, nome):
+    """Define a situação do extintor conforme o checklist e trata pendências."""
+    if core_nok:
+        e.situacao = "IRREGULAR"          # regularização pendente até voltar ao local
+        return "irregular"
+    if et_nok:
+        e.situacao = "ATENCAO"            # segue em uso; só pendência de etiqueta
+        if not PendenciaEtiqueta.query.filter_by(extintor_id=e.id, resolvida=False).first():
+            db.session.add(PendenciaEtiqueta(extintor_id=e.id, extintor_cod=e.codigo,
+                           predio=e.predio, local=e.local, aberta_por=nome))
+        return "irregular"
+    e.situacao = "NO_PRAZO"
+    return "conforme"
+
+
 @almox_bp.route("/extintores/<int:eid>/inspecionar", methods=["POST"])
 @_ext_acesso
 def extintor_inspecionar(eid):
+    import json as _json
     e = db.session.get(Extintor, eid) or abort(404)
-    itens, tudo_ok = _coletar_checklist(request.form)
-    obs = (request.form.get("obs") or "").strip()
+    itens, core_nok, et_nok = _coletar_checklist(request.form)
     nome, cid = _quem(request.form)
-    resultado = "conforme" if tudo_ok else "irregular"
-    db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="inspecao",
-                                    resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
-                                    obs=obs, colaborador_id=cid, colaborador_nome=nome,
-                                    operador_id=getattr(current_user, "id", None)))
+    resultado = _aplicar_resultado(e, core_nok, et_nok, nome)
     e.inspecao = date.today()
-    if not tudo_ok:
-        e.situacao = "IRREGULAR"
+    db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="inspecao",
+                   resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
+                   etiqueta_ok=(not et_nok), obs=(request.form.get("obs") or "").strip(),
+                   colaborador_id=cid, colaborador_nome=nome,
+                   operador_id=getattr(current_user, "id", None)))
+    if core_nok:
         _log("Extintor", f"{e.codigo} ({e.local}): inspeção IRREGULAR por {nome} — notificar ADMIN")
+        msg, cat = "Inspeção registrada. Extintor IRREGULAR — leve ao Almox D6.", "warning"
+    elif et_nok:
+        _log("Extintor", f"{e.codigo}: etiqueta em desacordo por {nome} — pendência aberta (Atenção)")
+        msg, cat = "Inspeção registrada. Etiqueta em desacordo: status Atenção + pendência.", "warning"
     else:
-        # inspeção conforme não muda estado operacional (mantém NO_PRAZO/derivados)
-        if e.situacao in ("IRREGULAR",):
-            e.situacao = "NO_PRAZO"
         _log("Extintor", f"{e.codigo} ({e.local}): inspeção conforme por {nome}")
+        msg, cat = "Inspeção conforme registrada.", "success"
     db.session.commit()
-    flash("Inspeção registrada." + ("" if tudo_ok else " Extintor marcado como IRREGULAR."),
-          "success" if tudo_ok else "warning")
+    flash(msg, cat)
+    return _redir_ficha(e)
+
+
+@almox_bp.route("/extintores/<int:eid>/reposicao", methods=["POST"])
+@_ext_acesso
+def extintor_reposicao(eid):
+    """Troca programada: substitui o extintor, faz o checklist do NOVO e lança nova validade/TH."""
+    import json as _json
+    e = db.session.get(Extintor, eid) or abort(404)
+    itens, core_nok, et_nok = _coletar_checklist(request.form)
+    nome, cid = _quem(request.form)
+    nova_val = _parse_mmaaaa("validade", request.form)
+    novo_th = _parse_mmaaaa("th", request.form)
+    if nova_val:
+        e.validade = nova_val
+    if novo_th:
+        e.teste_hidrostatico = novo_th
+    resultado = _aplicar_resultado(e, core_nok, et_nok, nome)
+    e.inspecao = date.today()
+    db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="reposicao",
+                   resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
+                   etiqueta_ok=(not et_nok), colaborador_id=cid, colaborador_nome=nome,
+                   operador_id=getattr(current_user, "id", None),
+                   obs=f"Troca programada. Validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)}"))
+    _log("Extintor", f"{e.codigo}: reposição/troca por {nome} "
+                     f"(validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)})")
+    db.session.commit()
+    flash("Reposição (troca) registrada.", "success")
     return _redir_ficha(e)
 
 
 @almox_bp.route("/extintores/<int:eid>/regularizar", methods=["POST"])
 @_ext_acesso
 def extintor_regularizar(eid):
+    """Único caminho na ficha Irregular: Levado ao Almox D6 (sem pedir nome)."""
     e = db.session.get(Extintor, eid) or abort(404)
-    acao = request.form.get("acao")   # levado_d6 | reposto_local
     nome, cid = _quem(request.form)
-    if acao == "levado_d6":
-        e.situacao = "EM_RECARGA"
-        e.retirado_por = nome
-        db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="retirada",
-                                        resultado="irregular", colaborador_id=cid, colaborador_nome=nome,
-                                        operador_id=getattr(current_user, "id", None)))
-        _log("Extintor", f"{e.codigo}: levado ao Almox D6 p/ recarga por {nome}")
-        flash("Extintor marcado como Em recarga (levado ao Almox D6).", "info")
-    elif acao == "reposto_local":
-        itens, tudo_ok = _coletar_checklist(request.form)
-        etiqueta = request.form.get("etiqueta_ok")   # sim | nao
-        etiqueta_ok = (etiqueta == "sim")
-        db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="reposto_local",
-                                        resultado="conforme" if tudo_ok else "irregular",
-                                        itens_json=_json.dumps(itens, ensure_ascii=False),
-                                        etiqueta_ok=etiqueta_ok, colaborador_id=cid, colaborador_nome=nome,
-                                        operador_id=getattr(current_user, "id", None)))
-        if not etiqueta_ok:
-            db.session.add(PendenciaEtiqueta(extintor_id=e.id, extintor_cod=e.codigo,
-                                             predio=e.predio, local=e.local, aberta_por=nome))
-        e.situacao = "NO_PRAZO" if tudo_ok else "IRREGULAR"
-        _log("Extintor", f"{e.codigo}: reposto no local por {nome} "
-                          f"({'OK' if tudo_ok else 'ainda irregular'}"
-                          f"{'' if etiqueta_ok else '; etiqueta pendente'})")
-        flash("Reposição registrada." + ("" if etiqueta_ok else " Pendência de etiqueta aberta."),
-              "success")
+    e.situacao = "EM_RECARGA"
+    e.retirado_por = nome
+    db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="retirada",
+                   resultado="irregular", colaborador_id=cid, colaborador_nome=nome,
+                   operador_id=getattr(current_user, "id", None)))
+    _log("Extintor", f"{e.codigo}: levado ao Almox D6 p/ recarga por {nome}")
     db.session.commit()
+    flash("Extintor marcado como Em recarga (levado ao Almox D6).", "info")
     return _redir_ficha(e)
 
 
 @almox_bp.route("/extintores/<int:eid>/conferir", methods=["POST"])
 @_ext_acesso
 def extintor_conferir(eid):
-    """Conferência do Almoxarifado (inclui item da etiqueta) → Pronto p/ reposição."""
+    """Conferência do Almoxarifado no retorno (sem 'Acesso', sem nome) → Pronto p/ reposição."""
+    import json as _json
     e = db.session.get(Extintor, eid) or abort(404)
     if not _pode_gerir_ext():
         abort(403)
-    itens, tudo_ok = _coletar_checklist(request.form)
-    etiqueta_ok = (request.form.get("etiqueta_ok") == "sim")
+    itens, core_nok, et_nok = _coletar_checklist(request.form)
     nome, cid = _quem(request.form)
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="conferencia",
-                                    resultado="conforme" if tudo_ok else "irregular",
-                                    itens_json=_json.dumps(itens, ensure_ascii=False),
-                                    etiqueta_ok=etiqueta_ok, colaborador_id=cid, colaborador_nome=nome,
-                                    operador_id=getattr(current_user, "id", None)))
-    if not etiqueta_ok:
+                   resultado=("irregular" if (core_nok or et_nok) else "conforme"),
+                   itens_json=_json.dumps(itens, ensure_ascii=False), etiqueta_ok=(not et_nok),
+                   colaborador_id=cid, colaborador_nome=nome,
+                   operador_id=getattr(current_user, "id", None)))
+    if et_nok and not PendenciaEtiqueta.query.filter_by(extintor_id=e.id, resolvida=False).first():
         db.session.add(PendenciaEtiqueta(extintor_id=e.id, extintor_cod=e.codigo,
-                                         predio=e.predio, local=e.local, aberta_por=nome))
+                       predio=e.predio, local=e.local, aberta_por=nome))
     e.situacao = "PRONTO_REPO"
-    _log("Extintor", f"{e.codigo}: conferido no Almox (pronto p/ reposição) por {nome}"
-                     f"{'' if etiqueta_ok else '; etiqueta pendente'}")
+    _log("Extintor", f"{e.codigo}: conferido no Almox (pronto p/ reposição) por {nome}")
     db.session.commit()
-    flash("Conferência registrada. Extintor Pronto para reposição." +
-          ("" if etiqueta_ok else " Pendência de etiqueta aberta."), "success")
+    flash("Conferência registrada. Extintor Pronto para reposição.", "success")
     return _redir_ficha(e)
 
 
 @almox_bp.route("/extintores/<int:eid>/repor", methods=["POST"])
 @_ext_acesso
 def extintor_repor(eid):
-    """Reposição final: volta ao local, atualiza validade da carga e/ou TH (MMM+AAAA)."""
+    """Reposição final: volta ao local (sem nome), atualiza validade/TH (MMM+AAAA) → No prazo."""
     e = db.session.get(Extintor, eid) or abort(404)
     if not _pode_gerir_ext():
         abort(403)
@@ -629,17 +662,84 @@ def extintor_repor(eid):
         e.validade = nova_val
     if novo_th:
         e.teste_hidrostatico = novo_th
-    e.situacao = "NO_PRAZO"
+    e.situacao = "NO_PRAZO"        # voltou ao local: sai da pendência de regularização
     e.retirado_por = None
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="reposicao",
-                                    resultado="conforme", colaborador_id=cid, colaborador_nome=nome,
-                                    operador_id=getattr(current_user, "id", None),
-                                    obs=f"validade={_competencia(e.validade)}; TH={_competencia(e.teste_hidrostatico)}"))
-    _log("Extintor", f"{e.codigo}: reposto no local por {nome} "
-                     f"(validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)})")
+                   resultado="conforme", colaborador_id=cid, colaborador_nome=nome,
+                   operador_id=getattr(current_user, "id", None),
+                   obs=f"Reposto no local. Validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)}"))
+    _log("Extintor", f"{e.codigo}: reposto no local por {nome}")
     db.session.commit()
     flash("Reposição concluída. Extintor No prazo.", "success")
     return _redir_ficha(e)
+
+
+@almox_bp.route("/extintores/<int:eid>/desativar", methods=["POST"])
+@_guard("pode_extintores")
+def extintor_desativar(eid):
+    e = db.session.get(Extintor, eid) or abort(404)
+    e.ativo = False
+    _log("Extintor", f"{e.codigo}: extintor desativado por {current_user.nome}")
+    db.session.commit()
+    flash("Extintor desativado.", "success")
+    return redirect(url_for("almox.extintores"))
+
+
+@almox_bp.route("/extintores/cadastro")
+@_guard("pode_extintores")
+def extintor_cadastro():
+    def distintos(col):
+        vals = db.session.query(col).filter(col.isnot(None), col != "").distinct().all()
+        return sorted({v[0] for v in vals if v[0]})
+    sugestoes = {
+        "predio": distintos(Extintor.predio),
+        "local": distintos(Extintor.local),
+        "tipo": distintos(Extintor.tipo),
+        "classe": distintos(Extintor.classe),
+    }
+    return render_template("almox/extintor_cadastro.html", sugestoes=sugestoes,
+                           check=CHECK_EXTINTOR, item_etiqueta=ITEM_ETIQUETA_EXTINTOR,
+                           meses=MESES_PT, anos=_anos_range())
+
+
+@almox_bp.route("/extintores/novo", methods=["POST"])
+@_guard("pode_extintores")
+def extintor_novo():
+    import secrets, json as _json
+    predio = (request.form.get("predio") or "").strip().upper()
+    local = (request.form.get("local") or "").strip()
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    classe = (request.form.get("classe") or "").strip().upper()
+    if not local:
+        flash("Informe ao menos o local do extintor.", "danger")
+        return redirect(url_for("almox.extintores"))
+    seq = (Extintor.query.count() or 0) + 1
+    codigo = f"EXT{seq:04d}"
+    while Extintor.query.filter_by(codigo=codigo).first():
+        seq += 1
+        codigo = f"EXT{seq:04d}"
+    uid = "EXT-" + secrets.token_hex(4).upper()
+    while Extintor.query.filter_by(qr_uid=uid).first():
+        uid = "EXT-" + secrets.token_hex(4).upper()
+    e = Extintor(codigo=codigo, predio=predio, local=local, tipo=tipo, classe=classe,
+                 validade=_parse_mmaaaa("validade", request.form),
+                 teste_hidrostatico=_parse_mmaaaa("th", request.form),
+                 situacao="NO_PRAZO", status="No Local", qr_uid=uid, ativo=True)
+    db.session.add(e)
+    db.session.flush()
+    # checklist inicial de conferência
+    itens, core_nok, et_nok = _coletar_checklist(request.form)
+    nome, cid = _quem(request.form)
+    resultado = _aplicar_resultado(e, core_nok, et_nok, nome)
+    e.inspecao = date.today()
+    db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="inspecao",
+                   resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
+                   etiqueta_ok=(not et_nok), colaborador_id=cid, colaborador_nome=nome,
+                   operador_id=getattr(current_user, "id", None), obs="Cadastro / conferência inicial"))
+    _log("Extintor", f"Extintor cadastrado: {codigo} ({local}) por {nome}")
+    db.session.commit()
+    flash(f"Extintor {codigo} cadastrado.", "success")
+    return redirect(url_for("almox.extintor_ficha", eid=e.id))
 
 
 # ----- Acesso pelo QR no campo (login único: CPF ou e-mail) -----
@@ -736,6 +836,10 @@ def pendencia_baixar(pid):
     p.resolvida = True
     p.resolvida_em = _dt.utcnow()
     p.resolvida_por = current_user.nome
+    # Se o extintor estava em "Atenção" só pela etiqueta, volta a No prazo
+    ext = db.session.get(Extintor, p.extintor_id) if p.extintor_id else None
+    if ext and ext.situacao == "ATENCAO":
+        ext.situacao = "NO_PRAZO"
     _log("Extintor", f"Pendência de etiqueta baixada: {p.extintor_cod} ({p.local})")
     db.session.commit()
     flash("Pendência de etiqueta resolvida.", "success")
@@ -802,9 +906,11 @@ def extintores_pdf():
 @almox_bp.route("/colaboradores")
 @_guard("pode_colaboradores")
 def colaboradores():
+    from .models import Empresa
     itens = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
-    return render_template("almox/colaboradores.html", itens=itens, papeis=papeis)
+    empresas = Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all()
+    return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas)
 
 
 @almox_bp.route("/colaboradores/novo", methods=["POST"])
@@ -812,21 +918,32 @@ def colaboradores():
 def colaborador_novo():
     import secrets
     nome = (request.form.get("nome") or "").strip()
+    cpf_bruto = (request.form.get("cpf") or "").strip()
+    cpf = "".join(ch for ch in cpf_bruto if ch.isdigit())
+    email = (request.form.get("email") or "").strip().lower()
     if not nome:
         flash("Informe o nome completo do colaborador.", "danger")
         return redirect(url_for("almox.colaboradores"))
-    papel = "COLABORADOR DIVERSO"   # Etapa 2.5 — cadastro pelo módulo é sempre diverso
+    if not cpf:
+        flash("CPF é obrigatório (só números).", "danger")
+        return redirect(url_for("almox.colaboradores"))
+    # CPF único entre colaboradores ativos
+    for c0 in Colaborador.query.filter(Colaborador.ativo.is_(True)).all():
+        if "".join(ch for ch in (c0.cpf or "") if ch.isdigit()) == cpf:
+            flash("Já existe um colaborador ativo com esse CPF.", "warning")
+            return redirect(url_for("almox.colaboradores"))
+    papel = "COLABORADOR DIVERSO"   # cadastro pelo módulo é sempre diverso
     uid = "COL-" + secrets.token_hex(4).upper()
     while Colaborador.query.filter_by(qr_uid=uid).first():
         uid = "COL-" + secrets.token_hex(4).upper()
-    c = Colaborador(nome=nome.upper(), cpf=(request.form.get("cpf") or "").strip(),
+    c = Colaborador(nome=nome.upper(), cpf=cpf, email=(email or None),
                     empresa=(request.form.get("empresa") or "").strip().upper(),
                     cargo=(request.form.get("cargo") or "").strip().upper(),
                     papel=papel, qr_uid=uid)
     db.session.add(c)
-    _log("Colaborador", f"Colaborador cadastrado: {c.nome} ({papel})")
+    _log("Colaborador", f"Colaborador cadastrado: {c.nome} (CPF {cpf})")
     db.session.commit()
-    flash("Colaborador cadastrado. Imprima o QR na coluna de ações.", "success")
+    flash("Colaborador cadastrado. Ele define a senha no 1º acesso (CPF).", "success")
     return redirect(url_for("almox.colaboradores"))
 
 

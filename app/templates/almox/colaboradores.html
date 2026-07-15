@@ -58,13 +58,20 @@
       <div class="modal-body">
         <div class="mb-2"><label class="form-label">Nome completo *</label><input class="form-control" name="nome" required></div>
         <div class="row g-2">
-          <div class="col-sm-6 mb-2"><label class="form-label">CPF</label><input class="form-control" name="cpf"></div>
+          <div class="col-sm-6 mb-2"><label class="form-label">CPF * (só números)</label><input class="form-control" name="cpf" inputmode="numeric" required></div>
           <div class="col-sm-6 mb-2"><label class="form-label">Cargo</label><input class="form-control" name="cargo"></div>
         </div>
-        <div class="mb-2"><label class="form-label">Empresa</label><input class="form-control" name="empresa"></div>
+        <div class="mb-2"><label class="form-label">E-mail (opcional)</label><input type="email" class="form-control" name="email">
+          <div class="form-text">Se informado, permite login também por e-mail.</div></div>
+        <div class="mb-2"><label class="form-label">Empresa</label>
+          <select class="form-select" name="empresa">
+            <option value="">— selecione —</option>
+            {% for emp in empresas %}<option value="{{ emp.nome }}">{{ emp.nome }}</option>{% endfor %}
+          </select>
+        </div>
         <div class="mb-2"><label class="form-label">Papel</label>
           <input class="form-control" value="Colaborador diverso" disabled>
-          <div class="form-text">Todo cadastro entra como Colaborador diverso. A troca de papel é feita pelo Admin.</div>
+          <div class="form-text">Todo cadastro entra como Colaborador diverso. A troca de papel é feita pelo Admin. A senha é definida no 1º acesso (por CPF).</div>
         </div>
       </div>
       <div class="modal-footer">

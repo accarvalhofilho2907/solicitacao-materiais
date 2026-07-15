@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Novo extintor{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Extintores</a>
+<h4 class="mb-1">🧯 Cadastrar novo extintor</h4>
+<p class="text-muted small">O código é gerado automaticamente. Os campos aceitam valores novos ou sugestões dos já usados. Faça a conferência inicial no checklist.</p>
+
+<form method="post" action="{{ url_for('almox.extintor_novo') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="card mb-3"><div class="card-body row g-3">
+  <div class="col-6 col-md-3"><label class="form-label small">Prédio</label>
+    <input class="form-control" name="predio" list="l_predio" placeholder="Ex.: DELTA6">
+    <datalist id="l_predio">{% for v in sugestoes.predio %}<option value="{{ v }}">{% endfor %}</datalist></div>
+  <div class="col-6 col-md-5"><label class="form-label small">Local *</label>
+    <input class="form-control" name="local" list="l_local" required placeholder="Local de instalação">
+    <datalist id="l_local">{% for v in sugestoes.local %}<option value="{{ v }}">{% endfor %}</datalist></div>
+  <div class="col-6 col-md-2"><label class="form-label small">Tipo / Carga</label>
+    <input class="form-control" name="tipo" list="l_tipo" placeholder="Ex.: PQS - 06KG">
+    <datalist id="l_tipo">{% for v in sugestoes.tipo %}<option value="{{ v }}">{% endfor %}</datalist></div>
+  <div class="col-6 col-md-2"><label class="form-label small">Classe</label>
+    <input class="form-control" name="classe" list="l_classe" placeholder="Ex.: ABC">
+    <datalist id="l_classe">{% for v in sugestoes.classe %}<option value="{{ v }}">{% endfor %}</datalist></div>
+  <div class="col-6 col-md-3"><label class="form-label small">Validade da carga</label>
+    <div class="d-flex gap-1">
+      <select name="mes_validade" class="form-select"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
+      <select name="ano_validade" class="form-select"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+    </div></div>
+  <div class="col-6 col-md-3"><label class="form-label small">Teste hidrostático</label>
+    <div class="d-flex gap-1">
+      <select name="mes_th" class="form-select"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
+      <select name="ano_th" class="form-select"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+    </div></div>
+</div></div>
+
+<div class="card mb-3"><div class="card-body">
+  <h6>Conferência inicial</h6>
+  {% for item in check %}
+  <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+    <span class="small">{{ loop.index }}. {{ item }}</span>
+    <div class="btn-group btn-group-sm" role="group">
+      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="c{{ loop.index0 }}ok" value="ok">
+      <label class="btn btn-outline-success" for="c{{ loop.index0 }}ok">OK</label>
+      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="c{{ loop.index0 }}nok" value="nok">
+      <label class="btn btn-outline-danger" for="c{{ loop.index0 }}nok">Não</label>
+      <input type="radio" class="btn-check" name="item_{{ loop.index0 }}" id="c{{ loop.index0 }}na" value="na">
+      <label class="btn btn-outline-secondary" for="c{{ loop.index0 }}na">N/A</label>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="d-flex justify-content-between align-items-center py-2 mt-1">
+    <span class="small fw-bold">{{ item_etiqueta }}</span>
+    <div class="btn-group btn-group-sm" role="group">
+      <input type="radio" class="btn-check" name="item_etiqueta" id="et_ok" value="ok">
+      <label class="btn btn-outline-success" for="et_ok">OK</label>
+      <input type="radio" class="btn-check" name="item_etiqueta" id="et_nok" value="nok">
+      <label class="btn btn-outline-danger" for="et_nok">Não</label>
+      <input type="radio" class="btn-check" name="item_etiqueta" id="et_na" value="na">
+      <label class="btn btn-outline-secondary" for="et_na">N/A</label>
+    </div>
+  </div>
+</div></div>
+<button class="btn btn-primary">Cadastrar extintor</button>
+</form>
+{% endblock %}

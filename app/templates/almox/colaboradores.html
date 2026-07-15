@@ -21,7 +21,7 @@
   <tbody>
     {% for c in itens %}
     <tr>
-      <td><b>{{ c.nome }}</b></td>
+      <td><a href="{{ url_for('almox.colaborador_perfil', cid=c.id) }}"><b>{{ c.nome }}</b></a></td>
       <td class="small">{{ c.cpf or '—' }}</td>
       <td class="small">{{ c.empresa or '—' }}</td>
       <td class="small">{{ c.cargo_exib }}</td>
@@ -29,6 +29,7 @@
       <td>{% if c.tem_senha %}<span class="badge bg-success">definida</span>{% else %}<span class="badge bg-secondary">não definida</span>{% endif %}</td>
       <td class="text-end">
         <div class="d-flex gap-1 justify-content-end flex-wrap">
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('almox.colaborador_perfil', cid=c.id) }}">Editar</a>
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('almox.colaboradores_qr', ids=c.id) }}" target="_blank">QR</a>
           <form method="post" action="{{ url_for('almox.colaborador_reset_senha', cid=c.id) }}" onsubmit="return confirm('Resetar a senha de {{ c.nome }}?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -70,8 +71,15 @@
           </select>
         </div>
         <div class="mb-2"><label class="form-label">Papel</label>
+          {% if pode_papel %}
+          <select class="form-select" name="papel">
+            {% for val, lbl in papeis_colab %}{% if val != 'ADMIN' or is_master %}<option value="{{ val }}">{{ lbl }}</option>{% endif %}{% endfor %}
+          </select>
+          <div class="form-text">Admin só é concedido pelo Admin Master. A senha é definida no 1º acesso (por CPF).</div>
+          {% else %}
           <input class="form-control" value="Colaborador diverso" disabled>
-          <div class="form-text">Todo cadastro entra como Colaborador diverso. A troca de papel é feita pelo Admin. A senha é definida no 1º acesso (por CPF).</div>
+          <div class="form-text">Cadastro pelo Almoxarifado entra como Colaborador diverso. A senha é definida no 1º acesso (por CPF).</div>
+          {% endif %}
         </div>
       </div>
       <div class="modal-footer">

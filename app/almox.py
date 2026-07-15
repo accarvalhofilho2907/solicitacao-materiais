@@ -903,6 +903,11 @@ def extintores_pdf():
 
 
 # ---------- COLABORADORES ----------
+PAPEIS_COLAB = [("COLABORADOR DIVERSO", "Colaborador diverso"),
+                ("ALMOXARIFADO", "Almoxarifado"),
+                ("ADMIN", "Admin")]
+
+
 @almox_bp.route("/colaboradores")
 @_guard("pode_colaboradores")
 def colaboradores():
@@ -910,7 +915,9 @@ def colaboradores():
     itens = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
     empresas = Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all()
-    return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas)
+    return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas,
+                           papeis_colab=PAPEIS_COLAB, pode_papel=current_user.is_admin,
+                           is_master=current_user.is_master)
 
 
 @almox_bp.route("/colaboradores/novo", methods=["POST"])
@@ -927,12 +934,19 @@ def colaborador_novo():
     if not cpf:
         flash("CPF é obrigatório (só números).", "danger")
         return redirect(url_for("almox.colaboradores"))
-    # CPF único entre colaboradores ativos
     for c0 in Colaborador.query.filter(Colaborador.ativo.is_(True)).all():
         if "".join(ch for ch in (c0.cpf or "") if ch.isdigit()) == cpf:
             flash("Já existe um colaborador ativo com esse CPF.", "warning")
             return redirect(url_for("almox.colaboradores"))
-    papel = "COLABORADOR DIVERSO"   # cadastro pelo módulo é sempre diverso
+    # Papel: só Admin/Master escolhe; Almoxarifado sempre cria "colaborador diverso"
+    papel = "COLABORADOR DIVERSO"
+    if current_user.is_admin:
+        escolhido = (request.form.get("papel") or "COLABORADOR DIVERSO").strip().upper()
+        if escolhido in dict(PAPEIS_COLAB):
+            if escolhido == "ADMIN" and not current_user.is_master:
+                flash("Apenas o Admin Master pode conceder o papel Admin.", "danger")
+                return redirect(url_for("almox.colaboradores"))
+            papel = escolhido
     uid = "COL-" + secrets.token_hex(4).upper()
     while Colaborador.query.filter_by(qr_uid=uid).first():
         uid = "COL-" + secrets.token_hex(4).upper()
@@ -941,10 +955,62 @@ def colaborador_novo():
                     cargo=(request.form.get("cargo") or "").strip().upper(),
                     papel=papel, qr_uid=uid)
     db.session.add(c)
-    _log("Colaborador", f"Colaborador cadastrado: {c.nome} (CPF {cpf})")
+    _log("Colaborador", f"Colaborador cadastrado: {c.nome} (CPF {cpf}, papel {papel})")
     db.session.commit()
     flash("Colaborador cadastrado. Ele define a senha no 1º acesso (CPF).", "success")
     return redirect(url_for("almox.colaboradores"))
+
+
+@almox_bp.route("/colaboradores/<int:cid>", methods=["GET"])
+@_guard("pode_colaboradores")
+def colaborador_perfil(cid):
+    from .models import Empresa, HistoricoColaborador
+    c = db.session.get(Colaborador, cid) or abort(404)
+    empresas = Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all()
+    hist = (HistoricoColaborador.query.filter_by(colaborador_id=c.id)
+            .order_by(HistoricoColaborador.criado_em.desc()).all())
+    return render_template("almox/colaborador_perfil.html", c=c, empresas=empresas,
+                           papeis_colab=PAPEIS_COLAB, hist=hist,
+                           pode_papel=current_user.is_admin, is_master=current_user.is_master)
+
+
+@almox_bp.route("/colaboradores/<int:cid>/editar", methods=["POST"])
+@_guard("pode_colaboradores")
+def colaborador_editar(cid):
+    from .models import HistoricoColaborador
+    c = db.session.get(Colaborador, cid) or abort(404)
+    autor = current_user.nome
+    mudancas = []
+
+    def registrar(campo, de, para):
+        db.session.add(HistoricoColaborador(colaborador_id=c.id, colaborador_nome=c.nome,
+                       campo=campo, de=de or "—", para=para or "—", alterado_por_nome=autor))
+        mudancas.append(campo)
+
+    # Cargo e empresa: Admin/Master e Almoxarifado podem
+    novo_cargo = (request.form.get("cargo") or "").strip().upper()
+    if novo_cargo != (c.cargo or ""):
+        registrar("cargo", c.cargo, novo_cargo); c.cargo = novo_cargo
+    nova_emp = (request.form.get("empresa") or "").strip().upper()
+    if nova_emp != (c.empresa or ""):
+        registrar("empresa", c.empresa, nova_emp); c.empresa = nova_emp
+
+    # Papel: só Admin/Master
+    if current_user.is_admin:
+        novo_papel = (request.form.get("papel") or c.papel or "").strip().upper()
+        if novo_papel in dict(PAPEIS_COLAB) and novo_papel != (c.papel or "").upper():
+            if novo_papel == "ADMIN" and not current_user.is_master:
+                flash("Apenas o Admin Master pode conceder o papel Admin.", "danger")
+                return redirect(url_for("almox.colaborador_perfil", cid=c.id))
+            registrar("papel", c.papel, novo_papel); c.papel = novo_papel
+    elif request.form.get("papel") and request.form.get("papel").strip().upper() != (c.papel or "").upper():
+        flash("Apenas Admin altera o papel. As demais alterações foram salvas.", "warning")
+
+    if mudancas:
+        _log("Colaborador", f"{c.nome}: alterado ({', '.join(mudancas)}) por {autor}")
+    db.session.commit()
+    flash("Alterações salvas." if mudancas else "Nada a alterar.", "success" if mudancas else "info")
+    return redirect(url_for("almox.colaborador_perfil", cid=c.id))
 
 
 @almox_bp.route("/colaboradores/<int:cid>/desativar", methods=["POST"])

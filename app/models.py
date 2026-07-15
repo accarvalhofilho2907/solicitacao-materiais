@@ -511,6 +511,19 @@ TAREFAS_COLABORADOR = [
 TAREFAS_DICT = dict(TAREFAS_COLABORADOR)
 
 
+class HistoricoColaborador(db.Model):
+    """Histórico de alterações no cadastro do colaborador (papel, empresa, cargo)."""
+    __tablename__ = "almox_hist_colaborador"
+    id = db.Column(db.Integer, primary_key=True)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    colaborador_nome = db.Column(db.String(160))
+    campo = db.Column(db.String(20))             # papel | empresa | cargo
+    de = db.Column(db.String(160))
+    para = db.Column(db.String(160))
+    alterado_por_nome = db.Column(db.String(160))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class HistoricoPapel(db.Model):
     """Histórico de troca de papel de acesso (Etapa 2.5). Guarda de/até e quem alterou."""
     __tablename__ = "almox_hist_papel"
@@ -574,19 +587,21 @@ class Colaborador(UserMixin, db.Model):
 
     # ---- Camada de compatibilidade (para as telas não quebrarem) ----
     @property
-    def is_admin(self): return False
+    def _p(self): return (self.papel or "").strip().lower()
+    @property
+    def is_admin(self): return self._p == "admin"
     @property
     def is_master(self): return False
     @property
     def is_viewer(self): return False
     @property
-    def is_almox(self): return (self.papel or "").strip().lower() == "almoxarifado"
+    def is_almox(self): return self._p == "almoxarifado"
     @property
     def pode_solicitar(self): return True
     @property
     def senha_temporaria(self): return False
     @property
-    def _papel_modulo(self): return (self.papel or "").strip().lower() in ("admin", "almoxarifado")
+    def _papel_modulo(self): return self._p in ("admin", "almoxarifado")
     @property
     def pode_almox_modulo(self): return self._papel_modulo
     @property

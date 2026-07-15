@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ c.nome }} — Colaborador{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.colaboradores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Colaboradores</a>
+<h4 class="mb-1">👤 {{ c.nome }}</h4>
+<p class="text-muted small">CPF: {{ c.cpf or '—' }} · E-mail: {{ c.email or '—' }} · Papel atual: <b>{{ c.papel or '—' }}</b></p>
+
+<div class="row g-3">
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Editar</h6>
+    <form method="post" action="{{ url_for('almox.colaborador_editar', cid=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-2"><label class="form-label small">Cargo</label>
+        <input class="form-control" name="cargo" value="{{ c.cargo or '' }}"></div>
+      <div class="mb-2"><label class="form-label small">Empresa</label>
+        <select class="form-select" name="empresa">
+          <option value="">— selecione —</option>
+          {% for emp in empresas %}<option value="{{ emp.nome }}" {{ 'selected' if (c.empresa or '')|upper == emp.nome|upper }}>{{ emp.nome }}</option>{% endfor %}
+        </select>
+        {% if c.empresa and c.empresa|upper not in (empresas|map(attribute='nome')|map('upper')|list) %}
+        <div class="form-text">Empresa atual ({{ c.empresa }}) não está na lista — selecione uma para atualizar.</div>{% endif %}
+      </div>
+      <div class="mb-2"><label class="form-label small">Papel</label>
+        {% if pode_papel %}
+        <select class="form-select" name="papel">
+          {% for val, lbl in papeis_colab %}{% if val != 'ADMIN' or is_master or (c.papel or '')|upper == 'ADMIN' %}<option value="{{ val }}" {{ 'selected' if (c.papel or '')|upper == val }}>{{ lbl }}</option>{% endif %}{% endfor %}
+        </select>
+        <div class="form-text">Admin só o Admin Master concede. Almoxarifado dá acesso ao módulo.</div>
+        {% else %}
+        <input class="form-control" value="{{ c.papel or '—' }}" disabled>
+        <div class="form-text">Só o Admin altera o papel. Você pode alterar cargo e empresa.</div>
+        {% endif %}
+      </div>
+      <button class="btn btn-primary btn-sm">Salvar alterações</button>
+    </form>
+  </div></div></div>
+
+  <div class="col-md-6"><div class="card h-100"><div class="card-body">
+    <h6>Histórico de alterações</h6>
+    <div class="table-responsive" style="max-height:360px;overflow:auto">
+    <table class="table table-sm mb-0 align-middle">
+      <thead class="table-light"><tr><th>Quando</th><th>Campo</th><th>De → Para</th><th>Por</th></tr></thead>
+      <tbody>
+        {% for h in hist %}
+        <tr>
+          <td class="small">{{ h.criado_em.strftime('%d/%m/%y %H:%M') if h.criado_em else '—' }}</td>
+          <td class="small">{{ h.campo }}</td>
+          <td class="small">{{ h.de }} → <b>{{ h.para }}</b></td>
+          <td class="small">{{ h.alterado_por_nome or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted text-center py-3">Sem alterações registradas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div></div></div>
+</div>
+{% endblock %}

@@ -1479,7 +1479,7 @@ def _filtra_saldo():
 
 
 @almox_bp.route("/materiais")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais():
     itens, ctx = _filtra_saldo()
     n_baixo = sum(1 for p in itens if p.abaixo_minimo)
@@ -1494,7 +1494,7 @@ def materiais():
 
 
 @almox_bp.route("/materiais/novo", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def material_novo():
     import secrets
     nome = (request.form.get("nome") or "").strip()
@@ -1535,14 +1535,14 @@ def material_novo():
 
 # ----- Locais de estocagem -----
 @almox_bp.route("/materiais/locais")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def locais():
     itens = LocalAlmox.query.order_by(LocalAlmox.nome).all()
     return render_template("almox/locais.html", itens=itens)
 
 
 @almox_bp.route("/materiais/locais/novo", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def local_novo():
     nome = (request.form.get("nome") or "").strip()
     if not nome:
@@ -1559,7 +1559,7 @@ def local_novo():
 
 
 @almox_bp.route("/materiais/locais/<int:lid>/toggle", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def local_toggle(lid):
     l = db.session.get(LocalAlmox, lid) or abort(404)
     l.ativo = not l.ativo
@@ -1568,7 +1568,7 @@ def local_toggle(lid):
 
 
 @almox_bp.route("/materiais/<int:pid>/mover", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def material_mover(pid):
     p = db.session.get(ProdutoAlmox, pid) or abort(404)
     destino_id = request.form.get("local_id")
@@ -1588,7 +1588,7 @@ def material_mover(pid):
 
 
 @almox_bp.route("/materiais/<int:pid>/entrada", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def material_entrada(pid):
     p = db.session.get(ProdutoAlmox, pid) or abort(404)
     qtd = _num(request.form.get("quantidade"))
@@ -1606,7 +1606,7 @@ def material_entrada(pid):
 
 
 @almox_bp.route("/materiais/<int:pid>/saida", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def material_saida(pid):
     p = db.session.get(ProdutoAlmox, pid) or abort(404)
     qtd = _num(request.form.get("quantidade"))
@@ -1632,7 +1632,7 @@ def material_saida(pid):
 
 
 @almox_bp.route("/materiais/<int:pid>/ajuste", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def material_ajuste(pid):
     p = db.session.get(ProdutoAlmox, pid) or abort(404)
     novo = _num(request.form.get("saldo"))
@@ -1648,7 +1648,7 @@ def material_ajuste(pid):
 
 
 @almox_bp.route("/materiais/<int:pid>/desativar", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def material_desativar(pid):
     p = db.session.get(ProdutoAlmox, pid) or abort(404)
     p.ativo = False
@@ -1683,7 +1683,7 @@ def _filtra_mov_material():
 
 
 @almox_bp.route("/materiais/movimentacoes")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais_mov():
     movs, ctx = _filtra_mov_material()
     produtos = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
@@ -1691,7 +1691,7 @@ def materiais_mov():
 
 
 @almox_bp.route("/materiais/movimentacoes/csv")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais_mov_csv():
     import csv, io
     from flask import Response
@@ -1708,7 +1708,7 @@ def materiais_mov_csv():
 
 
 @almox_bp.route("/materiais/movimentacoes/pdf")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais_mov_pdf():
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
@@ -1748,7 +1748,7 @@ def materiais_mov_pdf():
 
 
 @almox_bp.route("/materiais/saldo/csv")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais_saldo_csv():
     import csv, io
     from flask import Response
@@ -1765,7 +1765,7 @@ def materiais_saldo_csv():
 
 
 @almox_bp.route("/materiais/qr")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais_qr():
     ids = request.args.get("ids") or ""
     consulta = ProdutoAlmox.query.filter_by(ativo=True)
@@ -1834,7 +1834,7 @@ def coletor_api_material_saida():
 
 # ----- Estoque negativo (detecção/resolução — roadmap §9) -----
 @almox_bp.route("/materiais/negativos")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def materiais_negativos():
     negativos = (ProdutoAlmox.query.filter(ProdutoAlmox.ativo == True, ProdutoAlmox.saldo < 0)
                  .order_by(ProdutoAlmox.nome).all())
@@ -1871,14 +1871,14 @@ def coletor_api_mover_legado():
 
 # ==================== INVENTÁRIO DE MATERIAL ====================
 @almox_bp.route("/materiais/inventario", methods=["GET"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def inventario():
     itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
     return render_template("almox/inventario.html", itens=itens)
 
 
 @almox_bp.route("/materiais/inventario", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def inventario_salvar():
     itens = ProdutoAlmox.query.filter_by(ativo=True).all()
     ajustados = 0
@@ -1925,7 +1925,7 @@ def coletor_api_inventario():
 # ==================== HIERARQUIA FÍSICA: PLANTA / ARMAZÉM / LOCALIZADOR ====================
 
 @almox_bp.route("/plantas", methods=["GET", "POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def plantas():
     from .models import Planta
     if request.method == "POST":
@@ -1945,7 +1945,7 @@ def plantas():
 
 
 @almox_bp.route("/plantas/<int:pid>", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def planta_editar(pid):
     from .models import Planta
     p = db.session.get(Planta, pid) or abort(404)
@@ -1957,7 +1957,7 @@ def planta_editar(pid):
 
 
 @almox_bp.route("/armazens", methods=["GET", "POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def armazens():
     from .models import Armazem, Planta
     if request.method == "POST":
@@ -1977,7 +1977,7 @@ def armazens():
 
 
 @almox_bp.route("/armazens/<int:aid>", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def armazem_editar(aid):
     from .models import Armazem
     a = db.session.get(Armazem, aid) or abort(404)
@@ -1991,7 +1991,7 @@ def armazem_editar(aid):
 
 
 @almox_bp.route("/localizadores", methods=["GET", "POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def localizadores():
     import secrets
     from .models import Armazem, Localizador
@@ -2022,7 +2022,7 @@ def localizadores():
 
 
 @almox_bp.route("/localizadores/<int:lid>/toggle", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def localizador_toggle(lid):
     from .models import Localizador
     l = db.session.get(Localizador, lid) or abort(404)
@@ -2033,7 +2033,7 @@ def localizador_toggle(lid):
 
 
 @almox_bp.route("/localizadores/gerar", methods=["GET", "POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_locais")
 def localizadores_gerar():
     import secrets
     from .models import Armazem, Localizador
@@ -2074,7 +2074,7 @@ def localizadores_gerar():
 
 
 @almox_bp.route("/relatorios")
-@_guard("pode_almox_modulo")
+@_guard("pode_relatorios")
 def relatorios_central():
     """Central de relatórios: reúne num lugar só todos os relatórios e exportações."""
     return render_template("almox/relatorios_central.html")
@@ -2204,7 +2204,7 @@ def colaboradores_importar():
 
 # ==================== CADASTRO: FABRICANTES ====================
 @almox_bp.route("/fabricantes")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def fabricantes():
     mostrar_inativos = request.args.get("inativos") == "1"
     q = Fabricante.query
@@ -2215,7 +2215,7 @@ def fabricantes():
 
 
 @almox_bp.route("/fabricantes/novo", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def fabricante_novo():
     nome = (request.form.get("nome") or "").strip().upper()
     if not nome:
@@ -2232,7 +2232,7 @@ def fabricante_novo():
 
 
 @almox_bp.route("/fabricantes/<int:fid>/editar", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def fabricante_editar(fid):
     f = Fabricante.query.get_or_404(fid)
     nome = (request.form.get("nome") or "").strip().upper()
@@ -2248,7 +2248,7 @@ def fabricante_editar(fid):
 
 
 @almox_bp.route("/fabricantes/<int:fid>/toggle", methods=["POST"])
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def fabricante_toggle(fid):
     f = Fabricante.query.get_or_404(fid)
     f.ativo = not f.ativo
@@ -2677,7 +2677,7 @@ def inventario_pendente_decidir(aid, acao):
 
 # ----- Relatório de PERDAS (baixas de inventário) por período -----
 @almox_bp.route("/relatorios/perdas")
-@_guard("pode_almox_modulo")
+@_guard("pode_material")
 def relatorio_perdas():
     de = request.args.get("de") or ""
     ate = request.args.get("ate") or ""
@@ -3078,6 +3078,7 @@ def _inject_ver_como():
         pass
     p = _Perm()
     for prop in ("is_admin", "is_master", "is_almox", "pode_almox_modulo", "pode_chaves",
-                 "pode_extintores", "pode_material", "pode_colaboradores", "pode_solicitar"):
+                 "pode_extintores", "pode_material", "pode_locais", "pode_relatorios",
+                 "pode_colaboradores", "pode_solicitar"):
         setattr(p, prop, _efetivo(prop))
     return {"perm": p, "ver_como_nome": nome}

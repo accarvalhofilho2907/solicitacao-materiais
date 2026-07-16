@@ -28,6 +28,7 @@ with app.app_context():
         eu.papel = "admin"
         eu.ativo = True
         print(f"{ADMIN_EMAIL} definido como admin.")
+    eu.is_master = True   # admin MASTER (habilita "Ver como perfil" e itens de master)
 
     rebaixados = 0
     for u in Usuario.query.filter_by(papel="admin").all():
@@ -35,5 +36,11 @@ with app.app_context():
             u.papel = "solicitante"
             rebaixados += 1
             print(f"  - {u.email}: admin -> solicitante")
+    # master único: ninguém além do Antonio fica com is_master
+    demovidos_master = 0
+    for u in Usuario.query.filter(Usuario.email != ADMIN_EMAIL, Usuario.is_master.is_(True)).all():
+        u.is_master = False
+        demovidos_master += 1
     db.session.commit()
-    print(f"OK. {rebaixados} outro(s) administrador(es) rebaixado(s). Admin único: {ADMIN_EMAIL}.")
+    print(f"OK. {rebaixados} outro(s) administrador(es) rebaixado(s); "
+          f"{demovidos_master} master(es) extra(s) removido(s). Admin/master único: {ADMIN_EMAIL}.")

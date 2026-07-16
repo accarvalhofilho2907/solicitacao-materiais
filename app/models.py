@@ -105,6 +105,12 @@ class Usuario(UserMixin, db.Model):
     def pode_material(self):
         return self.papel in ("admin", "almoxarifado")
     @property
+    def pode_locais(self):
+        return self.papel in ("admin", "almoxarifado")
+    @property
+    def pode_relatorios(self):
+        return self.papel in ("admin", "almoxarifado")
+    @property
     def pode_colaboradores(self):
         return self.papel in ("admin", "almoxarifado")
 
@@ -902,6 +908,10 @@ def perm_from_tasks(perms, prop):
         return bool(perms & _GRUPO_EXT)
     if prop == "pode_material":
         return bool(perms & _GRUPO_MAT)
+    if prop == "pode_locais":
+        return ("perm_cadastros" in perms) or bool(perms & _GRUPO_LOC)
+    if prop == "pode_relatorios":
+        return ("perm_relatorios" in perms) or bool(perms & {"carga_receber", "carga_enviar"})
     if prop == "pode_colaboradores":
         return "perm_colaboradores" in perms
     if prop == "pode_solicitar":
@@ -988,6 +998,10 @@ class Colaborador(UserMixin, db.Model):
     def pode_extintores(self): return perm_from_tasks(self._perms_efetivas(), "pode_extintores")
     @property
     def pode_material(self): return perm_from_tasks(self._perms_efetivas(), "pode_material")
+    @property
+    def pode_locais(self): return perm_from_tasks(self._perms_efetivas(), "pode_locais")
+    @property
+    def pode_relatorios(self): return perm_from_tasks(self._perms_efetivas(), "pode_relatorios")
     @property
     def pode_colaboradores(self): return perm_from_tasks(self._perms_efetivas(), "pode_colaboradores")
     @property

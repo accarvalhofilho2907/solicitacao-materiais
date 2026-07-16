@@ -206,11 +206,13 @@
       {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
       {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
 
-      {% if perm.pode_almox_modulo %}
+      {% if perm.pode_relatorios or perm.is_almox %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
-      {% if perm.pode_material or perm.pode_chaves or perm.pode_extintores %}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{% endif %}
+      {% if perm.pode_relatorios %}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{% endif %}
+      {% if perm.is_almox %}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
       {{ item('relatorios.carga','chart','Relatório de carga') }}
+      {% endif %}
       {% endif %}
 
       <div class="sb-sec">Ajuda<span class="chev">▾</span></div>

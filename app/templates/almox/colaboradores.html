@@ -9,9 +9,23 @@
   </div>
   <div class="d-flex gap-2">
     {% if current_user.is_admin %}<a href="{{ url_for('almox.papeis') }}" class="btn btn-sm btn-outline-secondary">Perfis de acesso</a>{% endif %}
+    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalImportColab">⬆️ Importar CSV</button>
     <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoColab">＋ Novo colaborador</button>
   </div>
 </div>
+
+<div class="modal fade" id="modalImportColab" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="{{ url_for('almox.colaboradores_importar') }}" enctype="multipart/form-data">
+    <div class="modal-header"><h5 class="modal-title">Importar colaboradores (Excel)</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p class="small text-muted mb-2">Baixe o modelo, preencha e envie. Colunas: <code>nome, cpf, email, empresa, cargo, perfil</code>. Nome/empresa/cargo entram em MAIÚSCULA; CPF só números. Linhas duplicadas ou sem nome/CPF são puladas (você vê um resumo).</p>
+      <a class="btn btn-sm btn-outline-secondary mb-3" href="{{ url_for('almox.colaboradores_modelo_csv') }}">⬇️ Baixar modelo Excel</a>
+      <input type="file" name="arquivo" class="form-control" accept=".xlsx,.csv" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary">Importar</button></div>
+  </form>
+</div></div></div>
 
 <input id="filtroColab" class="form-control my-3" style="max-width:420px" placeholder="🔎 Filtrar (nome, CPF, empresa, cargo, papel)..." autocomplete="off">
 

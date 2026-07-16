@@ -149,6 +149,7 @@
       {{ item('almox.plantas','turbine','Plantas') }}
       {{ item('almox.armazens','warehouse','Armazéns') }}
       {{ item('almox.localizadores','pin','Localizadores') }}
+      {{ item('almox.fabricantes','tag','Fabricantes') }}
       {{ item('admin.tipos','tag','Tipos de material') }}
       {{ item('admin.cidades','tag','Cidades') }}
       {{ item('admin.transportadoras','truck','Transportadoras') }}
@@ -165,12 +166,20 @@
       {{ item('notinhas.index','doc','Notinhas') }}
       {{ item('almox.chaves','key','Chaves') }}
       {{ item('almox.extintores','ext','Extintores') }}
+      {{ item('almox.inventario_pendentes','check','Baixas de inventário') }}
       {{ item('almox.localizadores_gerar','cog','Gerar localizadores') }}
 
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
       {{ item('almox.relatorios_central','chart','Central de relatórios') }}
+      {{ item('almox.relatorio_perdas','chart','Perdas de estoque') }}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
       {{ item('relatorios.carga','chart','Relatório de carga') }}
+
+      {% if current_user.is_admin %}
+      <div class="sb-sec">Administrativo<span class="chev">▾</span></div>
+      {{ item('almox.adm_notas','doc','Notas fiscais (OPEX/CAPEX)') }}
+      {{ item('almox.notificacoes','list','Notificações', n_notif_almox) }}
+      {% endif %}
 
       <div class="sb-sec">Ajuda<span class="chev">▾</span></div>
       {{ item('admin.log_sistema','list','Log do sistema') }}
@@ -222,14 +231,15 @@
       <div class="right">
         {% if current_user.is_admin %}
         <div class="dropdown bell-wrap">
-          <a href="#" data-bs-toggle="dropdown" title="Notificações" style="color:var(--texto)"><svg width="20" height="20" style="color:var(--texto-2)"><use href="#ic-list"></use></svg>{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) + (n_pend_extintor or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}</a>
+          <a href="#" data-bs-toggle="dropdown" title="Notificações" style="color:var(--texto)"><svg width="20" height="20" style="color:var(--texto-2)"><use href="#ic-list"></use></svg>{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) + (n_pend_extintor or 0) + (n_notif_almox or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}</a>
           <ul class="dropdown-menu dropdown-menu-end" style="min-width:260px;">
             <li><h6 class="dropdown-header">Pendências com você</h6></li>
             {% if n_aprovacoes %}<li><a class="dropdown-item" href="{{ url_for('admin.aprovacoes') }}">📋 {{ n_aprovacoes }} aprovação(ões) pendente(s)</a></li>{% endif %}
             {% if n_cotacao %}<li><a class="dropdown-item" href="{{ url_for('admin.enviar_lote') }}">💬 {{ n_cotacao }} cotação(ões) para enviar</a></li>{% endif %}
             {% if n_cadastros_incompletos %}<li><a class="dropdown-item" href="{{ url_for('admin.fornecedores', incompletos='1') }}">🏢 {{ n_cadastros_incompletos }} cadastro(s) sem CNPJ</a></li>{% endif %}
             {% if n_pend_extintor %}<li><a class="dropdown-item" href="{{ url_for('almox.pendencias_etiqueta') }}">🧯 {{ n_pend_extintor }} extintor(es) em pendência</a></li>{% endif %}
-            {% if not n_aprovacoes and not n_cotacao and not n_cadastros_incompletos and not n_pend_extintor %}<li><span class="dropdown-item-text text-muted small">Nenhuma pendência agora 🎉</span></li>{% endif %}
+            {% if n_notif_almox %}<li><a class="dropdown-item" href="{{ url_for('almox.notificacoes') }}">🔔 {{ n_notif_almox }} notificação(ões) do almoxarifado</a></li>{% endif %}
+            {% if not n_aprovacoes and not n_cotacao and not n_cadastros_incompletos and not n_pend_extintor and not n_notif_almox %}<li><span class="dropdown-item-text text-muted small">Nenhuma pendência agora 🎉</span></li>{% endif %}
           </ul>
         </div>
         {% endif %}

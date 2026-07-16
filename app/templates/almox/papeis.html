@@ -50,9 +50,17 @@
 </div>
 
 {# Lista de perfis — fechada, cada um expande ao clicar no cabeçalho #}
-<div class="card"><div class="list-group list-group-flush">
+<div class="d-flex flex-wrap gap-3 align-items-center mb-2">
+  <input id="buscaPerfil" class="form-control form-control-sm" style="max-width:360px" placeholder="🔎 Buscar perfil por nome..." autocomplete="off" oninput="filtrarPerfis()">
+  <div class="form-check mb-0">
+    <input class="form-check-input" type="checkbox" id="mostrarInativos" onchange="filtrarPerfis()">
+    <label class="form-check-label small" for="mostrarInativos">Mostrar inativos</label>
+  </div>
+  <span class="text-muted small" id="contaPerfis"></span>
+</div>
+<div class="card"><div class="list-group list-group-flush" id="listaPerfis">
   {% for p in itens %}
-  <div class="list-group-item px-3">
+  <div class="list-group-item px-3 perfil-item" data-nome="{{ p.nome|lower }}" data-ativo="{{ '1' if p.ativo else '0' }}">
     <div class="d-flex justify-content-between align-items-center" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#perfil{{ p.id }}">
       <div>
         <span class="chevron me-2" style="display:inline-block;transition:transform .15s;color:var(--texto-2)">▸</span>
@@ -78,6 +86,7 @@
   {% else %}
   <div class="list-group-item text-muted px-3">Nenhum perfil de acesso cadastrado. Use "＋ Novo perfil".</div>
   {% endfor %}
+  <div class="list-group-item text-muted px-3 d-none" id="semResultado">Nenhum perfil encontrado com esse filtro.</div>
 </div></div>
 
 <style>
@@ -95,5 +104,21 @@ document.querySelectorAll('[data-grupo]').forEach(function(bloco){
   var all=document.getElementById('all_'+gid);
   if(all) all.checked=todas;
 });
+function _semAcento(t){ return (t||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function filtrarPerfis(){
+  var q=_semAcento((document.getElementById('buscaPerfil')||{}).value||'');
+  var inativos=(document.getElementById('mostrarInativos')||{}).checked;
+  var visiveis=0;
+  document.querySelectorAll('#listaPerfis .perfil-item').forEach(function(it){
+    var okNome=!q || _semAcento(it.dataset.nome).indexOf(q)>=0;
+    var okAtivo=inativos || it.dataset.ativo==='1';
+    var mostra=okNome && okAtivo;
+    it.style.display=mostra?'':'none';
+    if(mostra) visiveis++;
+  });
+  var vazio=document.getElementById('semResultado'); if(vazio) vazio.classList.toggle('d-none', visiveis>0);
+  var conta=document.getElementById('contaPerfis'); if(conta) conta.textContent=visiveis+' perfil(is)';
+}
+filtrarPerfis();  // ao abrir: aplica o filtro (só ativos por padrão)
 </script>
 {% endblock %}

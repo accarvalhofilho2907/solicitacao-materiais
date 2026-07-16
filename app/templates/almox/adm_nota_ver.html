@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Nota {{ nf.numero or 's/nº' }} — Administrativo{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.adm_notas') }}" class="btn btn-sm btn-outline-secondary mb-3">← Notas fiscais</a>
+<h4 class="mb-1">🧾 Nota {{ nf.numero or 's/nº' }}</h4>
+<p class="text-muted small">Origem: {{ nf.origem }}. Confira/complete os dados e classifique.</p>
+
+<form method="post" action="{{ url_for('almox.adm_nota_classificar', nid=nf.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-md-7">
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="mb-3">Dados da nota</h6>
+        <div class="row g-2">
+          <div class="col-6"><label class="form-label small">Número</label><input name="numero" class="form-control" value="{{ nf.numero or '' }}"></div>
+          <div class="col-6"><label class="form-label small">Valor (R$)</label><input name="valor" class="form-control" value="{{ '%.2f'|format(nf.valor) if nf.valor else '' }}"></div>
+          <div class="col-12"><label class="form-label small">Fornecedor</label><input name="fornecedor" class="form-control" value="{{ nf.fornecedor_nome or '' }}"></div>
+          <div class="col-12"><label class="form-label small">Emissão</label><input class="form-control" value="{{ nf.data_emissao.strftime('%d/%m/%Y') if nf.data_emissao else '—' }}" disabled></div>
+        </div>
+      </div></div>
+
+      {% if itens %}
+      <div class="card"><div class="card-body">
+        <h6 class="mb-2">Itens lidos ({{ itens|length }})</h6>
+        <div class="table-responsive"><table class="table table-sm mb-0">
+          <thead><tr><th>Item</th><th class="text-end">Qtd</th><th class="text-end">Vlr un.</th></tr></thead>
+          <tbody>{% for it in itens %}<tr><td>{{ it.nome }}</td><td class="text-end">{{ it.qtd or '—' }}</td><td class="text-end">{{ it.valor or '—' }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+      </div></div>
+      {% endif %}
+    </div>
+
+    <div class="col-md-5">
+      <div class="card"><div class="card-body">
+        <h6 class="mb-3">Classificação</h6>
+        <label class="form-label small">OPEX ou CAPEX</label>
+        <div class="d-flex gap-3 mb-3">
+          <div class="form-check"><input class="form-check-input" type="radio" name="classificacao" value="opex" id="cOpex" {{ 'checked' if nf.classificacao=='opex' }}><label class="form-check-label" for="cOpex">OPEX (custeio)</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="classificacao" value="capex" id="cCapex" {{ 'checked' if nf.classificacao=='capex' }}><label class="form-check-label" for="cCapex">CAPEX (investimento)</label></div>
+        </div>
+        <label class="form-label small">Ordem de compra (opcional)</label>
+        <input name="ordem_compra" class="form-control mb-3" value="{{ nf.ordem_compra or '' }}" placeholder="Ex.: OC-12345">
+        <button class="btn btn-primary w-100">Salvar classificação</button>
+      </div></div>
+    </div>
+  </div>
+</form>
+{% endblock %}

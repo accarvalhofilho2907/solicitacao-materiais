@@ -106,6 +106,23 @@
         <div class="col-6 mb-2"><label class="form-label">Saldo inicial</label><input class="form-control" name="saldo_inicial" type="number" step="any" value="0"></div>
         <div class="col-6 mb-2"><label class="form-label">Saldo mínimo</label><input class="form-control" name="saldo_minimo" type="number" step="any" value="0"></div>
       </div>
+      <div class="row g-2">
+        <div class="col-6 mb-2"><label class="form-label">Código de barras</label><input class="form-control" name="codigo_barras" placeholder="usado na entrada"></div>
+        <div class="col-6 mb-2"><label class="form-label">Fabricante</label>
+          <select class="form-select" name="fabricante_id"><option value="">—</option>
+            {% for fb in fabricantes %}<option value="{{ fb.id }}">{{ fb.nome }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="mb-1"><label class="form-label">Campos opcionais deste item</label>
+        <div class="form-text mb-2">Marque o que este item controla. Só o marcado aparece na Entrada e no Ajuste de instâncias.</div>
+        <div class="d-flex flex-wrap gap-3">
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="opc_tag" id="opc_tag"><label class="form-check-label" for="opc_tag">TAG</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="opc_ca" id="opc_ca"><label class="form-check-label" for="opc_ca">CA</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="opc_validade" id="opc_validade"><label class="form-check-label" for="opc_validade">Validade</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="opc_validade_calib" id="opc_validade_calib"><label class="form-check-label" for="opc_validade_calib">Validade de calibração</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="opc_lote" id="opc_lote"><label class="form-check-label" for="opc_lote">Lote</label></div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Cadastrar</button></div>
   </form>

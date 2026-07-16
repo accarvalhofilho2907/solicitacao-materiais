@@ -1435,3 +1435,73 @@ def api_criar(entidade):
     db.session.commit()
     rotulo = obj.rotulo if entidade == "cidade" else obj.nome
     return jsonify(ok=True, id=obj.id, nome=rotulo)
+
+
+# ==================== IMPORTAÇÃO EM LOTE (CSV) — EMPRESAS / FORNECEDORES ====================
+import csv as _csv
+import io as _io
+
+FORN_CSV_COLS = ["razao_social", "nome_fantasia", "cnpj", "email", "telefone", "cidade", "estado", "tipo"]
+
+
+@admin_bp.route("/fornecedores/modelo.xlsx")
+@admin_required
+def fornecedores_modelo_csv():
+    from flask import Response
+    from .almox import _gerar_xlsx
+    dados = _gerar_xlsx(FORN_CSV_COLS, [
+        ["OMEGA ENERGIA RENOVAVEL SA", "OMEGA", "12345678000199", "contato@omega.com", "8699998888", "SAO LUIS", "MA", "empresa"],
+        ["FERRAGENS COFERMETA LTDA", "COFERMETA", "98765432000111", "vendas@cofermeta.com", "8633334444", "TERESINA", "PI", "fornecedor"],
+    ], "Empresas_Fornecedores")
+    return Response(dados, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=modelo_empresas_fornecedores.xlsx"})
+
+
+@admin_bp.route("/fornecedores/importar", methods=["POST"])
+@admin_required
+def fornecedores_importar():
+    from .models import Fornecedor
+    from .almox import _ler_planilha
+    arq = request.files.get("arquivo")
+    if not arq or not arq.filename:
+        flash("Selecione um arquivo .xlsx ou CSV.", "danger")
+        return redirect(url_for("admin.fornecedores"))
+    linhas, erro = _ler_planilha(arq)
+    if erro:
+        flash(erro, "danger")
+        return redirect(url_for("admin.fornecedores"))
+    existentes = set()
+    for f0 in Fornecedor.query.all():
+        d = "".join(ch for ch in (f0.cnpj or "") if ch.isdigit())
+        if d:
+            existentes.add(d)
+    criados, pulados, motivos = 0, 0, []
+    for i, linha in enumerate(linhas, start=2):
+        razao = (linha.get("razao_social") or "").strip().upper()
+        fantasia = (linha.get("nome_fantasia") or "").strip().upper()
+        cnpj = "".join(ch for ch in (linha.get("cnpj") or "") if ch.isdigit())
+        email = (linha.get("email") or "").strip().lower()
+        telefone = (linha.get("telefone") or "").strip()
+        cidade = (linha.get("cidade") or "").strip().upper()
+        estado = (linha.get("estado") or "").strip().upper()[:2]
+        tipo = (linha.get("tipo") or "").strip().lower()
+        if not (razao or fantasia):
+            pulados += 1; motivos.append(f"linha {i}: informe razão social ou nome fantasia"); continue
+        if cnpj and cnpj in existentes:
+            pulados += 1; motivos.append(f"linha {i}: CNPJ {cnpj} já cadastrado"); continue
+        eh_empresa = tipo.startswith("empresa")
+        f = Fornecedor(razao_social=razao or fantasia, nome_fantasia=fantasia or razao,
+                       cnpj=(cnpj or None), email=email, telefone=telefone,
+                       cidade=cidade, estado=estado,
+                       is_empresa_interna=eh_empresa, is_fornecedor=(not eh_empresa),
+                       aprovacao="aprovado")
+        db.session.add(f)
+        if cnpj:
+            existentes.add(cnpj)
+        criados += 1
+    db.session.commit()
+    resumo = f"Importação concluída: {criados} registro(s) criado(s), {pulados} pulado(s)."
+    if motivos:
+        resumo += " Detalhes: " + "; ".join(motivos[:15]) + ("..." if len(motivos) > 15 else "")
+    flash(resumo, "success" if criados else "warning")
+    return redirect(url_for("admin.fornecedores"))

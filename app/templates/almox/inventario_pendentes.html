@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Baixas de inventário a aprovar{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
+<h4 class="mb-1">🧮 Baixas de inventário a aprovar</h4>
+<p class="text-muted small">Reduções feitas no inventário do coletor. Só afetam o saldo após aprovação.</p>
+
+<div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+  <thead><tr><th>Item</th><th>Localizador</th><th class="text-end">De</th><th class="text-end">Para</th><th class="text-end">Baixa</th><th>Operador</th><th></th></tr></thead>
+  <tbody>
+  {% for a in pendentes %}
+    <tr>
+      <td>{{ a.produto_nome }}</td>
+      <td class="small">{{ a.localizador_cod or '—' }}</td>
+      <td class="text-end">{{ '%g'|format(a.saldo_antes or 0) }}</td>
+      <td class="text-end">{{ '%g'|format(a.saldo_novo or 0) }}</td>
+      <td class="text-end text-danger">{{ '%g'|format(a.diferenca or 0) }}</td>
+      <td class="small">{{ a.operador_nome or '—' }}<br><span class="text-muted">{{ a.criado_em.strftime('%d/%m %H:%M') if a.criado_em }}</span></td>
+      <td class="text-end text-nowrap">
+        <form method="post" action="{{ url_for('almox.inventario_pendente_decidir', aid=a.id, acao='aprovar') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-success">Aprovar</button>
+        </form>
+        <form method="post" action="{{ url_for('almox.inventario_pendente_decidir', aid=a.id, acao='reprovar') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-secondary">Reprovar</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="text-muted text-center py-4">Nenhuma baixa aguardando aprovação.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}

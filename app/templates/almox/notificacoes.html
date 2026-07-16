@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Notificações — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.administrativo') }}" class="btn btn-sm btn-outline-secondary mb-3">← Administrativo</a>
+<h4 class="mb-1">🔔 Notificações</h4>
+<p class="text-muted small">Classificações de nota, notas sem cadastro prévio e baixas de inventário.</p>
+
+<div class="card"><div class="list-group list-group-flush">
+  {% for n in itens %}
+  <div class="list-group-item d-flex justify-content-between align-items-start gap-2 {{ '' if n.lida else 'bg-body-tertiary' }}">
+    <div>
+      <div>{% if not n.lida %}<span class="badge bg-primary me-1">nova</span>{% endif %}<b>{{ n.titulo }}</b></div>
+      <div class="small text-muted">{{ n.texto }}</div>
+      <div class="small text-muted">{{ n.criado_em.strftime('%d/%m/%Y %H:%M') if n.criado_em }}</div>
+    </div>
+    <div class="d-flex gap-2 text-nowrap">
+      {% if n.tipo == 'classificar_nf' and n.ref_id %}
+        <a class="btn btn-sm btn-primary" href="{{ url_for('almox.adm_nota_ver', nid=n.ref_id) }}">Classificar</a>
+      {% elif n.tipo == 'inventario_baixa' %}
+        <a class="btn btn-sm btn-primary" href="{{ url_for('almox.inventario_pendentes') }}">Ver baixas</a>
+      {% endif %}
+      {% if not n.lida %}
+      <form method="post" action="{{ url_for('almox.notificacao_lida', nid=n.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-secondary">Marcar lida</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="list-group-item text-muted text-center py-4">Nenhuma notificação.</div>
+  {% endfor %}
+</div></div>
+{% endblock %}

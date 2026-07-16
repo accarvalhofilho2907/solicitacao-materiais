@@ -473,6 +473,7 @@ class ProdutoAlmox(db.Model):
     __tablename__ = "almox_produtos"
     id = db.Column(db.Integer, primary_key=True)
     codigo = db.Column(db.String(40))
+    codigo_barras = db.Column(db.String(60))          # p/ leitura na entrada
     nome = db.Column(db.String(160), nullable=False)
     unidade = db.Column(db.String(12), default="UN")
     categoria = db.Column(db.String(80))
@@ -480,22 +481,163 @@ class ProdutoAlmox(db.Model):
     saldo_minimo = db.Column(db.Float, default=0)
     local_id = db.Column(db.ForeignKey("almox_locais.id"))
     localizador_id = db.Column(db.ForeignKey("almox_localizadores.id"))   # novo endereço físico
+    fabricante_id = db.Column(db.ForeignKey("almox_fabricantes.id"))      # último fabricante usado
     qr_uid = db.Column(db.String(20), unique=True)
     ativo = db.Column(db.Boolean, default=True)
+    pendente_aprovacao = db.Column(db.Boolean, default=False)  # criado na entrada; aguarda admin
+    # cadastro-raiz: quais opcionais este item usa (aparecem na entrada/ajuste)
+    opc_tag = db.Column(db.Boolean, default=False)
+    opc_ca = db.Column(db.Boolean, default=False)
+    opc_validade = db.Column(db.Boolean, default=False)
+    opc_validade_calib = db.Column(db.Boolean, default=False)
+    opc_lote = db.Column(db.Boolean, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     local = db.relationship("LocalAlmox")
     localizador = db.relationship("Localizador")
+    fabricante = db.relationship("Fabricante")
 
     @property
     def abaixo_minimo(self):
         return self.saldo_minimo and self.saldo <= self.saldo_minimo
 
     @property
+    def opcionais_ativos(self):
+        m = [("tag", self.opc_tag), ("ca", self.opc_ca), ("validade", self.opc_validade),
+             ("validade_calib", self.opc_validade_calib), ("lote", self.opc_lote)]
+        return [k for k, v in m if v]
+
+    # --- Estoque por localizador (fonte da verdade) ---
+    def linhas_estoque(self):
+        from sqlalchemy import inspect as _insp
+        return EstoqueLocalizador.query.filter_by(produto_id=self.id).all()
+
+    def recalcular_saldo(self):
+        """Recalcula o saldo TOTAL como soma dos saldos por localizador (mantém compatibilidade)."""
+        total = sum((l.quantidade or 0) for l in self.linhas_estoque())
+        self.saldo = total
+        return total
+
+    def estoque_em(self, localizador_id):
+        return EstoqueLocalizador.query.filter_by(produto_id=self.id, localizador_id=localizador_id).first()
+
+    def ajustar_estoque(self, localizador_id, delta):
+        """Soma/subtrai 'delta' no localizador informado e atualiza o saldo total. Não deixa negativo."""
+        linha = self.estoque_em(localizador_id)
+        if linha is None:
+            linha = EstoqueLocalizador(produto_id=self.id, localizador_id=localizador_id, quantidade=0)
+            db.session.add(linha); db.session.flush()
+        linha.quantidade = (linha.quantidade or 0) + delta
+        if linha.quantidade < 0:
+            linha.quantidade = 0
+        self.recalcular_saldo()
+        return linha
+
+    @property
     def local_nome(self):
         if self.localizador:
             return self.localizador.codigo
         return self.local.nome if self.local else "—"
+
+
+class Fabricante(db.Model):
+    """Fabricante do item (usado na entrada). Diferente de Fornecedor/vendedor."""
+    __tablename__ = "almox_fabricantes"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class NotaFiscalAlmox(db.Model):
+    """Nota fiscal usada na entrada (rastreabilidade). Pode ser pré-informada (lançada antes) ou
+    informada na entrada (manual). Classificação OPEX/CAPEX é feita pelo admin no desktop."""
+    __tablename__ = "almox_notas_fiscais"
+    id = db.Column(db.Integer, primary_key=True)
+    numero = db.Column(db.String(40))
+    fornecedor_nome = db.Column(db.String(160))       # vendedor
+    valor = db.Column(db.Float)
+    data_emissao = db.Column(db.Date)
+    ordem_compra = db.Column(db.String(40))
+    itens_json = db.Column(db.Text)                   # itens lidos do XML/PDF (JSON)
+    classificacao = db.Column(db.String(10))          # opex | capex | None (a classificar)
+    origem = db.Column(db.String(10), default="pre")  # pre | manual | entrada | importada
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def rotulo(self):
+        n = self.numero or "s/nº"
+        f = self.fornecedor_nome or "—"
+        return f"NF {n} · {f}"
+
+
+class NotificacaoAlmox(db.Model):
+    """Notificação para o sininho do admin (ex.: classificar OPEX/CAPEX; NF sem cadastro prévio)."""
+    __tablename__ = "almox_notificacoes"
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(30))                   # classificar_nf | nf_sem_cadastro | item_pendente
+    titulo = db.Column(db.String(160))
+    texto = db.Column(db.Text)
+    ref_id = db.Column(db.Integer)                    # id da NF / item relacionado
+    lida = db.Column(db.Boolean, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EstoqueLocalizador(db.Model):
+    """Saldo do item EM CADA localizador (fonte da verdade do estoque físico).
+    O saldo total do item é a SOMA das linhas aqui."""
+    __tablename__ = "almox_estoque_localizador"
+    id = db.Column(db.Integer, primary_key=True)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"), nullable=False)
+    localizador_id = db.Column(db.ForeignKey("almox_localizadores.id"))  # None = não atribuído
+    quantidade = db.Column(db.Float, default=0)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    produto = db.relationship("ProdutoAlmox")
+    localizador = db.relationship("Localizador")
+    __table_args__ = (db.UniqueConstraint("produto_id", "localizador_id", name="uq_estoque_loc"),)
+
+    @property
+    def local_cod(self):
+        return self.localizador.codigo if self.localizador else "não atribuído"
+
+
+class InstanciaItem(db.Model):
+    """Instância (unidade ou grupo de unidades iguais) de um item, com dados próprios:
+    TAG, CA, validade, validade de calibração, lote. Usada no Ajuste de instâncias."""
+    __tablename__ = "almox_instancias_item"
+    id = db.Column(db.Integer, primary_key=True)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"), nullable=False)
+    localizador_id = db.Column(db.ForeignKey("almox_localizadores.id"))
+    tag = db.Column(db.String(60))
+    ca = db.Column(db.String(40))
+    validade = db.Column(db.Date)
+    validade_calib = db.Column(db.Date)
+    lote = db.Column(db.String(60))
+    quantidade = db.Column(db.Float, default=1)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    produto = db.relationship("ProdutoAlmox")
+    localizador = db.relationship("Localizador")
+
+
+class AjusteInventario(db.Model):
+    """Registro de ajuste feito no inventário. Baixas (redução) ficam PENDENTES de aprovação do admin.
+    Guarda histórico para consulta de PERDAS por período."""
+    __tablename__ = "almox_ajustes_inventario"
+    id = db.Column(db.Integer, primary_key=True)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
+    produto_nome = db.Column(db.String(160))
+    localizador_cod = db.Column(db.String(40))
+    localizador_id = db.Column(db.ForeignKey("almox_localizadores.id"))
+    saldo_antes = db.Column(db.Float)
+    saldo_novo = db.Column(db.Float)
+    diferenca = db.Column(db.Float)                   # negativo = baixa; positivo = acréscimo
+    tipo = db.Column(db.String(10))                   # baixa | acrescimo
+    status = db.Column(db.String(10), default="aplicado")  # aplicado | pendente | reprovado
+    operador_id = db.Column(db.ForeignKey("usuarios.id"))
+    operador_nome = db.Column(db.String(160))
+    decidido_por = db.Column(db.String(160))
+    decidido_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class MovimentacaoMaterial(db.Model):

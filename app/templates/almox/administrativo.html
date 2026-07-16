@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Administrativo — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
+<h4 class="mb-1">🗂️ Administrativo</h4>
+<p class="text-muted small">Notas fiscais e notificações do almoxarifado (desktop).</p>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="mb-1">🧾 Notas fiscais</h6>
+      <p class="text-muted small mb-3">Importe XML/PDF, leia os dados e classifique OPEX/CAPEX.</p>
+      {% if n_classificar %}<span class="badge bg-warning text-dark mb-2">{{ n_classificar }} a classificar</span>{% endif %}
+      <div><a class="btn btn-sm btn-primary" href="{{ url_for('almox.adm_notas') }}">Abrir notas fiscais</a></div>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="mb-1">🔔 Notificações</h6>
+      <p class="text-muted small mb-3">Classificações pendentes, notas sem cadastro e baixas de inventário.</p>
+      {% if n_notif %}<span class="badge bg-primary mb-2">{{ n_notif }} não lida(s)</span>{% endif %}
+      <div><a class="btn btn-sm btn-primary" href="{{ url_for('almox.notificacoes') }}">Abrir notificações</a></div>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

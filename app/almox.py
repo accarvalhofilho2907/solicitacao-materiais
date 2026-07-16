@@ -110,7 +110,9 @@ from .models import (Chave, Extintor, Colaborador, AlmoxLog, QuadroChave,
                      PapelColaborador, MovimentacaoChave, TAREFAS_COLABORADOR, TAREFAS_DICT,
                      TAREFAS_PERFIL, TAREFAS_GRUPOS,
                      InspecaoExtintor, PendenciaEtiqueta, CHECK_EXTINTOR, ITEM_ETIQUETA_EXTINTOR,
-                     ProdutoAlmox, MovimentacaoMaterial, LocalAlmox)
+                     ProdutoAlmox, MovimentacaoMaterial, LocalAlmox, Fabricante,
+                     NotaFiscalAlmox, NotificacaoAlmox, AjusteInventario,
+                     EstoqueLocalizador, InstanciaItem)
 
 
 def _qr_svg(texto, box=8, border=2):
@@ -1449,7 +1451,8 @@ def materiais():
     itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
     n_baixo = sum(1 for p in itens if p.abaixo_minimo)
     locais = LocalAlmox.query.filter_by(ativo=True).order_by(LocalAlmox.nome).all()
-    return render_template("almox/materiais.html", itens=itens, n_baixo=n_baixo, locais=locais)
+    fabricantes = Fabricante.query.filter_by(ativo=True).order_by(Fabricante.nome).all()
+    return render_template("almox/materiais.html", itens=itens, n_baixo=n_baixo, locais=locais, fabricantes=fabricantes)
 
 
 @almox_bp.route("/materiais/novo", methods=["POST"])
@@ -1468,10 +1471,17 @@ def material_novo():
         temp = LocalAlmox.query.filter_by(temporaria=True).first()
         local_id = temp.id if temp else None
     p = ProdutoAlmox(codigo=(request.form.get("codigo") or "").strip().upper(),
+                     codigo_barras=(request.form.get("codigo_barras") or "").strip() or None,
                      nome=nome.upper(), unidade=(request.form.get("unidade") or "UN").strip().upper(),
                      categoria=(request.form.get("categoria") or "").strip().upper(),
                      saldo=_num(request.form.get("saldo_inicial"), 0),
                      saldo_minimo=_num(request.form.get("saldo_minimo"), 0),
+                     fabricante_id=int(request.form["fabricante_id"]) if request.form.get("fabricante_id") else None,
+                     opc_tag=bool(request.form.get("opc_tag")),
+                     opc_ca=bool(request.form.get("opc_ca")),
+                     opc_validade=bool(request.form.get("opc_validade")),
+                     opc_validade_calib=bool(request.form.get("opc_validade_calib")),
+                     opc_lote=bool(request.form.get("opc_lote")),
                      local_id=int(local_id) if local_id else None, qr_uid=uid)
     db.session.add(p)
     db.session.flush()
@@ -1801,9 +1811,9 @@ def coletor_api_locais():
     return jsonify(ok=True, locais=[{"id": l.id, "nome": l.nome} for l in locais])
 
 
-@almox_bp.route("/coletor/api/mover", methods=["POST"])
+@almox_bp.route("/coletor/api/mover-legado", methods=["POST"])
 @modulo_required
-def coletor_api_mover():
+def coletor_api_mover_legado():
     data = request.get_json(silent=True) or {}
     p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
     destino = db.session.get(LocalAlmox, data.get("local_id") or 0)
@@ -2030,3 +2040,909 @@ def localizadores_gerar():
 def relatorios_central():
     """Central de relatórios: reúne num lugar só todos os relatórios e exportações."""
     return render_template("almox/relatorios_central.html")
+
+
+# ==================== IMPORTAÇÃO EM LOTE — COLABORADORES ====================
+import csv as _csv
+import io as _io
+
+COLAB_CSV_COLS = ["nome", "cpf", "email", "empresa", "cargo", "perfil"]
+
+
+def _gerar_xlsx(colunas, exemplos, nome_aba="Modelo"):
+    """Gera um .xlsx (bytes) com cabeçalho em negrito + linhas de exemplo."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook(); ws = wb.active; ws.title = nome_aba
+    ws.append(colunas)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for ex in exemplos:
+        ws.append(ex)
+    for i, _col in enumerate(colunas, start=1):
+        ws.column_dimensions[chr(64 + i)].width = 22
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    return buf.read()
+
+
+def _ler_planilha(arquivo):
+    """Lê .xlsx ou .csv e devolve (lista_de_dicts, erro). Cabeçalhos em minúsculo."""
+    nome = (arquivo.filename or "").lower()
+    dados = arquivo.read()
+    if nome.endswith(".xlsx"):
+        from openpyxl import load_workbook
+        try:
+            wb = load_workbook(_io.BytesIO(dados), read_only=True, data_only=True)
+        except Exception:
+            return None, "Não consegui ler o Excel. Verifique o arquivo."
+        ws = wb.active
+        linhas = list(ws.iter_rows(values_only=True))
+        if not linhas:
+            return [], None
+        cab = [str(h).strip().lower() if h is not None else "" for h in linhas[0]]
+        out = []
+        for row in linhas[1:]:
+            d = {}
+            for i, h in enumerate(cab):
+                v = row[i] if i < len(row) else None
+                d[h] = "" if v is None else str(v).strip()
+            out.append(d)
+        return out, None
+    # CSV
+    try:
+        txt = dados.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            txt = dados.decode("latin-1")
+        except Exception:
+            return None, "Não consegui ler o arquivo. Salve como .xlsx ou CSV UTF-8."
+    sep = ";" if txt.count(";") >= txt.count(",") else ","
+    leitor = _csv.DictReader(_io.StringIO(txt), delimiter=sep)
+    cab = [(h or "").strip().lower() for h in (leitor.fieldnames or [])]
+    leitor.fieldnames = cab
+    return [ {k: (v or "").strip() for k, v in row.items()} for row in leitor ], None
+
+
+@almox_bp.route("/colaboradores/modelo.xlsx")
+@_guard("pode_colaboradores")
+def colaboradores_modelo_csv():
+    from flask import Response
+    dados = _gerar_xlsx(COLAB_CSV_COLS, [
+        ["JOAO DA SILVA", "12345678901", "joao@empresa.com", "OMEGA ENERGIA", "TECNICO", "ALMOXARIFADO"],
+        ["MARIA SOUZA", "98765432100", "", "PRESTADORA XYZ", "AUXILIAR", "SOLICITANTE"],
+    ], "Colaboradores")
+    return Response(dados, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=modelo_colaboradores.xlsx"})
+
+
+@almox_bp.route("/colaboradores/importar", methods=["POST"])
+@_guard("pode_colaboradores")
+def colaboradores_importar():
+    import secrets
+    arq = request.files.get("arquivo")
+    if not arq or not arq.filename:
+        flash("Selecione um arquivo .xlsx ou CSV.", "danger")
+        return redirect(url_for("almox.colaboradores"))
+    linhas, erro = _ler_planilha(arq)
+    if erro:
+        flash(erro, "danger")
+        return redirect(url_for("almox.colaboradores"))
+    nomes_perfil = {p.nome.upper() for p in PapelColaborador.query.all()}
+    existentes = set()
+    for c0 in Colaborador.query.filter(Colaborador.ativo.is_(True)).all():
+        existentes.add("".join(ch for ch in (c0.cpf or "") if ch.isdigit()))
+    criados, pulados, motivos = 0, 0, []
+    for i, linha in enumerate(linhas, start=2):
+        nome = (linha.get("nome") or "").strip().upper()
+        cpf = "".join(ch for ch in (linha.get("cpf") or "") if ch.isdigit())
+        email = (linha.get("email") or "").strip().lower()
+        empresa = (linha.get("empresa") or "").strip().upper()
+        cargo = (linha.get("cargo") or "").strip().upper()
+        perfil = (linha.get("perfil") or "").strip().upper()
+        if not nome or not cpf:
+            pulados += 1; motivos.append(f"linha {i}: nome e CPF são obrigatórios"); continue
+        if cpf in existentes:
+            pulados += 1; motivos.append(f"linha {i}: CPF {cpf} já cadastrado"); continue
+        papel = "COLABORADOR DIVERSO"
+        if perfil:
+            if perfil in nomes_perfil:
+                papel = perfil
+            else:
+                motivos.append(f"linha {i}: perfil '{perfil}' não existe — entrou como COLABORADOR DIVERSO")
+        uid = "COL-" + secrets.token_hex(4).upper()
+        while Colaborador.query.filter_by(qr_uid=uid).first():
+            uid = "COL-" + secrets.token_hex(4).upper()
+        db.session.add(Colaborador(nome=nome, cpf=cpf, email=(email or None),
+                                   empresa=empresa, cargo=cargo, papel=papel, qr_uid=uid))
+        existentes.add(cpf); criados += 1
+    db.session.commit()
+    _log("Colaborador", f"Importação em lote: {criados} criado(s), {pulados} pulado(s)")
+    resumo = f"Importação concluída: {criados} colaborador(es) criado(s), {pulados} pulado(s)."
+    if motivos:
+        resumo += " Detalhes: " + "; ".join(motivos[:15]) + ("..." if len(motivos) > 15 else "")
+    flash(resumo, "success" if criados else "warning")
+    return redirect(url_for("almox.colaboradores"))
+
+
+# ==================== CADASTRO: FABRICANTES ====================
+@almox_bp.route("/fabricantes")
+@_guard("pode_almox_modulo")
+def fabricantes():
+    mostrar_inativos = request.args.get("inativos") == "1"
+    q = Fabricante.query
+    if not mostrar_inativos:
+        q = q.filter_by(ativo=True)
+    itens = q.order_by(Fabricante.nome).all()
+    return render_template("almox/fabricantes.html", itens=itens, mostrar_inativos=mostrar_inativos)
+
+
+@almox_bp.route("/fabricantes/novo", methods=["POST"])
+@_guard("pode_almox_modulo")
+def fabricante_novo():
+    nome = (request.form.get("nome") or "").strip().upper()
+    if not nome:
+        flash("Informe o nome do fabricante.", "danger")
+        return redirect(url_for("almox.fabricantes"))
+    if Fabricante.query.filter(db.func.upper(Fabricante.nome) == nome).first():
+        flash("Já existe um fabricante com esse nome.", "warning")
+        return redirect(url_for("almox.fabricantes"))
+    db.session.add(Fabricante(nome=nome, ativo=True))
+    _log("Material", f"Fabricante cadastrado: {nome}")
+    db.session.commit()
+    flash("Fabricante cadastrado.", "success")
+    return redirect(url_for("almox.fabricantes"))
+
+
+@almox_bp.route("/fabricantes/<int:fid>/editar", methods=["POST"])
+@_guard("pode_almox_modulo")
+def fabricante_editar(fid):
+    f = Fabricante.query.get_or_404(fid)
+    nome = (request.form.get("nome") or "").strip().upper()
+    if nome and nome != (f.nome or "").upper():
+        existe = Fabricante.query.filter(db.func.upper(Fabricante.nome) == nome, Fabricante.id != fid).first()
+        if existe:
+            flash("Já existe um fabricante com esse nome.", "warning")
+            return redirect(url_for("almox.fabricantes"))
+        f.nome = nome
+        db.session.commit()
+        flash("Fabricante atualizado.", "success")
+    return redirect(url_for("almox.fabricantes"))
+
+
+@almox_bp.route("/fabricantes/<int:fid>/toggle", methods=["POST"])
+@_guard("pode_almox_modulo")
+def fabricante_toggle(fid):
+    f = Fabricante.query.get_or_404(fid)
+    f.ativo = not f.ativo
+    db.session.commit()
+    flash("Fabricante " + ("reativado." if f.ativo else "desativado."), "success")
+    return redirect(url_for("almox.fabricantes"))
+
+
+# ==================== COLETOR REFORMADO — BLOCOS 2 e 3 ====================
+import unicodedata as _ud
+
+def _norm(s):
+    s = (s or "").strip().lower()
+    return "".join(c for c in _ud.normalize("NFKD", s) if not _ud.combining(c))
+
+
+def _resolver_localizador(termo):
+    """Aceita qr_uid do localizador OU o código no formato A*1*3."""
+    from .models import Localizador
+    t = _uid_limpo(termo).strip()
+    loc = Localizador.query.filter_by(qr_uid=t, ativo=True).first()
+    if loc:
+        return loc
+    if "*" in t:
+        partes = t.upper().split("*")
+        if len(partes) == 3 and partes[1].isdigit() and partes[2].isdigit():
+            return (Localizador.query.filter_by(fila=partes[0], estante=int(partes[1]),
+                    nivel=int(partes[2]), ativo=True).first())
+    return None
+
+
+@almox_bp.route("/coletor/api/localizador/<path:qr_uid>")
+@modulo_required
+def coletor_api_localizador(qr_uid):
+    loc = _resolver_localizador(qr_uid)
+    if not loc:
+        return jsonify(ok=False, erro="Localizador não encontrado."), 404
+    return jsonify(ok=True, id=loc.id, codigo=loc.codigo, caminho=loc.caminho)
+
+
+@almox_bp.route("/coletor/api/item/<path:qr_uid>")
+@modulo_required
+def coletor_api_item(qr_uid):
+    """Unificado: reconhece pelo QR se é CHAVE (CH-/QUAD-) ou MATERIAL."""
+    uid = _uid_limpo(qr_uid)
+    up = uid.upper()
+    if up.startswith("CH-") or up.startswith("QUAD-"):
+        c = Chave.query.filter_by(qr_uid=uid, ativo=True).first()
+        if not c:
+            return jsonify(ok=False, erro="Chave não encontrada."), 404
+        return jsonify(ok=True, tipo="chave", id=c.id, nome=c.descricao,
+                       info=c.quadro_nome, status=c.status, com_quem=c.com_quem)
+    p = ProdutoAlmox.query.filter_by(qr_uid=uid, ativo=True).first()
+    if p:
+        return jsonify(ok=True, tipo="material", id=p.id, nome=p.nome,
+                       info=(p.unidade or "UN"), saldo=p.saldo or 0, localizador=p.local_nome)
+    return jsonify(ok=False, erro="Item não encontrado."), 404
+
+
+@almox_bp.route("/coletor/api/buscar")
+@modulo_required
+def coletor_api_buscar():
+    """Busca pesquisável para os campos do coletor. tipo=colab|loc|item|fabricante|nf; q=texto."""
+    from .models import Localizador
+    tipo = request.args.get("tipo", "")
+    q = _norm(request.args.get("q", ""))
+    res = []
+    if tipo == "colab":
+        for c in Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all():
+            if not q or q in _norm(c.nome) or q in _norm(c.empresa):
+                res.append({"id": c.id, "nome": c.nome, "info": c.empresa or ""})
+    elif tipo == "loc":
+        for l in Localizador.query.filter_by(ativo=True).all():
+            if not q or q in _norm(l.codigo) or q in _norm(l.caminho):
+                res.append({"id": l.id, "nome": l.codigo, "info": l.caminho})
+        res.sort(key=lambda x: x["nome"])
+    elif tipo == "item":
+        for p in ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all():
+            if not q or q in _norm(p.nome) or q in _norm(p.codigo) or q in _norm(p.codigo_barras):
+                res.append({"id": p.id, "tipo": "material", "nome": p.nome,
+                            "info": "Material · " + (p.local_nome or "—"), "saldo": p.saldo or 0})
+        for c in Chave.query.filter_by(ativo=True).order_by(Chave.descricao).all():
+            if not q or q in _norm(c.descricao) or q in _norm(c.quadro_nome):
+                res.append({"id": c.id, "tipo": "chave", "nome": c.descricao,
+                            "info": "Chave · " + (c.quadro_nome or "—"), "status": c.status})
+    elif tipo == "fabricante":
+        for f in Fabricante.query.filter_by(ativo=True).order_by(Fabricante.nome).all():
+            if not q or q in _norm(f.nome):
+                res.append({"id": f.id, "nome": f.nome, "info": "fabricante"})
+    elif tipo == "nf":
+        for n in NotaFiscalAlmox.query.order_by(NotaFiscalAlmox.criado_em.desc()).all():
+            if not q or q in _norm(n.numero) or q in _norm(n.fornecedor_nome):
+                res.append({"id": n.id, "nome": n.rotulo,
+                            "info": (("R$ %.2f" % n.valor) if n.valor else "")})
+    return jsonify(ok=True, itens=res[:40])
+
+
+def _valida_senha_colab(colab, senha):
+    if not colab.tem_senha:
+        if len(senha or "") < 4:
+            return "Primeiro uso: defina uma senha de ao menos 4 dígitos."
+        colab.set_senha(senha)
+        return None
+    if not colab.check_senha(senha):
+        return "Senha do colaborador inválida."
+    return None
+
+
+@almox_bp.route("/coletor/api/retirar", methods=["POST"])
+@modulo_required
+def coletor_api_retirar():
+    """RETIRADA unificada (chave/material) com localizador por item.
+    payload: {colaborador_id, senha, itens:[{tipo,id,qtd,localizador_id,localizador_cod}]}"""
+    data = request.get_json(silent=True) or {}
+    colab = db.session.get(Colaborador, data.get("colaborador_id") or 0)
+    if not colab or not colab.ativo:
+        return jsonify(ok=False, erro="Colaborador inválido."), 400
+    err = _valida_senha_colab(colab, data.get("senha"))
+    if err:
+        return jsonify(ok=False, erro=err), 403
+    itens = data.get("itens") or []
+    if not itens:
+        return jsonify(ok=False, erro="Cesta vazia."), 400
+    # valida saldo de materiais antes de aplicar (POR LOCALIZADOR quando informado)
+    plano_mat, faltas, plano_chave = [], [], []
+    for it in itens:
+        if it.get("tipo") == "material":
+            p = db.session.get(ProdutoAlmox, it.get("id") or 0)
+            qn = _num(it.get("qtd"), 1)
+            if not p or qn <= 0:
+                continue
+            loc_id = it.get("localizador_id")
+            loccod = it.get("localizador_cod") or p.local_nome
+            if loc_id:
+                linha = p.estoque_em(int(loc_id))
+                disp = (linha.quantidade or 0) if linha else 0
+                if qn > disp:
+                    faltas.append(f"{p.nome} em {loccod} (tem {disp:g}, pediu {qn:g})")
+                else:
+                    plano_mat.append((p, qn, int(loc_id), loccod))
+            else:
+                if qn > (p.saldo or 0):
+                    faltas.append(f"{p.nome} (saldo {p.saldo:g}, pedido {qn:g})")
+                else:
+                    plano_mat.append((p, qn, None, loccod))
+        elif it.get("tipo") == "chave":
+            c = db.session.get(Chave, it.get("id") or 0)
+            if c and c.ativo and c.status == "Disponível":
+                plano_chave.append(c)
+    if faltas:
+        return jsonify(ok=False, erro="Saldo insuficiente: " + "; ".join(faltas)), 400
+    feitas = []
+    for p, qn, loc_id, loccod in plano_mat:
+        if loc_id:
+            p.ajustar_estoque(loc_id, -qn)
+        else:
+            p.saldo = (p.saldo or 0) - qn
+        db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="saida",
+                       quantidade=qn, saldo_apos=p.saldo, local_de=loccod, colaborador_id=colab.id,
+                       colaborador_nome=colab.nome, operador_id=_op_id(), obs="Coletor/retirada"))
+        feitas.append(f"{qn:g} {p.unidade} de {p.nome} ({loccod})")
+    for c in plano_chave:
+        c.status = "Em uso"; c.com_quem = colab.nome
+        db.session.add(MovimentacaoChave(chave_id=c.id, chave_desc=c.descricao, quadro_nome=c.quadro_nome,
+                       colaborador_id=colab.id, colaborador_nome=colab.nome, acao="retirada", operador_id=_op_id()))
+        feitas.append(f"Chave {c.descricao}")
+    _log("Coletor", f"{colab.nome}: retirada — " + "; ".join(feitas))
+    db.session.commit()
+    return jsonify(ok=True, resumo=feitas, colaborador=colab.nome)
+
+
+@almox_bp.route("/coletor/api/devolver", methods=["POST"])
+@modulo_required
+def coletor_api_devolver():
+    """DEVOLUÇÃO unificada (sem localizador, por decisão).
+    payload: {colaborador_id, senha, itens:[{tipo,id,qtd}]}"""
+    data = request.get_json(silent=True) or {}
+    colab = db.session.get(Colaborador, data.get("colaborador_id") or 0)
+    if not colab or not colab.ativo:
+        return jsonify(ok=False, erro="Colaborador inválido."), 400
+    err = _valida_senha_colab(colab, data.get("senha"))
+    if err:
+        return jsonify(ok=False, erro=err), 403
+    itens = data.get("itens") or []
+    if not itens:
+        return jsonify(ok=False, erro="Cesta vazia."), 400
+    feitas = []
+    for it in itens:
+        if it.get("tipo") == "material":
+            p = db.session.get(ProdutoAlmox, it.get("id") or 0)
+            qn = _num(it.get("qtd"), 1)
+            if not p or qn <= 0:
+                continue
+            p.ajustar_estoque(None, qn)
+            db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="entrada",
+                           quantidade=qn, saldo_apos=p.saldo, local_de="não atribuído", colaborador_id=colab.id,
+                           colaborador_nome=colab.nome, operador_id=_op_id(), obs="Coletor/devolução"))
+            feitas.append(f"{qn:g} {p.unidade} de {p.nome}")
+        elif it.get("tipo") == "chave":
+            c = db.session.get(Chave, it.get("id") or 0)
+            if c and c.ativo and c.status == "Em uso":
+                retirou = c.com_quem or "—"
+                c.status = "Disponível"; c.com_quem = None
+                db.session.add(MovimentacaoChave(chave_id=c.id, chave_desc=c.descricao, quadro_nome=c.quadro_nome,
+                               colaborador_id=colab.id, colaborador_nome=colab.nome, retirado_por=retirou,
+                               acao="devolucao", operador_id=_op_id()))
+                feitas.append(f"Chave {c.descricao}")
+    _log("Coletor", f"{colab.nome}: devolução — " + "; ".join(feitas))
+    db.session.commit()
+    return jsonify(ok=True, resumo=feitas, colaborador=colab.nome)
+
+
+@almox_bp.route("/coletor/api/entrada", methods=["POST"])
+@modulo_required
+def coletor_api_entrada():
+    """ENTRADA de item comprado. payload:
+    {produto_id, qtd, valor_unit, fabricante_id, fabricante_nd,
+     opcionais:{tag,ca,validade,validade_calib,lote},
+     nf:{modo:'sem'|'vincular'|'manual', nf_id, fornecedor, numero}}"""
+    from datetime import datetime as _dt
+    data = request.get_json(silent=True) or {}
+    p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
+    if not p or not p.ativo:
+        return jsonify(ok=False, erro="Item inválido. Cadastre-o antes (fica pendente de aprovação)."), 400
+    if p.pendente_aprovacao:
+        return jsonify(ok=False, erro="Este item está pendente de aprovação do admin."), 400
+    qn = _num(data.get("qtd"), 0)
+    if qn <= 0:
+        return jsonify(ok=False, erro="Informe a quantidade."), 400
+    valor = _num(data.get("valor_unit"), 0)
+    # fabricante (último usado fica no item)
+    if not data.get("fabricante_nd") and data.get("fabricante_id"):
+        p.fabricante_id = int(data["fabricante_id"])
+    # nota fiscal
+    nf = data.get("nf") or {}
+    modo = nf.get("modo", "sem")
+    nf_obj = None
+    notifs = []
+    if modo == "vincular" and nf.get("nf_id"):
+        nf_obj = db.session.get(NotaFiscalAlmox, int(nf["nf_id"]))
+    elif modo == "manual" and (nf.get("numero") or nf.get("fornecedor")):
+        nf_obj = NotaFiscalAlmox(numero=(nf.get("numero") or "").strip(),
+                                 fornecedor_nome=(nf.get("fornecedor") or "").strip().upper(),
+                                 origem="manual")
+        db.session.add(nf_obj); db.session.flush()
+        notifs.append(NotificacaoAlmox(tipo="nf_sem_cadastro", titulo="NF recebida sem cadastro prévio",
+                      texto=f"Entrada de {p.nome}: NF {nf_obj.numero} ({nf_obj.fornecedor_nome}) informada manualmente.",
+                      ref_id=nf_obj.id))
+    if nf_obj is not None and not nf_obj.classificacao:
+        notifs.append(NotificacaoAlmox(tipo="classificar_nf", titulo="Classificar OPEX/CAPEX",
+                      texto=f"Nota {nf_obj.rotulo} vinculada à entrada de {p.nome}. Classifique OPEX ou CAPEX.",
+                      ref_id=nf_obj.id))
+    # aplica entrada (vai para "não atribuído" até ser movido a uma prateleira)
+    p.ajustar_estoque(None, qn)
+    opc = data.get("opcionais") or {}
+    resumo_opc = ", ".join(f"{k}={v}" for k, v in opc.items() if v)
+    obs = "Coletor/entrada"
+    if valor:
+        obs += f" · vlr un R$ {valor:g}"
+    if nf_obj is not None:
+        obs += f" · {nf_obj.rotulo}"
+    if resumo_opc:
+        obs += f" · {resumo_opc}"
+    db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="entrada",
+                   quantidade=qn, saldo_apos=p.saldo, operador_id=_op_id(), obs=obs))
+    for n in notifs:
+        db.session.add(n)
+    _log("Coletor", f"Entrada: {qn:g} de {p.nome}" + (f" · {nf_obj.rotulo}" if nf_obj else ""))
+    db.session.commit()
+    return jsonify(ok=True, resumo=[f"Entrada de {qn:g} {p.unidade} em {p.nome} (saldo {p.saldo:g})"],
+                   notificou=len(notifs) > 0)
+
+
+@almox_bp.route("/coletor/api/item-pendente", methods=["POST"])
+@modulo_required
+def coletor_api_item_pendente():
+    """Cadastro rápido de item NÃO existente durante a entrada: cria PENDENTE de aprovação."""
+    import secrets
+    data = request.get_json(silent=True) or {}
+    nome = (data.get("nome") or "").strip().upper()
+    if not nome:
+        return jsonify(ok=False, erro="Informe o nome do item."), 400
+    uid = "MAT-" + secrets.token_hex(4).upper()
+    while ProdutoAlmox.query.filter_by(qr_uid=uid).first():
+        uid = "MAT-" + secrets.token_hex(4).upper()
+    p = ProdutoAlmox(nome=nome, codigo_barras=(data.get("codigo_barras") or "").strip() or None,
+                     unidade=(data.get("unidade") or "UN").strip().upper(), saldo=0,
+                     qr_uid=uid, pendente_aprovacao=True, ativo=True)
+    db.session.add(p); db.session.flush()
+    db.session.add(NotificacaoAlmox(tipo="item_pendente", titulo="Item novo aguardando aprovação",
+                   texto=f"Item '{nome}' criado na entrada do coletor. Aprove para disponibilizar.", ref_id=p.id))
+    _log("Coletor", f"Item pendente criado na entrada: {nome}")
+    db.session.commit()
+    return jsonify(ok=True, id=p.id, nome=p.nome, pendente=True)
+
+
+@almox_bp.route("/coletor/api/item-opcionais/<int:pid>")
+@modulo_required
+def coletor_api_item_opcionais(pid):
+    p = db.session.get(ProdutoAlmox, pid)
+    if not p or not p.ativo:
+        return jsonify(ok=False, erro="Item não encontrado."), 404
+    fab = p.fabricante
+    return jsonify(ok=True, opcionais=p.opcionais_ativos,
+                   fabricante_id=p.fabricante_id, fabricante_nome=(fab.nome if fab else None))
+
+
+# ==================== COLETOR — BLOCO 4: INVENTÁRIO ====================
+@almox_bp.route("/coletor/api/localizador-itens/<int:loc_id>")
+@modulo_required
+def coletor_api_localizador_itens(loc_id):
+    """Itens estocados no localizador (saldo POR localizador), para conferência de inventário."""
+    linhas = EstoqueLocalizador.query.filter_by(localizador_id=loc_id).all()
+    itens = []
+    for l in linhas:
+        p = l.produto
+        if not p or not p.ativo:
+            continue
+        itens.append({"id": p.id, "nome": p.nome, "saldo": l.quantidade or 0,
+                      "unidade": p.unidade or "UN", "qr_uid": p.qr_uid})
+    itens.sort(key=lambda x: x["nome"])
+    return jsonify(ok=True, itens=itens)
+
+
+def _current_pode_conferir(senha):
+    """Valida a senha do operador logado (almoxarife) para confirmar inventário/ajustes."""
+    u = current_user
+    try:
+        return bool(senha) and u.check_senha(senha)
+    except Exception:
+        return False
+
+
+@almox_bp.route("/coletor/api/inventario-salvar", methods=["POST"])
+@modulo_required
+def coletor_api_inventario_salvar():
+    """payload: {localizador_id, localizador_cod, senha, itens:[{produto_id, contado}]}
+    Acréscimo aplica na hora; BAIXA fica pendente de aprovação do admin (não altera saldo ainda)."""
+    data = request.get_json(silent=True) or {}
+    if not _current_pode_conferir(data.get("senha")):
+        return jsonify(ok=False, erro="Senha do almoxarife inválida."), 403
+    loc_cod = data.get("localizador_cod") or ""
+    loc_id = data.get("localizador_id")
+    itens = data.get("itens") or []
+    aplicados, pendentes = 0, 0
+    for it in itens:
+        p = db.session.get(ProdutoAlmox, it.get("produto_id") or 0)
+        if not p or not p.ativo:
+            continue
+        raw = it.get("contado")
+        if raw is None or str(raw).strip() == "":
+            continue
+        contado = _num(raw, None)
+        if contado is None:
+            continue
+        # saldo ATUAL naquele localizador
+        linha = p.estoque_em(int(loc_id)) if loc_id else None
+        atual = (linha.quantidade or 0) if linha else (p.saldo or 0)
+        if contado == atual:
+            continue
+        dif = contado - atual
+        tipo = "acrescimo" if dif > 0 else "baixa"
+        aj = AjusteInventario(produto_id=p.id, produto_nome=p.nome, localizador_cod=loc_cod,
+                              localizador_id=int(loc_id) if loc_id else None,
+                              saldo_antes=atual, saldo_novo=contado, diferenca=dif, tipo=tipo,
+                              operador_id=_op_id(), operador_nome=getattr(current_user, "nome", None))
+        if tipo == "acrescimo":
+            if loc_id:
+                p.ajustar_estoque(int(loc_id), dif)
+            else:
+                p.saldo = contado
+            aj.status = "aplicado"
+            db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="inventario",
+                           quantidade=dif, saldo_apos=p.saldo, local_de=loc_cod, operador_id=_op_id(),
+                           obs="Inventário (acréscimo)"))
+            aplicados += 1
+        else:
+            aj.status = "pendente"        # baixa NÃO altera saldo até o admin aprovar
+            db.session.add(NotificacaoAlmox(tipo="inventario_baixa", titulo="Baixa de inventário a aprovar",
+                           texto=f"{p.nome} em {loc_cod}: {atual:g} → {contado:g} (baixa de {abs(dif):g}). Aprove para aplicar.",
+                           ref_id=p.id))
+            pendentes += 1
+        db.session.add(aj)
+    _log("Material", f"Inventário {loc_cod}: {aplicados} aplicado(s), {pendentes} baixa(s) pendente(s)")
+    db.session.commit()
+    return jsonify(ok=True, aplicados=aplicados, pendentes=pendentes,
+                   resumo=(f"{aplicados} ajuste(s) aplicado(s); {pendentes} baixa(s) aguardando aprovação do admin."
+                           if pendentes else f"{aplicados} ajuste(s) aplicado(s)."))
+
+
+# ----- Baixas pendentes: aprovação (admin) -----
+@almox_bp.route("/inventario/pendentes")
+@_guard("is_admin")
+def inventario_pendentes():
+    pend = AjusteInventario.query.filter_by(status="pendente").order_by(AjusteInventario.criado_em.desc()).all()
+    return render_template("almox/inventario_pendentes.html", pendentes=pend)
+
+
+@almox_bp.route("/inventario/pendentes/<int:aid>/<acao>", methods=["POST"])
+@_guard("is_admin")
+def inventario_pendente_decidir(aid, acao):
+    aj = AjusteInventario.query.get_or_404(aid)
+    if aj.status != "pendente":
+        flash("Este ajuste já foi decidido.", "warning")
+        return redirect(url_for("almox.inventario_pendentes"))
+    if acao == "aprovar":
+        p = db.session.get(ProdutoAlmox, aj.produto_id)
+        if p:
+            if aj.localizador_id:
+                p.ajustar_estoque(aj.localizador_id, aj.diferenca)   # diferenca é negativa (baixa)
+            else:
+                p.saldo = aj.saldo_novo
+            db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="inventario",
+                           quantidade=aj.diferenca, saldo_apos=p.saldo, local_de=aj.localizador_cod,
+                           operador_id=_op_id(), obs="Inventário (baixa aprovada)"))
+        aj.status = "aplicado"
+        flash("Baixa aprovada e aplicada ao saldo.", "success")
+    else:
+        aj.status = "reprovado"
+        flash("Baixa reprovada. Saldo mantido.", "success")
+    aj.decidido_por = getattr(current_user, "nome", None)
+    aj.decidido_em = datetime.utcnow()
+    db.session.commit()
+    return redirect(url_for("almox.inventario_pendentes"))
+
+
+# ----- Relatório de PERDAS (baixas de inventário) por período -----
+@almox_bp.route("/relatorios/perdas")
+@_guard("pode_almox_modulo")
+def relatorio_perdas():
+    de = request.args.get("de") or ""
+    ate = request.args.get("ate") or ""
+    q = AjusteInventario.query.filter_by(tipo="baixa", status="aplicado")
+    if de:
+        try:
+            q = q.filter(AjusteInventario.criado_em >= datetime.strptime(de, "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if ate:
+        try:
+            fim = datetime.strptime(ate, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            q = q.filter(AjusteInventario.criado_em <= fim)
+        except ValueError:
+            pass
+    perdas = q.order_by(AjusteInventario.criado_em.desc()).all()
+    total = sum(abs(a.diferenca or 0) for a in perdas)
+    return render_template("almox/relatorio_perdas.html", perdas=perdas, total=total, de=de, ate=ate)
+
+
+# ==================== COLETOR — BLOCO 5: MOVER MATERIAL ====================
+@almox_bp.route("/coletor/api/estoque/<int:produto_id>/<int:loc_id>")
+@modulo_required
+def coletor_api_estoque(produto_id, loc_id):
+    """Quantidade de um item numa prateleira específica (para saber se há 2+ ao mover)."""
+    p = db.session.get(ProdutoAlmox, produto_id)
+    if not p:
+        return jsonify(ok=False, erro="Item não encontrado."), 404
+    linha = p.estoque_em(loc_id)
+    return jsonify(ok=True, quantidade=(linha.quantidade or 0) if linha else 0, nome=p.nome)
+
+
+@almox_bp.route("/coletor/api/mover", methods=["POST"])
+@modulo_required
+def coletor_api_mover_v2():
+    """MOVER material entre localizadores. Fase 2 (destinar).
+    payload: {senha, destino_loc_id, destino_cod, ciente, itens:[{produto_id, origem_loc_id, origem_cod, qtd}]}
+    Se algum item já existir em OUTRO localizador (além do destino), retorna needs_confirm até 'ciente'."""
+    data = request.get_json(silent=True) or {}
+    if not _current_pode_conferir(data.get("senha")):
+        return jsonify(ok=False, erro="Senha do almoxarife inválida."), 403
+    destino_id = data.get("destino_loc_id")
+    destino_cod = data.get("destino_cod") or ""
+    itens = data.get("itens") or []
+    if not destino_id or not itens:
+        return jsonify(ok=False, erro="Informe destino e itens."), 400
+    # valida quantidade na origem
+    faltas = []
+    for it in itens:
+        p = db.session.get(ProdutoAlmox, it.get("produto_id") or 0)
+        if not p:
+            continue
+        linha = p.estoque_em(it.get("origem_loc_id"))
+        disp = (linha.quantidade or 0) if linha else 0
+        if _num(it.get("qtd"), 0) > disp:
+            faltas.append(f"{p.nome} em {it.get('origem_cod')} (tem {disp:g})")
+    if faltas:
+        return jsonify(ok=False, erro="Quantidade indisponível na origem: " + "; ".join(faltas)), 400
+    # aviso: item já existe em outro localizador (além do destino)
+    if not data.get("ciente"):
+        conflitos = []
+        for it in itens:
+            p = db.session.get(ProdutoAlmox, it.get("produto_id") or 0)
+            if not p:
+                continue
+            outros = [l.local_cod for l in p.linhas_estoque()
+                      if l.localizador_id and l.localizador_id != int(destino_id)
+                      and l.localizador_id != it.get("origem_loc_id") and (l.quantidade or 0) > 0]
+            if outros:
+                conflitos.append(f"{p.nome}: já existe em {', '.join(sorted(set(outros)))}")
+        if conflitos:
+            return jsonify(ok=False, needs_confirm=True,
+                           aviso="Este(s) item(ns) já existe(m) em outro localizador. Confirme para mover assim mesmo.",
+                           detalhes=conflitos)
+    # aplica
+    feitas = []
+    for it in itens:
+        p = db.session.get(ProdutoAlmox, it.get("produto_id") or 0)
+        qn = _num(it.get("qtd"), 0)
+        if not p or qn <= 0:
+            continue
+        p.ajustar_estoque(it.get("origem_loc_id"), -qn)
+        p.ajustar_estoque(int(destino_id), qn)
+        db.session.add(MovimentacaoMaterial(produto_id=p.id, produto_nome=p.nome, tipo="movimentacao",
+                       quantidade=qn, saldo_apos=p.saldo, local_de=it.get("origem_cod"),
+                       local_para=destino_cod, operador_id=_op_id(), obs="Coletor/mover"))
+        feitas.append(f"{qn:g} {p.unidade} de {p.nome}: {it.get('origem_cod')} → {destino_cod}")
+    _log("Coletor", f"Mover para {destino_cod}: " + "; ".join(feitas))
+    db.session.commit()
+    return jsonify(ok=True, resumo=feitas)
+
+
+# ==================== COLETOR — BLOCO 6: AJUSTE DE INSTÂNCIAS ====================
+@almox_bp.route("/coletor/api/instancias/<int:produto_id>/<int:loc_id>")
+@modulo_required
+def coletor_api_instancias(produto_id, loc_id):
+    """Instâncias (unidades/TAG) de um item num localizador + os campos opcionais do cadastro-raiz."""
+    p = db.session.get(ProdutoAlmox, produto_id)
+    if not p:
+        return jsonify(ok=False, erro="Item não encontrado."), 404
+    insts = InstanciaItem.query.filter_by(produto_id=produto_id, localizador_id=loc_id).all()
+    linha = p.estoque_em(loc_id)
+    saldo_loc = (linha.quantidade or 0) if linha else 0
+    def _d(x):
+        return x.isoformat() if x else ""
+    lst = [{"id": i.id, "tag": i.tag or "(sem TAG)", "ca": i.ca or "", "lote": i.lote or "",
+            "validade": _d(i.validade), "validade_calib": _d(i.validade_calib),
+            "quantidade": i.quantidade or 1} for i in insts]
+    return jsonify(ok=True, instancias=lst, opcionais=p.opcionais_ativos, saldo_loc=saldo_loc, nome=p.nome)
+
+
+@almox_bp.route("/coletor/api/instancia-salvar", methods=["POST"])
+@modulo_required
+def coletor_api_instancia_salvar():
+    """Ajusta os dados de N unidades de um item (não mexe na quantidade de estoque).
+    payload: {produto_id, loc_id, instancia_id (ou null), quantidade, campos:{tag,ca,validade,validade_calib,lote}, senha}"""
+    from datetime import datetime as _dt
+    data = request.get_json(silent=True) or {}
+    if not _current_pode_conferir(data.get("senha")):
+        return jsonify(ok=False, erro="Senha do almoxarife inválida."), 403
+    p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
+    if not p:
+        return jsonify(ok=False, erro="Item inválido."), 400
+    loc_id = data.get("loc_id")
+    n = int(_num(data.get("quantidade"), 1))
+    if n < 1:
+        return jsonify(ok=False, erro="Quantidade inválida."), 400
+    campos = data.get("campos") or {}
+    def _pdate(s):
+        try:
+            return _dt.strptime(s, "%Y-%m-%d").date() if s else None
+        except ValueError:
+            return None
+    def _aplica(inst):
+        if "tag" in campos: inst.tag = (campos.get("tag") or "").strip() or None
+        if "ca" in campos: inst.ca = (campos.get("ca") or "").strip() or None
+        if "lote" in campos: inst.lote = (campos.get("lote") or "").strip() or None
+        if "validade" in campos: inst.validade = _pdate(campos.get("validade"))
+        if "validade_calib" in campos: inst.validade_calib = _pdate(campos.get("validade_calib"))
+
+    inst_id = data.get("instancia_id")
+    if inst_id:
+        inst = db.session.get(InstanciaItem, int(inst_id))
+        if not inst:
+            return jsonify(ok=False, erro="Instância não encontrada."), 404
+        if n >= (inst.quantidade or 1):
+            _aplica(inst)                       # ajusta todas as unidades daquela instância
+        else:
+            inst.quantidade = (inst.quantidade or 1) - n   # separa N unidades numa nova instância
+            nova = InstanciaItem(produto_id=p.id, localizador_id=loc_id, quantidade=n)
+            _aplica(nova); db.session.add(nova)
+    else:
+        # cria uma instância nova a partir do estoque do localizador
+        linha = p.estoque_em(loc_id)
+        disp = (linha.quantidade or 0) if linha else 0
+        if n > disp and disp > 0:
+            n = int(disp)
+        nova = InstanciaItem(produto_id=p.id, localizador_id=loc_id, quantidade=n)
+        _aplica(nova); db.session.add(nova)
+    _log("Coletor", f"Ajuste de instância: {n} unidade(s) de {p.nome}")
+    db.session.commit()
+    return jsonify(ok=True, resumo=[f"Ajuste aplicado em {n} unidade(s) de {p.nome}"])
+
+
+# ==================== ADMINISTRATIVO (desktop): NOTAS FISCAIS + NOTIFICAÇÕES ====================
+import json as _json
+import xml.etree.ElementTree as _ET
+
+
+@almox_bp.route("/notificacoes")
+@_guard("is_admin")
+def notificacoes():
+    itens = NotificacaoAlmox.query.order_by(NotificacaoAlmox.lida, NotificacaoAlmox.criado_em.desc()).all()
+    return render_template("almox/notificacoes.html", itens=itens)
+
+
+@almox_bp.route("/notificacoes/<int:nid>/lida", methods=["POST"])
+@_guard("is_admin")
+def notificacao_lida(nid):
+    n = NotificacaoAlmox.query.get_or_404(nid)
+    n.lida = True
+    db.session.commit()
+    return redirect(request.referrer or url_for("almox.notificacoes"))
+
+
+@almox_bp.route("/administrativo")
+@_guard("is_admin")
+def administrativo():
+    n_notif = NotificacaoAlmox.query.filter_by(lida=False).count()
+    n_classificar = NotaFiscalAlmox.query.filter(NotaFiscalAlmox.classificacao.is_(None)).count()
+    return render_template("almox/administrativo.html", n_notif=n_notif, n_classificar=n_classificar)
+
+
+def _parse_nfe_xml(conteudo_bytes):
+    """Extrai dados de uma NF-e (XML padrão SEFAZ). Retorna dict ou None."""
+    try:
+        txt = conteudo_bytes.decode("utf-8", errors="ignore")
+        # remove namespace para simplificar as buscas
+        txt = txt.replace('xmlns="http://www.portalfiscal.inf.br/nfe"', "")
+        root = _ET.fromstring(txt)
+    except Exception:
+        return None
+    def _find(path):
+        el = root.find(path)
+        return el.text if el is not None else None
+    numero = _find(".//ide/nNF")
+    dh = _find(".//ide/dhEmi") or _find(".//ide/dEmi")
+    data_em = None
+    if dh:
+        try:
+            data_em = datetime.strptime(dh[:10], "%Y-%m-%d").date()
+        except ValueError:
+            data_em = None
+    fornecedor = _find(".//emit/xNome")
+    valor = _find(".//total/ICMSTot/vNF")
+    itens = []
+    for det in root.findall(".//det"):
+        prod = det.find("prod")
+        if prod is not None:
+            itens.append({"nome": (prod.findtext("xProd") or "").strip(),
+                          "qtd": prod.findtext("qCom"), "valor": prod.findtext("vUnCom")})
+    if not (numero or fornecedor):
+        return None
+    return {"numero": numero, "fornecedor": fornecedor, "valor": _num(valor, 0),
+            "data_emissao": data_em, "itens": itens}
+
+
+@almox_bp.route("/administrativo/notas")
+@_guard("is_admin")
+def adm_notas():
+    a_classificar = (NotaFiscalAlmox.query.filter(NotaFiscalAlmox.classificacao.is_(None))
+                     .order_by(NotaFiscalAlmox.criado_em.desc()).all())
+    classificadas = (NotaFiscalAlmox.query.filter(NotaFiscalAlmox.classificacao.isnot(None))
+                     .order_by(NotaFiscalAlmox.criado_em.desc()).limit(50).all())
+    return render_template("almox/adm_notas.html", a_classificar=a_classificar, classificadas=classificadas)
+
+
+@almox_bp.route("/administrativo/notas/importar", methods=["POST"])
+@_guard("is_admin")
+def adm_notas_importar():
+    arq = request.files.get("arquivo")
+    if not arq or not arq.filename:
+        flash("Selecione um arquivo XML ou PDF da nota.", "danger")
+        return redirect(url_for("almox.adm_notas"))
+    nome = arq.filename.lower()
+    dados = arq.read()
+    info = None
+    if nome.endswith(".xml"):
+        info = _parse_nfe_xml(dados)
+        if not info:
+            flash("Não consegui ler este XML como NF-e. Confira o arquivo.", "warning")
+            return redirect(url_for("almox.adm_notas"))
+    else:
+        # PDF: leitura estruturada é limitada; cria a nota para preenchimento/conferência manual.
+        flash("PDF recebido. A leitura automática de PDF é limitada — confira e complete os campos.", "info")
+        info = {"numero": "", "fornecedor": "", "valor": 0, "data_emissao": None, "itens": []}
+    nf = NotaFiscalAlmox(numero=(info.get("numero") or "").strip(),
+                         fornecedor_nome=(info.get("fornecedor") or "").strip().upper() or None,
+                         valor=info.get("valor") or 0, data_emissao=info.get("data_emissao"),
+                         itens_json=_json.dumps(info.get("itens") or [], ensure_ascii=False),
+                         origem="importada")
+    db.session.add(nf); db.session.flush()
+    db.session.add(NotificacaoAlmox(tipo="classificar_nf", titulo="Classificar OPEX/CAPEX",
+                   texto=f"Nota {nf.rotulo} importada. Classifique OPEX ou CAPEX.", ref_id=nf.id))
+    _log("Administrativo", f"NF importada: {nf.rotulo}")
+    db.session.commit()
+    return redirect(url_for("almox.adm_nota_ver", nid=nf.id))
+
+
+@almox_bp.route("/administrativo/notas/<int:nid>")
+@_guard("is_admin")
+def adm_nota_ver(nid):
+    nf = NotaFiscalAlmox.query.get_or_404(nid)
+    itens = []
+    try:
+        itens = _json.loads(nf.itens_json) if nf.itens_json else []
+    except Exception:
+        itens = []
+    return render_template("almox/adm_nota_ver.html", nf=nf, itens=itens)
+
+
+@almox_bp.route("/administrativo/notas/<int:nid>/classificar", methods=["POST"])
+@_guard("is_admin")
+def adm_nota_classificar(nid):
+    nf = NotaFiscalAlmox.query.get_or_404(nid)
+    # permite completar campos (útil no caso do PDF)
+    nf.numero = (request.form.get("numero") or nf.numero or "").strip()
+    forn = (request.form.get("fornecedor") or "").strip().upper()
+    if forn:
+        nf.fornecedor_nome = forn
+    if request.form.get("valor"):
+        nf.valor = _num(request.form.get("valor"), nf.valor or 0)
+    nf.ordem_compra = (request.form.get("ordem_compra") or "").strip() or None
+    classe = (request.form.get("classificacao") or "").lower()
+    if classe not in ("opex", "capex"):
+        flash("Escolha OPEX ou CAPEX.", "danger")
+        return redirect(url_for("almox.adm_nota_ver", nid=nid))
+    nf.classificacao = classe
+    # marca as notificações dessa nota como lidas
+    for n in NotificacaoAlmox.query.filter_by(tipo="classificar_nf", ref_id=nf.id, lida=False).all():
+        n.lida = True
+    _log("Administrativo", f"NF {nf.rotulo} classificada como {classe.upper()}"
+         + (f" · OC {nf.ordem_compra}" if nf.ordem_compra else ""))
+    db.session.commit()
+    flash(f"Nota classificada como {classe.upper()}.", "success")
+    return redirect(url_for("almox.adm_notas"))

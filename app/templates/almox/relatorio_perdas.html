@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Relatório de perdas{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.relatorios_central') }}" class="btn btn-sm btn-outline-secondary mb-3">← Central de relatórios</a>
+<h4 class="mb-1">📉 Perdas de estoque (baixas de inventário)</h4>
+<p class="text-muted small">Baixas de inventário já aprovadas/aplicadas. Filtre por período.</p>
+
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-auto"><label class="form-label small mb-0">De</label><input type="date" name="de" value="{{ de }}" class="form-control form-control-sm"></div>
+  <div class="col-auto"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ ate }}" class="form-control form-control-sm"></div>
+  <div class="col-auto"><button class="btn btn-sm btn-primary">Filtrar</button>
+    {% if de or ate %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('almox.relatorio_perdas') }}">Limpar</a>{% endif %}</div>
+</form>
+
+<div class="alert alert-secondary py-2"><b>Total de perdas no período:</b> {{ '%g'|format(total or 0) }} unidade(s), em {{ perdas|length }} registro(s).</div>
+
+<div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+  <thead><tr><th>Data</th><th>Item</th><th>Localizador</th><th class="text-end">De</th><th class="text-end">Para</th><th class="text-end">Perda</th><th>Operador</th></tr></thead>
+  <tbody>
+  {% for a in perdas %}
+    <tr>
+      <td class="small">{{ a.criado_em.strftime('%d/%m/%Y %H:%M') if a.criado_em }}</td>
+      <td>{{ a.produto_nome }}</td>
+      <td class="small">{{ a.localizador_cod or '—' }}</td>
+      <td class="text-end">{{ '%g'|format(a.saldo_antes or 0) }}</td>
+      <td class="text-end">{{ '%g'|format(a.saldo_novo or 0) }}</td>
+      <td class="text-end text-danger">{{ '%g'|format(a.diferenca or 0) }}</td>
+      <td class="small">{{ a.operador_nome or '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="text-muted text-center py-4">Nenhuma perda registrada no período.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}

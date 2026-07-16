@@ -318,6 +318,39 @@ def _seed_perfis_padrao():
     db.session.commit()
 
 
+def _seed_fabricantes():
+    """Cria alguns fabricantes comuns se a tabela estiver vazia (o Antonio cadastra o resto)."""
+    from .models import Fabricante
+    if Fabricante.query.count() > 0:
+        return
+    for nome in ["3M", "CISER", "SIEMENS", "WEG", "PADO", "TRAMONTINA"]:
+        db.session.add(Fabricante(nome=nome, ativo=True))
+    db.session.commit()
+
+
+def _migrar_estoque_localizador():
+    """Converte o estoque atual (saldo + localizador_id no produto) para EstoqueLocalizador.
+    Idempotente: só cria a linha se o produto ainda não tem NENHUMA linha de estoque por localizador.
+    Não apaga saldo/localizador_id antigos (ficam como espelho de segurança)."""
+    from .models import ProdutoAlmox, EstoqueLocalizador
+    try:
+        produtos = ProdutoAlmox.query.all()
+    except Exception:
+        return
+    criadas = 0
+    for p in produtos:
+        ja_tem = EstoqueLocalizador.query.filter_by(produto_id=p.id).first()
+        if ja_tem is not None:
+            continue
+        if (p.saldo or 0) == 0 and not p.localizador_id:
+            continue  # nada a migrar
+        db.session.add(EstoqueLocalizador(produto_id=p.id, localizador_id=p.localizador_id,
+                                          quantidade=p.saldo or 0))
+        criadas += 1
+    if criadas:
+        db.session.commit()
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
@@ -401,6 +434,12 @@ def create_app():
                     .count())
             except Exception:
                 ctx["n_cadastros_incompletos"] = 0
+            # notificações do almoxarifado (classificar OPEX/CAPEX, NF sem cadastro, baixa de inventário)
+            try:
+                from .models import NotificacaoAlmox
+                ctx["n_notif_almox"] = NotificacaoAlmox.query.filter_by(lida=False).count()
+            except Exception:
+                ctx["n_notif_almox"] = 0
         return ctx
 
     @app.context_processor
@@ -427,5 +466,7 @@ def create_app():
         _seed_tipos()
         _seed_almox()
         _seed_perfis_padrao()
+        _seed_fabricantes()
+        _migrar_estoque_localizador()
 
     return app

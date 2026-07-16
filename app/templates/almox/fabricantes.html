@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Fabricantes — Almoxarifado{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+  <div>
+    <h4 class="mb-1">🏭 Fabricantes</h4>
+    <p class="text-muted small mb-0">Fabricantes usados na entrada de itens. Diferente de fornecedor/vendedor.</p>
+  </div>
+  <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoFab">＋ Novo fabricante</button>
+</div>
+
+<div class="modal fade" id="modalNovoFab" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="{{ url_for('almox.fabricante_novo') }}">
+    <div class="modal-header"><h5 class="modal-title">Novo fabricante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-label">Nome do fabricante</label>
+      <input name="nome" class="form-control" placeholder="Ex.: 3M" required autofocus>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary">Cadastrar</button></div>
+  </form>
+</div></div></div>
+
+<div class="d-flex flex-wrap gap-3 align-items-center mb-2">
+  <input id="buscaFab" class="form-control form-control-sm" style="max-width:340px" placeholder="🔎 Buscar fabricante..." autocomplete="off" oninput="filtrarFab()">
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('almox.fabricantes', inativos='0' if mostrar_inativos else '1') }}">
+    {{ 'Ocultar inativos' if mostrar_inativos else 'Mostrar inativos' }}
+  </a>
+  <span class="text-muted small" id="contaFab"></span>
+</div>
+
+<div class="card"><div class="list-group list-group-flush" id="listaFab">
+  {% for f in itens %}
+  <div class="list-group-item d-flex justify-content-between align-items-center fab-item" data-nome="{{ f.nome|lower }}">
+    <div>
+      <b>{{ f.nome }}</b>
+      {% if not f.ativo %}<span class="badge bg-secondary ms-2">inativo</span>{% endif %}
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalEditFab{{ f.id }}">Editar</button>
+      <form method="post" action="{{ url_for('almox.fabricante_toggle', fid=f.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-secondary">{{ 'Reativar' if not f.ativo else 'Desativar' }}</button>
+      </form>
+    </div>
+  </div>
+  <div class="modal fade" id="modalEditFab{{ f.id }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="{{ url_for('almox.fabricante_editar', fid=f.id) }}">
+      <div class="modal-header"><h5 class="modal-title">Editar fabricante</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Nome</label>
+        <input name="nome" class="form-control" value="{{ f.nome }}" required>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primary">Salvar</button></div>
+    </form>
+  </div></div></div>
+  {% else %}
+  <div class="list-group-item text-muted">Nenhum fabricante cadastrado. Use "＋ Novo fabricante".</div>
+  {% endfor %}
+  <div class="list-group-item text-muted d-none" id="fabVazio">Nenhum fabricante encontrado com esse filtro.</div>
+</div></div>
+
+<script>
+function _sa(t){return (t||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function filtrarFab(){
+  var q=_sa((document.getElementById('buscaFab')||{}).value||''),v=0;
+  document.querySelectorAll('#listaFab .fab-item').forEach(function(it){
+    var ok=!q||_sa(it.dataset.nome).indexOf(q)>=0; it.style.display=ok?'':'none'; if(ok)v++;
+  });
+  var vz=document.getElementById('fabVazio'); if(vz) vz.classList.toggle('d-none', v>0);
+  var c=document.getElementById('contaFab'); if(c) c.textContent=v+' fabricante(s)';
+}
+filtrarFab();
+</script>
+{% endblock %}

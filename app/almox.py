@@ -383,9 +383,23 @@ def chave_toggle(cid):
 
 
 # ----- Quadros de Chave (localizador) -----
+def _backfill_qr_quadros():
+    """Garante que todo quadro tenha um QR próprio (QUAD-...)."""
+    import secrets
+    faltando = QuadroChave.query.filter((QuadroChave.qr_uid.is_(None)) | (QuadroChave.qr_uid == "")).all()
+    for q in faltando:
+        uid = "QUAD-" + secrets.token_hex(4).upper()
+        while QuadroChave.query.filter_by(qr_uid=uid).first():
+            uid = "QUAD-" + secrets.token_hex(4).upper()
+        q.qr_uid = uid
+    if faltando:
+        db.session.commit()
+
+
 @almox_bp.route("/chaves/quadros")
 @_guard("pode_chaves")
 def quadros_chave():
+    _backfill_qr_quadros()
     quadros = QuadroChave.query.order_by(QuadroChave.nome).all()
     return render_template("almox/quadros_chave.html", quadros=quadros)
 
@@ -393,6 +407,7 @@ def quadros_chave():
 @almox_bp.route("/chaves/quadros/novo", methods=["POST"])
 @_guard("pode_chaves")
 def quadro_novo():
+    import secrets
     nome = (request.form.get("nome") or "").strip()
     if not nome:
         flash("Informe o nome do Quadro de Chaves.", "danger")
@@ -400,7 +415,10 @@ def quadro_novo():
     if QuadroChave.query.filter(db.func.upper(QuadroChave.nome) == nome.upper()).first():
         flash("Já existe um Quadro de Chaves com esse nome.", "warning")
         return redirect(url_for("almox.quadros_chave"))
-    db.session.add(QuadroChave(nome=nome.upper()))
+    uid = "QUAD-" + secrets.token_hex(4).upper()
+    while QuadroChave.query.filter_by(qr_uid=uid).first():
+        uid = "QUAD-" + secrets.token_hex(4).upper()
+    db.session.add(QuadroChave(nome=nome.upper(), qr_uid=uid))
     _log("Chave", f"Quadro de Chaves cadastrado: {nome.upper()}")
     db.session.commit()
     flash("Quadro de Chaves cadastrado.", "success")
@@ -432,6 +450,22 @@ def chaves_qr():
     itens = consulta.order_by(Chave.descricao).all()
     formato = request.args.get("formato", "a4")   # 'a4' | 'termica' | 'dobravel'
     return render_template("almox/chaves_qr.html", itens=itens, qr_svg=_qr_svg, formato=formato)
+
+
+@almox_bp.route("/chaves/quadros/qr")
+@_guard("pode_chaves")
+def quadros_qr():
+    """Página de impressão dos QR dos quadros (uma etiqueta por quadro)."""
+    _backfill_qr_quadros()
+    ids = request.args.get("ids") or ""
+    consulta = QuadroChave.query.filter_by(ativo=True)
+    if ids.strip():
+        lista_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+        if lista_ids:
+            consulta = consulta.filter(QuadroChave.id.in_(lista_ids))
+    itens = consulta.order_by(QuadroChave.nome).all()
+    formato = request.args.get("formato", "a4")
+    return render_template("almox/quadros_qr.html", itens=itens, qr_svg=_qr_svg, formato=formato)
 
 # ---------- EXTINTORES (Etapa 3) ----------
 import json as _json
@@ -1992,3 +2026,10 @@ def localizadores_gerar():
         return redirect(url_for("almox.localizadores"))
     armazens_l = Armazem.query.filter_by(ativo=True).order_by(Armazem.nome).all()
     return render_template("almox/localizadores_gerar.html", armazens=armazens_l)
+
+
+@almox_bp.route("/relatorios")
+@_guard("pode_almox_modulo")
+def relatorios_central():
+    """Central de relatórios: reúne num lugar só todos os relatórios e exportações."""
+    return render_template("almox/relatorios_central.html")

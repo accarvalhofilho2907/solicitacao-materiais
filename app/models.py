@@ -361,6 +361,7 @@ class QuadroChave(db.Model):
     __tablename__ = "almox_quadros_chave"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(160), unique=True, nullable=False)
+    qr_uid = db.Column(db.String(20), unique=True)   # QR próprio do quadro (QUAD-...)
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Quadros de Chave — Almoxarifado{% endblock %}
 {% block content %}
-<a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary mb-3">← Chaves</a>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary">← Chaves</a>
+  <a href="{{ url_for('almox.quadros_qr') }}" target="_blank" class="btn btn-sm btn-outline-secondary">🖨️ Imprimir QR dos quadros</a>
+</div>
 <h4 class="mb-1">🗂️ Quadros de Chave</h4>
 <p class="text-muted small">Localizadores das chaves. Alimentam a lista pesquisável no cadastro de chave.</p>
 
@@ -23,7 +26,8 @@
       <td>{{ qd.nome }}</td>
       <td>{% if qd.ativo %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
       <td class="text-end">
-        <form method="post" action="{{ url_for('almox.quadro_toggle', qid=qd.id) }}">
+        <a href="{{ url_for('almox.quadros_qr', ids=qd.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">QR</a>
+        <form method="post" action="{{ url_for('almox.quadro_toggle', qid=qd.id) }}" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar' if qd.ativo else 'Reativar' }}</button>
         </form>

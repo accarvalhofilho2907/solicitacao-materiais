@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><title>QR dos quadros de chave</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;margin:12mm}
+  .noprint{margin-bottom:12px}
+  @media print{.noprint{display:none}}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .cel{border:1px dashed #bbb;border-radius:4px;padding:12px;text-align:center;page-break-inside:avoid}
+  .cel svg{width:110px;height:110px}
+  .desc{font-weight:bold;font-size:13px;margin-top:6px}
+  .uid{font-size:9px;color:#888}
+  .termica{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .termica .cel svg{width:130px;height:130px}
+</style></head><body>
+<div class="noprint">
+  <button onclick="window.print()">🖨️ Imprimir</button>
+  &nbsp;Formato:
+  {% set q = ('&ids=' ~ request.args.get('ids')) if request.args.get('ids') else '' %}
+  <a href="?formato=a4{{ q }}">Folha A4</a> |
+  <a href="?formato=termica{{ q }}">Etiqueta térmica</a>
+  <span style="font-size:12px;color:#555"> — {{ itens|length }} quadro(s)</span>
+  <div style="font-size:12px;color:#555;margin-top:6px">Cole o QR no quadro físico. No coletor, a pessoa bipa o quadro para ver e retirar as chaves dele.</div>
+</div>
+<div class="{{ 'termica' if formato=='termica' else 'grid' }}">
+  {% for qd in itens %}
+  <div class="cel">
+    {{ qr_svg(qd.qr_uid)|safe }}
+    <div class="desc">{{ qd.nome }}</div>
+    <div class="uid">{{ qd.qr_uid }}</div>
+  </div>
+  {% else %}
+  <p>Nenhum quadro para imprimir.</p>
+  {% endfor %}
+</div>
+</body></html>

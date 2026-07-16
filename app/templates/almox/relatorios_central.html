@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Central de relatórios{% endblock %}
+{% block content %}
+<h4 class="mb-1">Central de relatórios</h4>
+<p class="text-muted small">Todos os relatórios e exportações num lugar só. Cada card abre o relatório; onde houver, use os botões CSV/PDF para baixar.</p>
+
+{% macro card(titulo, itens) %}
+<div class="col-md-6 col-lg-4">
+  <div class="card h-100"><div class="card-body">
+    <h6 class="mb-3">{{ titulo }}</h6>
+    <div class="d-flex flex-column gap-2">
+      {% for label, endpoint, estilo in itens %}
+        <a class="btn btn-sm {{ estilo }}" href="{{ url_for(endpoint) }}"{{ ' target=_blank'|safe if 'pdf' in endpoint or 'csv' in endpoint or 'qr' in endpoint }}>{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div></div>
+</div>
+{% endmacro %}
+
+<div class="row g-3">
+  {{ card('🔑 Chaves', [
+      ('Situação das chaves', 'almox.relatorio_chaves', 'btn-outline-primary'),
+      ('Exportar CSV', 'almox.relatorio_chaves_csv', 'btn-outline-secondary'),
+      ('Exportar PDF', 'almox.relatorio_chaves_pdf', 'btn-outline-secondary'),
+      ('Imprimir QR das chaves', 'almox.chaves_qr', 'btn-outline-secondary'),
+      ('Imprimir QR dos quadros', 'almox.quadros_qr', 'btn-outline-secondary'),
+  ]) }}
+
+  {{ card('📦 Material / Estoque', [
+      ('Saldo atual (CSV)', 'almox.materiais_saldo_csv', 'btn-outline-secondary'),
+      ('Movimentações (CSV)', 'almox.materiais_mov_csv', 'btn-outline-secondary'),
+      ('Movimentações (PDF)', 'almox.materiais_mov_pdf', 'btn-outline-secondary'),
+  ]) }}
+
+  {{ card('🧯 Extintores', [
+      ('Ver extintores', 'almox.extintores', 'btn-outline-primary'),
+      ('Exportar PDF', 'almox.extintores_pdf', 'btn-outline-secondary'),
+  ]) }}
+
+  {% if current_user.is_admin %}
+  {{ card('🛒 Solicitações / Compras', [
+      ('Histórico de preços', 'admin.precos', 'btn-outline-primary'),
+      ('Relatório de carga', 'relatorios.carga', 'btn-outline-secondary'),
+      ('Geração de etiquetas', 'relatorios.etiquetas', 'btn-outline-secondary'),
+  ]) }}
+  {% endif %}
+
+  {{ card('👤 Pessoas', [
+      ('Colaboradores', 'almox.colaboradores', 'btn-outline-primary'),
+      ('Perfis de acesso', 'almox.papeis', 'btn-outline-secondary'),
+  ]) }}
+
+  {% if current_user.is_admin %}
+  {{ card('🛠️ Sistema / Gestão', [
+      ('Log do sistema', 'admin.log_sistema', 'btn-outline-primary'),
+      ('Baixar backup (.sql)', 'admin.backup', 'btn-outline-secondary'),
+  ]) }}
+  {% endif %}
+</div>
+{% endblock %}

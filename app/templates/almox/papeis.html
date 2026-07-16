@@ -1,16 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Perfis de acesso — Almoxarifado{% endblock %}
 {% block content %}
-<a href="{{ url_for('almox.colaboradores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Colaboradores</a>
-<h4 class="mb-1">Perfis de acesso</h4>
-<p class="text-muted small">Cada perfil de acesso é um conjunto de tarefas que a pessoa pode fazer. As tarefas marcadas <span class="badge bg-warning text-dark">em breve</span> ainda serão construídas.</p>
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h4 class="mb-0">Perfis de acesso</h4>
+  <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#novoPerfil">＋ Novo perfil</button>
+</div>
+<p class="text-muted small">Cada perfil é um conjunto de tarefas que a pessoa pode fazer. Clique num perfil para ver e editar as tarefas. As marcadas <span class="badge bg-warning text-dark">em breve</span> ainda serão construídas.</p>
 
-{# macro que desenha os grupos de tarefas com checkboxes #}
+{# macro dos grupos de tarefas com checkboxes + "marcar todos" #}
 {% macro blocos(prefixo, marcadas) %}
   {% for g in grupos %}
-  <div class="mb-3">
-    <div class="form-label small text-uppercase" style="color:var(--coral);letter-spacing:.05em">{{ g }}</div>
-    <div class="row">
+  {% set gid = prefixo ~ '_grp' ~ loop.index %}
+  <div class="mb-3" data-grupo="{{ gid }}">
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <div class="form-check mb-0">
+        <input class="form-check-input grp-all" type="checkbox" id="all_{{ gid }}" onclick="marcarGrupo('{{ gid }}', this.checked)">
+      </div>
+      <label class="form-label small text-uppercase mb-0" for="all_{{ gid }}" style="color:var(--coral);letter-spacing:.05em;cursor:pointer">{{ g }} <span class="text-muted" style="font-weight:400;text-transform:none">(marcar todos)</span></label>
+    </div>
+    <div class="row" id="{{ gid }}">
       {% for chave, rotulo, grupo, futura in tarefas_perfil if grupo == g %}
       <div class="col-md-6">
         <div class="form-check">
@@ -28,37 +36,64 @@
   {% endfor %}
 {% endmacro %}
 
-<div class="card mb-4"><div class="card-body">
-  <h6 class="mb-3">Novo perfil de acesso</h6>
-  <form method="post" action="{{ url_for('almox.papel_novo') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="mb-3" style="max-width:420px"><input class="form-control" name="nome" placeholder="Nome do perfil (ex.: INSPETOR DE EXTINTOR)" required></div>
-    {{ blocos('novo', []) }}
-    <button class="btn btn-primary">Cadastrar perfil</button>
-  </form>
-</div></div>
+{# Área de criação — recolhida por padrão #}
+<div class="collapse mb-3" id="novoPerfil">
+  <div class="card"><div class="card-body">
+    <h6 class="mb-3">Novo perfil de acesso</h6>
+    <form method="post" action="{{ url_for('almox.papel_novo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-3" style="max-width:420px"><input class="form-control" name="nome" placeholder="Nome do perfil (ex.: INSPETOR DE EXTINTOR)" required></div>
+      {{ blocos('novo', []) }}
+      <button class="btn btn-primary">Cadastrar perfil</button>
+    </form>
+  </div></div>
+</div>
 
-<h6 class="mb-2">Perfis cadastrados</h6>
-<div class="row g-3">
+{# Lista de perfis — fechada, cada um expande ao clicar no cabeçalho #}
+<div class="card"><div class="list-group list-group-flush">
   {% for p in itens %}
-  <div class="col-md-6">
-    <div class="card h-100"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="mb-0">{{ p.nome }} {% if not p.ativo %}<span class="badge bg-secondary">inativo</span>{% endif %}</h6>
-        <form method="post" action="{{ url_for('almox.papel_toggle', pid=p.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar' if p.ativo else 'Reativar' }}</button>
-        </form>
+  <div class="list-group-item px-3">
+    <div class="d-flex justify-content-between align-items-center" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#perfil{{ p.id }}">
+      <div>
+        <span class="chevron me-2" style="display:inline-block;transition:transform .15s;color:var(--texto-2)">▸</span>
+        <b>{{ p.nome }}</b>
+        {% if not p.ativo %}<span class="badge bg-secondary ms-2">inativo</span>{% endif %}
+        <span class="badge bg-light ms-2">{{ p.lista_tarefas|length }} tarefa(s)</span>
       </div>
+    </div>
+    <div class="collapse mt-3" id="perfil{{ p.id }}">
       <form method="post" action="{{ url_for('almox.papel_editar', pid=p.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {{ blocos('p' ~ p.id, p.lista_tarefas) }}
-        <button class="btn btn-sm btn-primary mt-1">Salvar tarefas</button>
+        <div class="d-flex gap-2 mt-1">
+          <button class="btn btn-sm btn-primary">Salvar tarefas</button>
+        </div>
       </form>
-    </div></div>
+      <form method="post" action="{{ url_for('almox.papel_toggle', pid=p.id) }}" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar perfil' if p.ativo else 'Reativar perfil' }}</button>
+      </form>
+    </div>
   </div>
   {% else %}
-  <p class="text-muted">Nenhum perfil de acesso cadastrado.</p>
+  <div class="list-group-item text-muted px-3">Nenhum perfil de acesso cadastrado. Use "＋ Novo perfil".</div>
   {% endfor %}
-</div>
+</div></div>
+
+<style>
+  .list-group-item{ background:var(--card-bg); border-color:var(--linha); color:var(--texto); }
+  [data-bs-toggle="collapse"][aria-expanded="true"] .chevron{ transform:rotate(90deg); }
+</style>
+<script>
+function marcarGrupo(gid, marcar){
+  document.querySelectorAll('#'+gid+' input[type=checkbox]').forEach(function(c){ if(!c.disabled) c.checked = marcar; });
+}
+document.querySelectorAll('[data-grupo]').forEach(function(bloco){
+  var gid=bloco.getAttribute('data-grupo');
+  var marcaveis=[].slice.call(document.querySelectorAll('#'+gid+' input[type=checkbox]')).filter(function(c){return !c.disabled;});
+  var todas = marcaveis.length>0 && marcaveis.every(function(c){return c.checked;});
+  var all=document.getElementById('all_'+gid);
+  if(all) all.checked=todas;
+});
+</script>
 {% endblock %}

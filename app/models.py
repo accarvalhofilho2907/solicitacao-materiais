@@ -700,7 +700,7 @@ class PapelColaborador(db.Model):
     __tablename__ = "almox_papeis"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), unique=True, nullable=False)
-    tarefas = db.Column(db.String(400), default="")   # chaves separadas por vírgula
+    tarefas = db.Column(db.Text, default="")   # chaves separadas por vírgula
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

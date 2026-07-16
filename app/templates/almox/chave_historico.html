@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Histórico da chave{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary mb-3">← Chaves</a>
+<h4 class="mb-1">Histórico — {{ c.descricao }}</h4>
+<p class="text-muted small">Quadro: {{ c.quadro_nome or '—' }} · Status atual:
+  {% if c.status == 'Disponível' %}<span class="badge bg-success">Disponível</span>{% else %}<span class="badge bg-warning text-dark">Em uso ({{ c.com_quem or '—' }})</span>{% endif %}
+</p>
+<div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+  <thead class="table-light"><tr><th>Quando</th><th>Ação</th><th>Colaborador</th><th>Observação</th></tr></thead>
+  <tbody>{% for m in movs %}
+    <tr>
+      <td class="small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') if m.criado_em else '—' }}</td>
+      <td>{% if m.acao == 'retirada' %}<span class="badge bg-warning text-dark">Retirada</span>{% else %}<span class="badge bg-success">Devolução</span>{% endif %}</td>
+      <td class="small">{{ m.colaborador_nome or '—' }}</td>
+      <td class="small text-muted">{% if m.acao == 'devolucao' and m.retirado_por and m.retirado_por != m.colaborador_nome %}devolvida por {{ m.colaborador_nome }} (estava com {{ m.retirado_por }}){% endif %}</td>
+    </tr>
+  {% else %}<tr><td colspan="4" class="text-muted">Sem movimentações registradas para esta chave.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

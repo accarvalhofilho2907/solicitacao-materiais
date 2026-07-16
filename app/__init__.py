@@ -20,7 +20,26 @@ def _light_migrate():
                 tipo = col.type.compile(dialect=db.engine.dialect)
                 db.session.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {tipo}'))
     db.session.commit()
-    # Colunas "ativo" recém-criadas ficam NULL nas linhas antigas; tratar como ativas.
+    # Roadmap 19.11 — a coluna 'tarefas' dos Perfis cresceu (lista completa passa de 400 chars).
+    # No Postgres, amplia varchar(400) -> TEXT (idempotente). SQLite não precisa (não impõe tamanho).
+    if db.engine.dialect.name == "postgresql" and insp.has_table("almox_papeis"):
+        try:
+            db.session.execute(text('ALTER TABLE almox_papeis ALTER COLUMN tarefas TYPE TEXT'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    # Fornecedores antigos com 'nome' nulo/vazio quebram telas que ordenam por nome
+    # (Coletas próprias, Histórico de preços). Preenche a partir de fantasia/razão/email.
+    if insp.has_table("fornecedores") and "nome" in {c["name"] for c in insp.get_columns("fornecedores")}:
+        try:
+            db.session.execute(text(
+                "UPDATE fornecedores SET nome = "
+                "COALESCE(NULLIF(nome, ''), NULLIF(nome_fantasia, ''), "
+                "NULLIF(razao_social, ''), NULLIF(email, ''), 'SEM NOME') "
+                "WHERE nome IS NULL OR nome = ''"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     for table in db.metadata.sorted_tables:
         if insp.has_table(table.name) and "ativo" in {c["name"] for c in insp.get_columns(table.name)}:
             db.session.execute(text(f'UPDATE "{table.name}" SET ativo = TRUE WHERE ativo IS NULL'))

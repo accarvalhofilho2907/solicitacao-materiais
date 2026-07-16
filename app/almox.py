@@ -246,6 +246,19 @@ def chaves():
     return render_template("almox/chaves.html", itens=itens, q=q, quadros=quadros, colabs=colabs)
 
 
+def _resolver_quadro(form):
+    """Resolve o quadro pelo id (select) ou, como fallback, pelo nome digitado."""
+    qid = form.get("quadro_chave_id") or None
+    if qid and str(qid).isdigit():
+        return int(qid)
+    nome = (form.get("quadro_nome") or form.get("quadro") or "").strip()
+    if nome:
+        q = QuadroChave.query.filter(db.func.upper(QuadroChave.nome) == nome.upper()).first()
+        if q:
+            return q.id
+    return None
+
+
 @almox_bp.route("/chaves/nova", methods=["POST"])
 @_guard("pode_chaves")
 def chave_nova():
@@ -254,17 +267,49 @@ def chave_nova():
     if not desc:
         flash("Informe a descrição da chave.", "danger")
         return redirect(url_for("almox.chaves"))
-    quadro_id = request.form.get("quadro_chave_id") or None
+    quadro_id = _resolver_quadro(request.form)
     uid = "CH-" + secrets.token_hex(4).upper()
     while Chave.query.filter_by(qr_uid=uid).first():
         uid = "CH-" + secrets.token_hex(4).upper()
-    c = Chave(descricao=desc.upper(), quadro_chave_id=int(quadro_id) if quadro_id else None,
+    c = Chave(descricao=desc.upper(), quadro_chave_id=quadro_id,
               qr_uid=uid, status="Disponível")
     db.session.add(c)
-    _log("Chave", f"Chave cadastrada: {c.descricao}")
+    _log("Chave", f"Chave cadastrada: {c.descricao}" + (f" (quadro: {c.quadro_nome})" if quadro_id else " (sem quadro)"))
     db.session.commit()
-    flash("Chave cadastrada.", "success")
+    flash("Chave cadastrada." + ("" if quadro_id else " (Sem quadro — você pode definir depois em Editar.)"), "success")
     return redirect(url_for("almox.chaves"))
+
+
+@almox_bp.route("/chaves/<int:cid>/editar", methods=["POST"])
+@_guard("pode_chaves")
+def chave_editar(cid):
+    c = db.session.get(Chave, cid) or abort(404)
+    mudancas = []
+    nova_desc = (request.form.get("descricao") or "").strip().upper()
+    if nova_desc and nova_desc != (c.descricao or ""):
+        mudancas.append(f"descrição: {c.descricao or '—'} → {nova_desc}")
+        c.descricao = nova_desc
+    novo_quadro = _resolver_quadro(request.form)
+    if novo_quadro != c.quadro_chave_id:
+        antigo = c.quadro_nome
+        c.quadro_chave_id = novo_quadro
+        mudancas.append(f"quadro: {antigo or '—'} → {c.quadro_nome or '—'}")
+    if mudancas:
+        _log("Chave", f"Chave {c.descricao} editada — " + "; ".join(mudancas))
+        db.session.commit()
+        flash("Chave atualizada.", "success")
+    else:
+        flash("Nada a alterar.", "info")
+    return redirect(url_for("almox.chaves"))
+
+
+@almox_bp.route("/chaves/<int:cid>/historico")
+@_guard("pode_chaves")
+def chave_historico(cid):
+    c = db.session.get(Chave, cid) or abort(404)
+    movs = (MovimentacaoChave.query.filter_by(chave_id=c.id)
+            .order_by(MovimentacaoChave.criado_em.desc()).all())
+    return render_template("almox/chave_historico.html", c=c, movs=movs)
 
 
 def _op_id():

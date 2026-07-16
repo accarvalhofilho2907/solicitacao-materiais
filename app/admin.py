@@ -656,7 +656,7 @@ def precos():
         g = grupos.setdefault(o.fornecedor_id, {"fornecedor": o.fornecedor, "itens": []})
         g["itens"].append(o)
     return render_template("admin/precos.html",
-        grupos=sorted(grupos.values(), key=lambda g: (g["fornecedor"].nome if g["fornecedor"] else "")),
+        grupos=sorted(grupos.values(), key=lambda g: ((g["fornecedor"].nome or "") if g["fornecedor"] else "")),
         fornecedores=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(), f_forn=fid)
 
 
@@ -1291,7 +1291,7 @@ def coletas_proprias():
     for cidade, fdict in grupos.items():
         grupos_ord[cidade] = sorted(
             fdict.values(),
-            key=lambda b: (b["fornecedor"].nome.lower() if b["fornecedor"] else "zzz"))
+            key=lambda b: ((b["fornecedor"].nome or "").lower() if b["fornecedor"] else "zzz"))
 
     # texto pronto por cidade (agrupado por fornecedor)
     textos = {}

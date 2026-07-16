@@ -23,7 +23,8 @@
       <div class="mb-2"><label class="form-label small">Perfil de acesso</label>
         {% if pode_papel %}
         <select class="form-select" name="papel">
-          {% for val, lbl in papeis_colab %}{% if val != 'ADMIN' or is_master or (c.papel or '')|upper == 'ADMIN' %}<option value="{{ val }}" {{ 'selected' if (c.papel or '')|upper == val }}>{{ lbl }}</option>{% endif %}{% endfor %}
+          <option value="">— sem perfil —</option>
+          {% for pf in papeis %}<option value="{{ pf.nome }}" {{ 'selected' if (c.papel or '')|upper == pf.nome|upper }}>{{ pf.nome }}</option>{% endfor %}
         </select>
         <div class="form-text">Admin só o Admin Master concede. Almoxarifado dá acesso ao módulo.</div>
         {% else %}

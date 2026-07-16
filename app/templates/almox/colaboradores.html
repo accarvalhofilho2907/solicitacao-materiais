@@ -73,7 +73,8 @@
         <div class="mb-2"><label class="form-label">Perfil de acesso</label>
           {% if pode_papel %}
           <select class="form-select" name="papel">
-            {% for val, lbl in papeis_colab %}{% if val != 'ADMIN' or is_master %}<option value="{{ val }}">{{ lbl }}</option>{% endif %}{% endfor %}
+            <option value="">— sem perfil —</option>
+            {% for pf in papeis %}<option value="{{ pf.nome }}">{{ pf.nome }}</option>{% endfor %}
           </select>
           <div class="form-text">Admin só é concedido pelo Admin Master. A senha é definida no 1º acesso (por CPF).</div>
           {% else %}

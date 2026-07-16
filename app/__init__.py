@@ -294,6 +294,30 @@ def _seed_almox():
         logging.getLogger(__name__).exception("Falha no seed do módulo Almoxarifado — mantido estado anterior")
 
 
+def _seed_perfis_padrao():
+    """Garante Perfis de acesso equivalentes aos papéis antigos, com as permissões certas.
+    Anti-lockout: colaboradores que têm o papel antigo (ex.: ALMOXARIFADO) passam a bater
+    com um Perfil que JÁ concede o acesso equivalente. Se o Perfil existir mas estiver VAZIO,
+    é preenchido (o Antonio pode ajustar depois). Perfis já configurados NÃO são tocados."""
+    from .models import PapelColaborador
+    padrao = {
+        "ADMIN": ["perm_total"],
+        "ALMOXARIFADO": ["perm_modulo_almox", "perm_chaves", "perm_extintores",
+                          "perm_colaboradores", "perm_solicitar", "perm_cadastros",
+                          "perm_relatorios", "perm_cotacao", "perm_aprovar", "perm_perfis"],
+        "SOLICITANTE": ["perm_solicitar"],
+        "VISUALIZADOR": [],
+        "COLABORADOR DIVERSO": ["perm_solicitar"],
+    }
+    for nome, perms in padrao.items():
+        pf = PapelColaborador.query.filter(db.func.upper(PapelColaborador.nome) == nome).first()
+        if pf is None:
+            db.session.add(PapelColaborador(nome=nome, tarefas=",".join(perms), ativo=True))
+        elif not (pf.tarefas or "").strip():   # existe mas está vazio -> preenche o equivalente
+            pf.tarefas = ",".join(perms)
+    db.session.commit()
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
@@ -402,5 +426,6 @@ def create_app():
         _light_migrate()
         _seed_tipos()
         _seed_almox()
+        _seed_perfis_padrao()
 
     return app

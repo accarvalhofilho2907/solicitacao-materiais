@@ -1063,14 +1063,12 @@ def colaborador_novo():
         if "".join(ch for ch in (c0.cpf or "") if ch.isdigit()) == cpf:
             flash("Já existe um colaborador ativo com esse CPF.", "warning")
             return redirect(url_for("almox.colaboradores"))
-    # Papel: só Admin/Master escolhe; Almoxarifado sempre cria "colaborador diverso"
+    # Perfil de acesso: só Admin escolhe; senão entra sem perfil administrativo.
     papel = "COLABORADOR DIVERSO"
     if current_user.is_admin:
-        escolhido = (request.form.get("papel") or "COLABORADOR DIVERSO").strip().upper()
-        if escolhido in dict(PAPEIS_COLAB):
-            if escolhido == "ADMIN" and not current_user.is_master:
-                flash("Apenas o Admin Master pode conceder o papel Admin.", "danger")
-                return redirect(url_for("almox.colaboradores"))
+        escolhido = (request.form.get("papel") or "").strip().upper()
+        nomes = {p.nome.upper() for p in PapelColaborador.query.all()}
+        if escolhido and escolhido in nomes:
             papel = escolhido
     uid = "COL-" + secrets.token_hex(4).upper()
     while Colaborador.query.filter_by(qr_uid=uid).first():
@@ -1094,8 +1092,9 @@ def colaborador_perfil(cid):
     empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
     hist = (HistoricoColaborador.query.filter_by(colaborador_id=c.id)
             .order_by(HistoricoColaborador.criado_em.desc()).all())
+    papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
     return render_template("almox/colaborador_perfil.html", c=c, empresas=empresas,
-                           papeis_colab=PAPEIS_COLAB, hist=hist,
+                           papeis=papeis, papeis_colab=PAPEIS_COLAB, hist=hist,
                            pode_papel=current_user.is_admin, is_master=current_user.is_master)
 
 
@@ -1120,16 +1119,14 @@ def colaborador_editar(cid):
     if nova_emp != (c.empresa or ""):
         registrar("empresa", c.empresa, nova_emp); c.empresa = nova_emp
 
-    # Papel: só Admin/Master
+    # Perfil de acesso: só Admin
     if current_user.is_admin:
         novo_papel = (request.form.get("papel") or c.papel or "").strip().upper()
-        if novo_papel in dict(PAPEIS_COLAB) and novo_papel != (c.papel or "").upper():
-            if novo_papel == "ADMIN" and not current_user.is_master:
-                flash("Apenas o Admin Master pode conceder o papel Admin.", "danger")
-                return redirect(url_for("almox.colaborador_perfil", cid=c.id))
+        nomes = {p.nome.upper() for p in PapelColaborador.query.all()}
+        if novo_papel and novo_papel in nomes and novo_papel != (c.papel or "").upper():
             registrar("papel", c.papel, novo_papel); c.papel = novo_papel
     elif request.form.get("papel") and request.form.get("papel").strip().upper() != (c.papel or "").upper():
-        flash("Apenas Admin altera o papel. As demais alterações foram salvas.", "warning")
+        flash("Apenas Admin altera o perfil de acesso. As demais alterações foram salvas.", "warning")
 
     if mudancas:
         _log("Colaborador", f"{c.nome}: alterado ({', '.join(mudancas)}) por {autor}")

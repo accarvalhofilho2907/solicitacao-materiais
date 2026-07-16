@@ -570,6 +570,20 @@ ITEM_ETIQUETA_EXTINTOR = "Etiqueta grudada e em bom estado?"
 # Tarefas dos Perfis de acesso. Cada item: (chave, rótulo, grupo, futura?)
 # 'futura=True' aparece desabilitada ("em breve") até a funcionalidade existir.
 TAREFAS_PERFIL = [
+    # Acesso e permissões (controlam o que a pessoa pode acessar no sistema)
+    ("perm_total", "Poder total (acesso a tudo)", "Acesso e permissões", False),
+    ("perm_modulo_almox", "Entrar no módulo de almoxarifado", "Acesso e permissões", False),
+    ("perm_chaves", "Acessar / gerenciar chaves", "Acesso e permissões", False),
+    ("perm_extintores", "Acessar / gerenciar extintores", "Acesso e permissões", False),
+    ("perm_colaboradores", "Ver / cadastrar / editar colaboradores", "Acesso e permissões", False),
+    ("perm_perfis", "Gerenciar perfis de acesso", "Acesso e permissões", False),
+    ("perm_aprovar", "Aprovar / reprovar solicitações", "Acesso e permissões", False),
+    ("perm_cotacao", "Enviar cotações", "Acesso e permissões", False),
+    ("perm_solicitar", "Criar solicitações", "Acesso e permissões", False),
+    ("perm_cadastros", "Acessar cadastros (empresas, tipos, etc.)", "Acesso e permissões", False),
+    ("perm_relatorios", "Ver relatórios / central", "Acesso e permissões", False),
+    ("perm_log", "Ver log do sistema", "Acesso e permissões", False),
+    ("perm_backup", "Baixar backup do banco", "Acesso e permissões", False),
     # Operação / Solicitações
     ("solicitar_criar", "Criar solicitação", "Operação / Solicitações", False),
     ("solicitar_ver_minhas", "Ver minhas solicitações", "Operação / Solicitações", False),
@@ -741,32 +755,64 @@ class Colaborador(UserMixin, db.Model):
     # ---- Login no sistema: get_id prefixado p/ conviver com Usuario ----
     def get_id(self): return f"C:{self.id}"
 
-    # ---- Camada de compatibilidade (para as telas não quebrarem) ----
+    # ---- Permissões: derivadas do PERFIL DE ACESSO (PapelColaborador) ----
+    # self.papel guarda o NOME do perfil cadastrado. As permissões vêm das
+    # tarefas marcadas nesse perfil. Se não houver perfil correspondente
+    # (colaborador ainda não migrado), cai no comportamento ANTIGO (anti-lockout).
     @property
     def _p(self): return (self.papel or "").strip().lower()
+
+    def _perms_efetivas(self):
+        cache = getattr(self, "_perm_cache", None)
+        if cache is not None:
+            return cache
+        perfil = None
+        nome = (self.papel or "").strip()
+        if nome:
+            perfil = PapelColaborador.query.filter(
+                db.func.upper(PapelColaborador.nome) == nome.upper()).first()
+        if perfil is not None:
+            perms = set(perfil.lista_tarefas)          # fonte única: tarefas do perfil
+        else:
+            # Fallback anti-lockout: reproduz o acesso antigo enquanto não migrar.
+            p = self._p
+            perms = {"perm_solicitar"}                 # antes: pode_solicitar era sempre True
+            if p == "admin":
+                perms.add("perm_total")
+            if p in ("admin", "almoxarifado"):
+                perms |= {"perm_modulo_almox", "perm_chaves",
+                          "perm_extintores", "perm_colaboradores"}
+        self._perm_cache = perms
+        return perms
+
+    def _tem(self, chave):
+        p = self._perms_efetivas()
+        return ("perm_total" in p) or (chave in p)
+
     @property
-    def is_admin(self): return self._p == "admin"
+    def is_admin(self): return "perm_total" in self._perms_efetivas()
     @property
     def is_master(self): return False
     @property
-    def is_viewer(self): return self._p == "visualizador"
+    def is_almox(self): return self._tem("perm_modulo_almox")
     @property
-    def is_almox(self): return self._p == "almoxarifado"
-    @property
-    def pode_solicitar(self): return True
+    def pode_solicitar(self): return self._tem("perm_solicitar")
     @property
     def senha_temporaria(self): return False
     @property
-    def _papel_modulo(self): return self._p in ("admin", "almoxarifado")
+    def pode_almox_modulo(self): return self._tem("perm_modulo_almox")
     @property
-    def pode_almox_modulo(self): return self._papel_modulo
+    def pode_chaves(self): return self._tem("perm_chaves")
     @property
-    def pode_chaves(self): return self._papel_modulo
+    def pode_extintores(self): return self._tem("perm_extintores")
     @property
-    def pode_extintores(self): return self._papel_modulo
+    def pode_colaboradores(self): return self._tem("perm_colaboradores")
     @property
-    def pode_colaboradores(self): return self._papel_modulo
-    def pode_gerir(self, alvo): return False
+    def is_viewer(self):
+        # só leitura = nenhuma permissão de acesso/escrita
+        return not (self.is_admin or self.pode_almox_modulo or self.pode_solicitar
+                    or self.pode_chaves or self.pode_extintores or self.pode_colaboradores)
+    def pode_gerir(self, alvo): return self.is_admin
 
 
 class MovimentacaoChave(db.Model):

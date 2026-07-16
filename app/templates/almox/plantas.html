@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Plantas{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Plantas</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#novoModal">＋ Nova planta</button>
+</div>
+<p class="text-muted small">A planta é o site onde se trabalha (ex.: Delta Maranhão).</p>
+<div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+  <thead class="table-light"><tr><th>Planta</th><th>Situação</th><th></th></tr></thead>
+  <tbody>{% for p in itens %}
+    <tr><td>{{ p.nome }}</td><td>{% if p.ativo %}<span class="badge bg-success">ativa</span>{% else %}<span class="badge bg-secondary">inativa</span>{% endif %}</td>
+      <td class="text-end"><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#p{{ p.id }}">Editar</button></td></tr>
+    <tr class="collapse" id="p{{ p.id }}"><td colspan="3"><form method="post" action="{{ url_for('almox.planta_editar', pid=p.id) }}" class="row g-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-7"><input name="nome" class="form-control form-control-sm" value="{{ p.nome }}"></div>
+      <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if p.ativo }}><label class="form-check-label small">Ativa</label></div></div>
+      <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
+  {% else %}<tr><td colspan="3" class="text-muted">Nenhuma planta cadastrada.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+<div class="modal fade" id="novoModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post"><div class="modal-header"><h5 class="modal-title">Nova planta</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="nome" class="form-control" placeholder="Nome da planta (ex.: DELTA MARANHÃO)" required autofocus></div>
+    <div class="modal-footer"><button class="btn btn-primary">Cadastrar</button></div></form>
+</div></div></div>
+{% endblock %}

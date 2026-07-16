@@ -108,6 +108,7 @@ def marcar_chegada(sid):
 from datetime import date
 from .models import (Chave, Extintor, Colaborador, AlmoxLog, QuadroChave,
                      PapelColaborador, MovimentacaoChave, TAREFAS_COLABORADOR, TAREFAS_DICT,
+                     TAREFAS_PERFIL, TAREFAS_GRUPOS,
                      InspecaoExtintor, PendenciaEtiqueta, CHECK_EXTINTOR, ITEM_ETIQUETA_EXTINTOR,
                      ProdutoAlmox, MovimentacaoMaterial, LocalAlmox)
 
@@ -956,10 +957,10 @@ PAPEIS_COLAB = [("COLABORADOR DIVERSO", "Colaborador diverso"),
 @almox_bp.route("/colaboradores")
 @_guard("pode_colaboradores")
 def colaboradores():
-    from .models import Empresa
+    from .models import Fornecedor
     itens = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
-    empresas = Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all()
+    empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
     return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas,
                            papeis_colab=PAPEIS_COLAB, pode_papel=current_user.is_admin,
                            is_master=current_user.is_master)
@@ -1009,9 +1010,9 @@ def colaborador_novo():
 @almox_bp.route("/colaboradores/<int:cid>", methods=["GET"])
 @_guard("pode_colaboradores")
 def colaborador_perfil(cid):
-    from .models import Empresa, HistoricoColaborador
+    from .models import Fornecedor, HistoricoColaborador
     c = db.session.get(Colaborador, cid) or abort(404)
-    empresas = Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all()
+    empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
     hist = (HistoricoColaborador.query.filter_by(colaborador_id=c.id)
             .order_by(HistoricoColaborador.criado_em.desc()).all())
     return render_template("almox/colaborador_perfil.html", c=c, empresas=empresas,
@@ -1108,7 +1109,8 @@ def _admin_only(f):
 @_admin_only
 def papeis():
     itens = PapelColaborador.query.order_by(PapelColaborador.nome).all()
-    return render_template("almox/papeis.html", itens=itens, tarefas=TAREFAS_COLABORADOR)
+    return render_template("almox/papeis.html", itens=itens,
+                           tarefas_perfil=TAREFAS_PERFIL, grupos=TAREFAS_GRUPOS)
 
 
 @almox_bp.route("/papeis/novo", methods=["POST"])
@@ -1121,7 +1123,7 @@ def papel_novo():
     if PapelColaborador.query.filter(db.func.upper(PapelColaborador.nome) == nome.upper()).first():
         flash("Já existe um papel com esse nome.", "warning")
         return redirect(url_for("almox.papeis"))
-    validas = {k for k, _ in TAREFAS_COLABORADOR}
+    validas = {k for k, _r, _g, fut in TAREFAS_PERFIL if not fut} | {k for k, _ in TAREFAS_COLABORADOR}
     escolhidas = [t for t in request.form.getlist("tarefas") if t in validas]
     db.session.add(PapelColaborador(nome=nome.upper(), tarefas=",".join(escolhidas)))
     _log("Papel", f"Papel cadastrado: {nome.upper()}")
@@ -1134,7 +1136,7 @@ def papel_novo():
 @_admin_only
 def papel_editar(pid):
     p = db.session.get(PapelColaborador, pid) or abort(404)
-    validas = {k for k, _ in TAREFAS_COLABORADOR}
+    validas = {k for k, _r, _g, fut in TAREFAS_PERFIL if not fut} | {k for k, _ in TAREFAS_COLABORADOR}
     p.tarefas = ",".join(t for t in request.form.getlist("tarefas") if t in validas)
     _log("Papel", f"Papel editado: {p.nome}")
     db.session.commit()
@@ -1794,3 +1796,154 @@ def coletor_api_inventario():
     db.session.commit()
     return jsonify(ok=True, resumo=[f"{p.nome}: {antigo:g} → {contado:g}"], nome=p.nome,
                    antigo=antigo, novo=contado)
+
+
+# ==================== HIERARQUIA FÍSICA: PLANTA / ARMAZÉM / LOCALIZADOR ====================
+
+@almox_bp.route("/plantas", methods=["GET", "POST"])
+@_guard("pode_almox_modulo")
+def plantas():
+    from .models import Planta
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip().upper()
+        if not nome:
+            flash("Informe o nome da planta.", "danger")
+        elif Planta.query.filter(db.func.upper(Planta.nome) == nome).first():
+            flash("Já existe uma planta com esse nome.", "warning")
+        else:
+            db.session.add(Planta(nome=nome))
+            _log("Planta", f"Planta cadastrada: {nome}")
+            db.session.commit()
+            flash("Planta cadastrada.", "success")
+        return redirect(url_for("almox.plantas"))
+    itens = Planta.query.order_by(Planta.nome).all()
+    return render_template("almox/plantas.html", itens=itens)
+
+
+@almox_bp.route("/plantas/<int:pid>", methods=["POST"])
+@_guard("pode_almox_modulo")
+def planta_editar(pid):
+    from .models import Planta
+    p = db.session.get(Planta, pid) or abort(404)
+    p.nome = (request.form.get("nome") or p.nome).strip().upper()
+    p.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Planta atualizada.", "success")
+    return redirect(url_for("almox.plantas"))
+
+
+@almox_bp.route("/armazens", methods=["GET", "POST"])
+@_guard("pode_almox_modulo")
+def armazens():
+    from .models import Armazem, Planta
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip().upper()
+        planta_id = request.form.get("planta_id") or None
+        if not nome or not planta_id:
+            flash("Informe o nome do armazém e a planta.", "danger")
+        else:
+            db.session.add(Armazem(nome=nome, planta_id=int(planta_id)))
+            _log("Armazém", f"Armazém cadastrado: {nome}")
+            db.session.commit()
+            flash("Armazém cadastrado.", "success")
+        return redirect(url_for("almox.armazens"))
+    itens = Armazem.query.order_by(Armazem.nome).all()
+    plantas_l = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
+    return render_template("almox/armazens.html", itens=itens, plantas=plantas_l)
+
+
+@almox_bp.route("/armazens/<int:aid>", methods=["POST"])
+@_guard("pode_almox_modulo")
+def armazem_editar(aid):
+    from .models import Armazem
+    a = db.session.get(Armazem, aid) or abort(404)
+    a.nome = (request.form.get("nome") or a.nome).strip().upper()
+    if request.form.get("planta_id"):
+        a.planta_id = int(request.form.get("planta_id"))
+    a.ativo = request.form.get("ativo") == "1"
+    db.session.commit()
+    flash("Armazém atualizado.", "success")
+    return redirect(url_for("almox.armazens"))
+
+
+@almox_bp.route("/localizadores", methods=["GET", "POST"])
+@_guard("pode_almox_modulo")
+def localizadores():
+    import secrets
+    from .models import Armazem, Localizador
+    if request.method == "POST":
+        armazem_id = request.form.get("armazem_id") or None
+        fila = (request.form.get("fila") or "").strip().upper()[:1]
+        estante = request.form.get("estante")
+        nivel = request.form.get("nivel")
+        if not (armazem_id and fila.isalpha() and (estante or "").isdigit() and (nivel or "").isdigit()):
+            flash("Preencha armazém, fila (1 letra), estante e nível (números).", "danger")
+            return redirect(url_for("almox.localizadores"))
+        existe = Localizador.query.filter_by(armazem_id=int(armazem_id), fila=fila,
+                                             estante=int(estante), nivel=int(nivel)).first()
+        if existe:
+            flash("Esse localizador já existe.", "warning")
+            return redirect(url_for("almox.localizadores"))
+        uid = "LOC-" + secrets.token_hex(4).upper()
+        db.session.add(Localizador(armazem_id=int(armazem_id), fila=fila,
+                                   estante=int(estante), nivel=int(nivel), qr_uid=uid))
+        _log("Localizador", f"Localizador {fila}*{estante}*{nivel} cadastrado")
+        db.session.commit()
+        flash("Localizador cadastrado.", "success")
+        return redirect(url_for("almox.localizadores"))
+    itens = Localizador.query.order_by(Localizador.armazem_id, Localizador.fila,
+                                       Localizador.estante, Localizador.nivel).all()
+    armazens_l = Armazem.query.filter_by(ativo=True).order_by(Armazem.nome).all()
+    return render_template("almox/localizadores.html", itens=itens, armazens=armazens_l)
+
+
+@almox_bp.route("/localizadores/<int:lid>/toggle", methods=["POST"])
+@_guard("pode_almox_modulo")
+def localizador_toggle(lid):
+    from .models import Localizador
+    l = db.session.get(Localizador, lid) or abort(404)
+    l.ativo = not l.ativo
+    db.session.commit()
+    flash("Localizador atualizado.", "success")
+    return redirect(url_for("almox.localizadores"))
+
+
+@almox_bp.route("/localizadores/gerar", methods=["GET", "POST"])
+@_guard("pode_almox_modulo")
+def localizadores_gerar():
+    import secrets
+    from .models import Armazem, Localizador
+    if request.method == "POST":
+        armazem_id = request.form.get("armazem_id") or None
+        f_ini = (request.form.get("fila_ini") or "").strip().upper()[:1]
+        f_fim = (request.form.get("fila_fim") or "").strip().upper()[:1]
+        try:
+            e_ini = int(request.form.get("estante_ini")); e_fim = int(request.form.get("estante_fim"))
+            n_ini = int(request.form.get("nivel_ini")); n_fim = int(request.form.get("nivel_fim"))
+        except (TypeError, ValueError):
+            flash("Estante e nível devem ser números.", "danger")
+            return redirect(url_for("almox.localizadores_gerar"))
+        if not (armazem_id and f_ini.isalpha() and f_fim.isalpha() and f_ini <= f_fim
+                and e_ini <= e_fim and n_ini <= n_fim):
+            flash("Confira os intervalos (fila A→Z, estante e nível crescentes).", "danger")
+            return redirect(url_for("almox.localizadores_gerar"))
+        criados, pulados = 0, 0
+        existentes = {(l.fila, l.estante, l.nivel) for l in
+                      Localizador.query.filter_by(armazem_id=int(armazem_id)).all()}
+        for cod in range(ord(f_ini), ord(f_fim) + 1):
+            fila = chr(cod)
+            for est in range(e_ini, e_fim + 1):
+                for niv in range(n_ini, n_fim + 1):
+                    if (fila, est, niv) in existentes:
+                        pulados += 1
+                        continue
+                    uid = "LOC-" + secrets.token_hex(4).upper()
+                    db.session.add(Localizador(armazem_id=int(armazem_id), fila=fila,
+                                               estante=est, nivel=niv, qr_uid=uid))
+                    criados += 1
+        _log("Localizador", f"Gerados {criados} localizadores em massa (pulados {pulados})")
+        db.session.commit()
+        flash(f"{criados} localizador(es) gerado(s). {pulados} já existiam.", "success")
+        return redirect(url_for("almox.localizadores"))
+    armazens_l = Armazem.query.filter_by(ativo=True).order_by(Armazem.nome).all()
+    return render_template("almox/localizadores_gerar.html", armazens=armazens_l)

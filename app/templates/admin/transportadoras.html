@@ -1,23 +1,31 @@
 {% extends "base.html" %}
+{% block title %}Transportadoras{% endblock %}
 {% block content %}
-<a href="{{ url_for('admin.cadastros') }}" class="small">&larr; Cadastros</a>
-<h4 class="mt-2 mb-3">Transportadoras</h4>
-<div class="row g-3">
-  <div class="col-md-4"><div class="card"><div class="card-body">
-    <form method="post" class="d-flex gap-2"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input name="nome" class="form-control" placeholder="Nova transportadora" required><button class="btn btn-primary">+</button></form>
-  </div></div></div>
-  <div class="col-md-8"><div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
-    <thead class="table-light"><tr><th>Nome</th><th>Situação</th><th></th></tr></thead>
-    <tbody>{% for t in lista %}
-      <tr><td>{{ t.nome }}</td><td>{% if t.ativo %}<span class="badge bg-success">ativa</span>{% else %}<span class="badge bg-secondary">inativa</span>{% endif %}</td>
-        <td><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#t{{ t.id }}">Editar</button></td></tr>
-      <tr class="collapse" id="t{{ t.id }}"><td colspan="3"><form method="post" action="{{ url_for('admin.transportadora_editar', tid=t.id) }}" class="row g-2">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-7"><input name="nome" class="form-control form-control-sm" value="{{ t.nome }}"></div>
-        <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if t.ativo }}><label class="form-check-label small">Ativa</label></div></div>
-        <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
-    {% else %}<tr><td colspan="3" class="text-muted">Nenhuma.</td></tr>{% endfor %}</tbody>
-  </table></div></div></div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Transportadoras</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#novoModal">＋ Nova transportadora</button>
 </div>
+<div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+  <thead class="table-light"><tr><th>Nome</th><th>Situação</th><th></th></tr></thead>
+  <tbody>{% for t in lista %}
+    <tr><td>{{ t.nome }}</td><td>{% if t.ativo %}<span class="badge bg-success">ativa</span>{% else %}<span class="badge bg-secondary">inativa</span>{% endif %}</td>
+      <td class="text-end"><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#t{{ t.id }}">Editar</button></td></tr>
+    <tr class="collapse" id="t{{ t.id }}"><td colspan="3"><form method="post" action="{{ url_for('admin.transportadora_editar', tid=t.id) }}" class="row g-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-7"><input name="nome" class="form-control form-control-sm" value="{{ t.nome }}"></div>
+      <div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="ativo" value="1" {{ 'checked' if t.ativo }}><label class="form-check-label small">Ativa</label></div></div>
+      <div class="col-md-2 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
+  {% else %}<tr><td colspan="3" class="text-muted">Nenhuma transportadora cadastrada.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+
+<div class="modal fade" id="novoModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post">
+    <div class="modal-header"><h5 class="modal-title">Nova transportadora</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="nome" class="form-control" placeholder="Nome da transportadora" required autofocus>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary">Cadastrar</button></div>
+  </form>
+</div></div></div>
 {% endblock %}

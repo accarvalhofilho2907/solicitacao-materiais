@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from flask_login import UserMixin
+from sqlalchemy import event
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from .extensions import db
@@ -170,8 +171,14 @@ class Fornecedor(db.Model):
     ativo = db.Column(db.Boolean, default=True)
     tipos = db.relationship("TipoMaterial", secondary=fornecedor_tipo, back_populates="fornecedores")
 
+    # Coluna legada 'nome' (NOT NULL no banco antigo). Mantida e preenchida
+    # automaticamente a partir de nome_fantasia/razao_social (ver evento abaixo),
+    # para o cadastro unificado funcionar sem alterar a estrutura em produção.
+    nome = db.Column(db.String(200))
+
     @property
-    def nome(self): return self.nome_fantasia or self.razao_social or self.email
+    def nome_exib(self):
+        return self.nome_fantasia or self.razao_social or self.email or self.nome
 
     @property
     def aprovado(self):
@@ -398,13 +405,66 @@ class Extintor(db.Model):
 
 
 class LocalAlmox(db.Model):
-    """Local de estocagem (prateleira/armazém). Um deles é a Estocagem Temporária."""
+    """Local de estocagem (prateleira/armazém). Um deles é a Estocagem Temporária.
+    LEGADO: mantido durante a transição para a hierarquia Planta→Armazém→Localizador."""
     __tablename__ = "almox_locais"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(120), unique=True, nullable=False)
     temporaria = db.Column(db.Boolean, default=False)   # local padrão de entrada/devolução
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Planta(db.Model):
+    """Site onde se trabalha (ex.: Delta Maranhão)."""
+    __tablename__ = "almox_plantas"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), unique=True, nullable=False)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Armazem(db.Model):
+    """Galpão dentro de uma planta (ex.: Galpão D6)."""
+    __tablename__ = "almox_armazens"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    planta = db.relationship("Planta")
+
+    @property
+    def planta_nome(self):
+        return self.planta.nome if self.planta else "—"
+
+
+class Localizador(db.Model):
+    """Endereço físico: Fila*Estante*Nível (ex.: A*1*3), dentro de um armazém."""
+    __tablename__ = "almox_localizadores"
+    id = db.Column(db.Integer, primary_key=True)
+    armazem_id = db.Column(db.ForeignKey("almox_armazens.id"))
+    fila = db.Column(db.String(1))       # uma letra A-Z
+    estante = db.Column(db.Integer)      # número
+    nivel = db.Column(db.Integer)        # número
+    qr_uid = db.Column(db.String(20), unique=True)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    armazem = db.relationship("Armazem")
+
+    __table_args__ = (db.UniqueConstraint("armazem_id", "fila", "estante", "nivel",
+                                          name="uq_localizador"),)
+
+    @property
+    def codigo(self):
+        return f"{self.fila}*{self.estante}*{self.nivel}"
+
+    @property
+    def caminho(self):
+        a = self.armazem
+        p = a.planta_nome if a else "—"
+        an = a.nome if a else "—"
+        return f"{p} / {an} / {self.codigo}"
 
 
 class ProdutoAlmox(db.Model):
@@ -418,11 +478,13 @@ class ProdutoAlmox(db.Model):
     saldo = db.Column(db.Float, default=0)
     saldo_minimo = db.Column(db.Float, default=0)
     local_id = db.Column(db.ForeignKey("almox_locais.id"))
+    localizador_id = db.Column(db.ForeignKey("almox_localizadores.id"))   # novo endereço físico
     qr_uid = db.Column(db.String(20), unique=True)
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     local = db.relationship("LocalAlmox")
+    localizador = db.relationship("Localizador")
 
     @property
     def abaixo_minimo(self):
@@ -430,6 +492,8 @@ class ProdutoAlmox(db.Model):
 
     @property
     def local_nome(self):
+        if self.localizador:
+            return self.localizador.codigo
         return self.local.nome if self.local else "—"
 
 
@@ -502,6 +566,90 @@ ITEM_ETIQUETA_EXTINTOR = "Etiqueta grudada e em bom estado?"
 
 
 # Tarefas que um Papel de colaborador de campo pode ter (a "caixinha").
+# Tarefas dos Perfis de acesso. Cada item: (chave, rótulo, grupo, futura?)
+# 'futura=True' aparece desabilitada ("em breve") até a funcionalidade existir.
+TAREFAS_PERFIL = [
+    # Operação / Solicitações
+    ("solicitar_criar", "Criar solicitação", "Operação / Solicitações", False),
+    ("solicitar_ver_minhas", "Ver minhas solicitações", "Operação / Solicitações", False),
+    ("solicitar_ver_todas", "Ver todas as solicitações", "Operação / Solicitações", False),
+    ("solicitar_aprovar", "Aprovar / reprovar solicitações", "Operação / Solicitações", False),
+    ("cotacao_enviar", "Enviar cotação", "Operação / Solicitações", False),
+    ("solicitar_status", "Alterar status de solicitação", "Operação / Solicitações", False),
+    ("carga_receber", "Relatório de Carga (recebimento)", "Operação / Solicitações", False),
+    ("carga_enviar", "Relatório de Carga (envio)", "Operação / Solicitações", False),
+    # Chaves
+    ("chave_ver", "Ver chaves", "Chaves", False),
+    ("chave_cadastrar", "Cadastrar chave", "Chaves", False),
+    ("chave_editar", "Editar chave", "Chaves", False),
+    ("chave_historico", "Ver histórico da chave", "Chaves", False),
+    ("quadro_cadastrar", "Cadastrar quadro de chaves", "Chaves", False),
+    ("chave_qr", "Imprimir QR de chaves / quadro", "Chaves", False),
+    ("chave_retirar_devolver", "Retirar / devolver chave (coletor)", "Chaves", False),
+    # Extintores
+    ("ext_ver", "Ver extintores", "Extintores", False),
+    ("ext_inspecionar", "Inspecionar extintor", "Extintores", False),
+    ("ext_repor", "Reposição / troca de extintor", "Extintores", False),
+    ("ext_conferir", "Conferência no almoxarifado (retorno)", "Extintores", False),
+    ("ext_cadastrar", "Cadastrar extintor", "Extintores", False),
+    ("ext_desativar", "Desativar extintor", "Extintores", False),
+    ("ext_pendencia_etiqueta", "Baixar pendência de etiqueta", "Extintores", False),
+    ("ext_qr", "Imprimir QR de extintores", "Extintores", False),
+    # Material (estoque)
+    ("mat_ver", "Ver material / estoque", "Material (estoque)", False),
+    ("mat_cadastrar", "Cadastrar material", "Material (estoque)", False),
+    ("mat_entrada", "Entrada de material", "Material (estoque)", False),
+    ("mat_saida", "Saída de material", "Material (estoque)", False),
+    ("mat_ajuste", "Ajuste de saldo", "Material (estoque)", False),
+    ("mat_mover", "Movimentar entre localizadores", "Material (estoque)", False),
+    ("mat_inventario", "Inventário", "Material (estoque)", False),
+    ("mat_movimentacoes", "Ver movimentações", "Material (estoque)", False),
+    ("mat_negativo", "Resolver estoque negativo", "Material (estoque)", False),
+    ("mat_qr", "Imprimir QR de material", "Material (estoque)", False),
+    ("mat_devolucao_forcada", "Devolução forçada", "Material (estoque)", True),
+    ("mat_kit", "Kit (agrupar itens)", "Material (estoque)", True),
+    ("mat_unidades", "Unidades / validade / calibração", "Material (estoque)", True),
+    # Locais físicos
+    ("loc_planta", "Cadastrar Planta", "Locais físicos", True),
+    ("loc_armazem", "Cadastrar Armazém", "Locais físicos", True),
+    ("loc_localizador", "Cadastrar Localizador", "Locais físicos", True),
+    ("loc_gerar", "Gerar localizadores em massa", "Locais físicos", True),
+    # Coletor
+    ("col_chaves", "Usar coletor — chaves", "Coletor", False),
+    ("col_material", "Usar coletor — material", "Coletor", False),
+    ("col_movimentacao", "Movimentação (coletor)", "Coletor", False),
+    ("col_inventario", "Inventário (coletor)", "Coletor", False),
+    ("col_offline", "Coletor offline", "Coletor", True),
+    ("col_ajustes", "Ajustes / SISTEMA do coletor", "Coletor", True),
+    # Pessoas / Colaboradores
+    ("pes_ver", "Ver colaboradores", "Pessoas / Colaboradores", False),
+    ("pes_cadastrar", "Cadastrar colaborador", "Pessoas / Colaboradores", False),
+    ("pes_editar", "Editar colaborador (cargo / empresa)", "Pessoas / Colaboradores", False),
+    ("pes_papel", "Alterar perfil de acesso do colaborador", "Pessoas / Colaboradores", False),
+    ("pes_reset_senha", "Resetar senha de colaborador", "Pessoas / Colaboradores", False),
+    ("pes_qr", "Imprimir QR de colaborador", "Pessoas / Colaboradores", False),
+    ("pes_perfis", "Cadastrar / editar perfis de acesso", "Pessoas / Colaboradores", False),
+    # Cadastros (compras)
+    ("cad_emp_forn", "Empresas e Fornecedores", "Cadastros", False),
+    ("cad_tipos", "Tipos de material", "Cadastros", False),
+    ("cad_cidades", "Cidades", "Cadastros", False),
+    ("cad_transportadoras", "Transportadoras", "Cadastros", False),
+    ("cad_atividades", "Atividades", "Cadastros", False),
+    # Relatório
+    ("rel_chaves", "Relatório de chaves", "Relatório", False),
+    ("rel_material", "Relatórios de material", "Relatório", False),
+    ("rel_exportar", "Exportar PDF / CSV", "Relatório", False),
+    ("rel_qr_massa", "Impressão de QR em massa", "Relatório", False),
+    ("rel_etiquetas", "Central de etiquetas", "Relatório", True),
+    # Ajuda / Administração
+    ("adm_log", "Ver log do sistema", "Ajuda / Administração", False),
+    ("adm_faq", "FAQ", "Ajuda / Administração", False),
+    ("adm_sugestao", "Sugestão de melhoria", "Ajuda / Administração", False),
+    ("adm_usuarios_antigo", "Gerenciar Usuários - Antigo (Master)", "Ajuda / Administração", False),
+    ("adm_backup", "Backup do banco", "Ajuda / Administração", True),
+]
+
+# Compatibilidade: as 4 tarefas antigas continuam válidas (perfis já salvos não quebram)
 TAREFAS_COLABORADOR = [
     ("inspecionar_extintor", "Inspecionar extintor"),
     ("retirar_repor_extintor", "Retirar / repor extintor"),
@@ -509,6 +657,13 @@ TAREFAS_COLABORADOR = [
     ("pegar_devolver_material", "Pegar / devolver material"),
 ]
 TAREFAS_DICT = dict(TAREFAS_COLABORADOR)
+TAREFAS_DICT.update({k: r for k, r, _g, _f in TAREFAS_PERFIL})
+
+# Grupos na ordem de exibição
+TAREFAS_GRUPOS = []
+for _k, _r, _g, _f in TAREFAS_PERFIL:
+    if _g not in TAREFAS_GRUPOS:
+        TAREFAS_GRUPOS.append(_g)
 
 
 class HistoricoColaborador(db.Model):
@@ -640,3 +795,19 @@ class AlmoxLog(db.Model):
     detalhe = db.Column(db.String(400))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     autor = db.relationship("Usuario")
+
+
+# --- Preenche automaticamente a coluna legada 'nome' do Fornecedor ---
+# Garante que nome nunca fique NULL (a coluna é NOT NULL no banco antigo),
+# mantendo-a sincronizada com nome_fantasia/razao_social. Vale em qualquer
+# ponto que crie/edite um Fornecedor, nos dois bancos (SQLite e Postgres).
+def _forn_preenche_nome(mapper, connection, target):
+    target.nome = (target.nome_fantasia or target.razao_social
+                   or target.email or target.nome or "SEM NOME")
+    # coluna legada 'email' também é NOT NULL no banco antigo — nunca deixar NULL
+    if target.email is None:
+        target.email = ""
+
+
+event.listen(Fornecedor, "before_insert", _forn_preenche_nome)
+event.listen(Fornecedor, "before_update", _forn_preenche_nome)

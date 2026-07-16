@@ -163,7 +163,9 @@ def modulo_required(f):
     @wraps(f)
     @login_required
     def wrapper(*args, **kwargs):
-        if not current_user.pode_almox_modulo:
+        if not _efetivo("pode_almox_modulo"):
+            if _ver_como_nome():
+                return _bloqueado_ver_como()
             abort(403)
         return f(*args, **kwargs)
     return wrapper
@@ -174,7 +176,9 @@ def _guard(prop):
         @wraps(f)
         @login_required
         def wrapper(*args, **kwargs):
-            if not getattr(current_user, prop, False):
+            if not _efetivo(prop):
+                if _ver_como_nome():
+                    return _bloqueado_ver_como()
                 abort(403)
             return f(*args, **kwargs)
         return wrapper
@@ -995,6 +999,9 @@ def extintores_pdf():
     import io
     from flask import Response
     predio = request.args.get("predio") or ""
+    local = (request.args.get("local") or "").strip()
+    tipo = (request.args.get("tipo") or "").strip()
+    situacao = request.args.get("situacao") or ""
     consulta = Extintor.query.filter_by(ativo=True)
     if predio:
         consulta = consulta.filter_by(predio=predio)
@@ -1005,7 +1012,13 @@ def extintores_pdf():
     elems = [Paragraph("Extintores — " + (predio or "Todos os prédios"), styles["Title"]), Spacer(1, 6)]
     data = [["Código", "Prédio", "Local", "Tipo/Carga", "Classe", "Validade", "TH", "Situação"]]
     for e in consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
+        if local and local.lower() not in (e.local or "").lower():
+            continue
+        if tipo and tipo.lower() not in (e.tipo or "").lower():
+            continue
         k, lbl, _ = _situacao_extintor(e)
+        if situacao and situacao != k:
+            continue
         data.append([e.codigo or "", e.predio or "", e.local or "", e.tipo or "", e.classe or "",
                      _competencia(e.validade), _competencia(e.teste_hidrostatico), lbl])
     if len(data) == 1:
@@ -1445,14 +1458,39 @@ def _num(v, default=0.0):
         return default
 
 
+def _filtra_saldo():
+    """Filtros do relatório de saldo (compartilhado tela + CSV): categoria, localizador, abaixo do mínimo."""
+    cat = (request.args.get("cat") or "").strip()
+    loc = request.args.get("loc") or ""
+    baixo = request.args.get("baixo") == "1"
+    q = ProdutoAlmox.query.filter_by(ativo=True)
+    if cat:
+        q = q.filter(db.func.upper(ProdutoAlmox.categoria).like(f"%{cat.upper()}%"))
+    itens = q.order_by(ProdutoAlmox.nome).all()
+    if loc.isdigit():
+        ids = {el.produto_id for el in EstoqueLocalizador.query.filter(
+            EstoqueLocalizador.localizador_id == int(loc),
+            EstoqueLocalizador.quantidade > 0).all()}
+        itens = [p for p in itens if p.id in ids]
+    if baixo:
+        itens = [p for p in itens if p.abaixo_minimo]
+    ctx = dict(cat=cat, loc=loc, baixo=("1" if baixo else ""))
+    return itens, ctx
+
+
 @almox_bp.route("/materiais")
 @_guard("pode_almox_modulo")
 def materiais():
-    itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+    itens, ctx = _filtra_saldo()
     n_baixo = sum(1 for p in itens if p.abaixo_minimo)
     locais = LocalAlmox.query.filter_by(ativo=True).order_by(LocalAlmox.nome).all()
     fabricantes = Fabricante.query.filter_by(ativo=True).order_by(Fabricante.nome).all()
-    return render_template("almox/materiais.html", itens=itens, n_baixo=n_baixo, locais=locais, fabricantes=fabricantes)
+    from .models import Localizador
+    localizadores = Localizador.query.filter_by(ativo=True).all()
+    localizadores.sort(key=lambda l: l.codigo)
+    categorias = sorted({(p.categoria or "").strip() for p in ProdutoAlmox.query.filter_by(ativo=True).all() if (p.categoria or "").strip()})
+    return render_template("almox/materiais.html", itens=itens, n_baixo=n_baixo, locais=locais,
+                           fabricantes=fabricantes, ctx=ctx, localizadores=localizadores, categorias=categorias)
 
 
 @almox_bp.route("/materiais/novo", methods=["POST"])
@@ -1714,7 +1752,7 @@ def materiais_mov_pdf():
 def materiais_saldo_csv():
     import csv, io
     from flask import Response
-    itens = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+    itens, _ = _filtra_saldo()
     buf = io.StringIO(); buf.write("\ufeff")
     w = csv.writer(buf, delimiter=";")
     w.writerow(["Código", "Material", "Unidade", "Categoria", "Saldo", "Saldo mínimo", "Abaixo do mínimo?"])
@@ -2946,3 +2984,100 @@ def adm_nota_classificar(nid):
     db.session.commit()
     flash(f"Nota classificada como {classe.upper()}.", "success")
     return redirect(url_for("almox.adm_notas"))
+
+
+# ==================== "VER COMO PERFIL" (admin master) ====================
+from flask import session as _session
+
+_PERM_MAP = {
+    "is_admin": "perm_total",
+    "pode_almox_modulo": "perm_modulo_almox",
+    "is_almox": "perm_modulo_almox",
+    "pode_chaves": "perm_chaves",
+    "pode_extintores": "perm_extintores",
+    "pode_colaboradores": "perm_colaboradores",
+    "pode_solicitar": "perm_solicitar",
+}
+
+
+def _ver_como_nome():
+    """Nome do perfil que o master está simulando (ou None). Só master; só perfil ativo."""
+    try:
+        if not getattr(current_user, "is_master", False):
+            return None
+        nome = _session.get("ver_como_perfil")
+        if not nome:
+            return None
+        perfil = PapelColaborador.query.filter(
+            db.func.upper(PapelColaborador.nome) == nome.upper(),
+            PapelColaborador.ativo.is_(True)).first()
+        return perfil.nome if perfil else None
+    except Exception:
+        return None
+
+
+def _perms_simuladas():
+    nome = _ver_como_nome()
+    if not nome:
+        return None
+    perfil = PapelColaborador.query.filter(db.func.upper(PapelColaborador.nome) == nome.upper()).first()
+    return set(perfil.lista_tarefas) if perfil else set()
+
+
+def _efetivo(prop):
+    """Valor efetivo de uma permissão: se estiver simulando um perfil, usa as tarefas dele
+    (mesma fonte de verdade do Colaborador: perm_from_tasks); senão, o valor real do usuário logado.
+    is_master nunca é simulado (garante a saída)."""
+    perms = _perms_simuladas()
+    if perms is None or prop == "is_master":
+        return bool(getattr(current_user, prop, False))
+    from .models import perm_from_tasks
+    return perm_from_tasks(perms, prop)
+
+
+def _bloqueado_ver_como():
+    return render_template("almox/ver_como_bloqueado.html", perfil=_ver_como_nome())
+
+
+@almox_bp.route("/ver-como/ativar", methods=["POST"])
+@login_required
+def ver_como_ativar():
+    if not getattr(current_user, "is_master", False):
+        abort(403)
+    nome = (request.form.get("perfil") or "").strip()
+    perfil = PapelColaborador.query.filter(
+        db.func.upper(PapelColaborador.nome) == nome.upper(), PapelColaborador.ativo.is_(True)).first()
+    if not perfil:
+        flash("Perfil inválido ou inativo.", "danger")
+        return redirect(request.referrer or url_for("almox.papeis"))
+    _session["ver_como_perfil"] = perfil.nome
+    flash(f"Você está vendo como o perfil {perfil.nome}.", "info")
+    return redirect(url_for("almox.home"))
+
+
+@almox_bp.route("/ver-como/sair")
+@login_required
+def ver_como_sair():
+    """Sai da simulação. Não depende de nenhuma permissão do perfil simulado (anti-travamento)."""
+    _session.pop("ver_como_perfil", None)
+    flash("Você voltou à sua visão normal.", "success")
+    return redirect(url_for("almox.home"))
+
+
+@almox_bp.app_context_processor
+def _inject_ver_como():
+    """Expõe 'perm' (permissões efetivas) e 'ver_como_nome' para os templates/menu."""
+    try:
+        if not current_user.is_authenticated:
+            return {}
+    except Exception:
+        return {}
+    nome = _ver_como_nome()
+
+    class _Perm:
+        pass
+    p = _Perm()
+    for prop in ("is_admin", "is_master", "is_almox", "pode_almox_modulo", "pode_chaves",
+                 "pode_extintores", "pode_material", "pode_colaboradores", "pode_solicitar"):
+        setattr(p, prop, _efetivo(prop))
+    return {"perm": p, "ver_como_nome": nome}

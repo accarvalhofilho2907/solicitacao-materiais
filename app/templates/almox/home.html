@@ -2,13 +2,13 @@
 {% block title %}Almoxarifado{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
-  <h4 class="mb-0">📦 Almoxarifado</h4>
+  <h4 class="mb-0">Almoxarifado</h4>
   <span class="badge bg-secondary">Perfil: {{ current_user.papel }}</span>
 </div>
-<p class="text-muted small">Painel do dia a dia e atalhos do módulo.</p>
+<p class="text-muted small">Resumo do dia a dia e atalhos.</p>
 
 {% if resumo %}
-<div class="row g-2 mb-3">
+<div class="row g-2 mb-4">
   <div class="col-6 col-md-3"><a href="{{ url_for('almox.relatorio_chaves') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
     <div class="h4 mb-0 text-warning">{{ resumo.chaves_em_uso }}</div><div class="small text-muted">chaves em uso agora</div></div></a></div>
   <div class="col-6 col-md-3"><a href="{{ url_for('almox.extintores', situacao='IRREGULAR') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
@@ -19,31 +19,34 @@
     <div class="h4 mb-0 {{ 'text-danger' if resumo.mat_baixo else 'text-success' }}">{{ resumo.mat_baixo }}</div><div class="small text-muted">materiais abaixo do mínimo</div></div></a></div>
 </div>
 {% if resumo.pend_etiqueta %}
-<div class="alert alert-warning py-2"><a href="{{ url_for('almox.pendencias_etiqueta') }}" class="text-decoration-none">🏷 {{ resumo.pend_etiqueta }} pendência(s) de etiqueta de extintor abertas — resolver</a></div>
+<div class="alert alert-warning py-2"><a href="{{ url_for('almox.pendencias_etiqueta') }}" class="text-decoration-none">{{ resumo.pend_etiqueta }} pendência(s) de etiqueta de extintor abertas — resolver</a></div>
 {% endif %}
 {% endif %}
 
+<h6 class="text-muted text-uppercase small mb-2">Atalhos</h6>
 <div class="row g-3">
-  {% for t in topicos %}
-  <div class="col-6 col-md-4 col-lg-3">
-    {% if t.liberado %}
-    <a href="{{ url_for(t.endpoint) }}" class="card h-100 text-decoration-none">
-      <div class="card-body text-center">
-        <div style="font-size:30px">{{ t.icone }}</div>
-        <div class="fw-semibold mt-1">{{ t.nome }}</div>
-        <span class="badge bg-success mt-2">Liberado</span>
-      </div>
-    </a>
-    {% else %}
-    <a href="{{ url_for('almox.em_construcao', slug=t.slug) }}" class="card h-100 text-decoration-none" style="opacity:.7">
-      <div class="card-body text-center">
-        <div style="font-size:30px">{{ t.icone }}</div>
-        <div class="fw-semibold mt-1">{{ t.nome }}</div>
-        <span class="badge bg-warning text-dark mt-2">Em construção</span>
-      </div>
-    </a>
+  {% set atalhos = [
+    ('almox.coletor', 'Coletor', 'Operação em campo (celular)', true),
+    ('almox.materiais', 'Material (estoque)', 'Itens, saldos e localizadores', current_user.pode_almox_modulo),
+    ('almox.materiais_mov', 'Movimentações de material', 'Histórico de entradas/saídas', current_user.pode_almox_modulo),
+    ('almox.fabricantes', 'Fabricantes', 'Cadastro usado na entrada', current_user.pode_almox_modulo),
+    ('almox.chaves', 'Chaves', 'Quadros e retiradas', current_user.pode_chaves),
+    ('almox.extintores', 'Extintores', 'Inspeções e situação', current_user.pode_extintores),
+    ('almox.colaboradores', 'Colaboradores', 'Cadastro e perfis de acesso', current_user.pode_colaboradores),
+    ('almox.relatorios_central', 'Central de relatórios', 'Chaves, material, extintores', current_user.pode_almox_modulo),
+    ('almox.administrativo', 'Administrativo', 'Notas fiscais e notificações', current_user.is_admin),
+  ] %}
+  {% for endpoint, nome, desc, ok in atalhos %}
+    {% if ok %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <a href="{{ url_for(endpoint) }}" class="card h-100 text-decoration-none">
+        <div class="card-body">
+          <div class="fw-semibold">{{ nome }}</div>
+          <div class="small text-muted">{{ desc }}</div>
+        </div>
+      </a>
+    </div>
     {% endif %}
-  </div>
   {% endfor %}
 </div>
 {% endblock %}

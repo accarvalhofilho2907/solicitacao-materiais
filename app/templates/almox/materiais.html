@@ -11,14 +11,27 @@
     <a href="{{ url_for('almox.locais') }}" class="btn btn-sm btn-outline-secondary">🗂️ Locais</a>
     <a href="{{ url_for('almox.materiais_mov') }}" class="btn btn-sm btn-outline-secondary">📊 Movimentações</a>
     <a href="{{ url_for('almox.inventario') }}" class="btn btn-sm btn-outline-secondary">🧮 Inventário</a>
-    <a href="{{ url_for('almox.materiais_saldo_csv') }}" class="btn btn-sm btn-outline-success">⬇ Saldo (CSV)</a>
+    <a href="{{ url_for('almox.materiais_saldo_csv', **ctx) }}" class="btn btn-sm btn-outline-success">⬇ Saldo (CSV)</a>
     {% if n_baixo %}<a href="{{ url_for('almox.materiais_negativos') }}" class="btn btn-sm btn-outline-danger">⚠️ Negativos</a>{% endif %}
     <a href="{{ url_for('almox.materiais_qr') }}" target="_blank" class="btn btn-sm btn-outline-secondary">🖨️ QR</a>
     <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoMat">＋ Novo material</button>
   </div>
 </div>
 
-<input id="filtroMat" class="form-control my-2" style="max-width:420px" placeholder="🔎 Filtrar (nome, código, categoria, local)..." autocomplete="off">
+<form class="row g-2 my-2 align-items-end" method="get">
+  <div class="col-6 col-md-3"><label class="form-label small mb-0">Categoria</label>
+    <input list="catList" name="cat" class="form-control form-control-sm" value="{{ ctx.cat }}" placeholder="contém...">
+    <datalist id="catList">{% for c in categorias %}<option value="{{ c }}">{% endfor %}</datalist></div>
+  <div class="col-6 col-md-3"><label class="form-label small mb-0">Localizador</label>
+    <select name="loc" class="form-select form-select-sm"><option value="">Todos</option>
+      {% for l in localizadores %}<option value="{{ l.id }}" {{ 'selected' if ctx.loc==l.id|string }}>{{ l.codigo }}</option>{% endfor %}
+    </select></div>
+  <div class="col-6 col-md-3"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" name="baixo" value="1" id="fBaixo" {{ 'checked' if ctx.baixo }}><label class="form-check-label small" for="fBaixo">Só abaixo do mínimo</label></div></div>
+  <div class="col-auto"><button class="btn btn-sm btn-primary">Filtrar</button></div>
+  {% if ctx.cat or ctx.loc or ctx.baixo %}<div class="col-auto"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('almox.materiais') }}">Limpar</a></div>{% endif %}
+</form>
+
+<input id="filtroMat" class="form-control my-2" style="max-width:420px" placeholder="🔎 Filtrar na página (nome, código, categoria, local)..." autocomplete="off">
 
 <div class="card mb-4"><div class="table-responsive">
 <table class="table table-hover mb-0 align-middle" id="tabelaMat">

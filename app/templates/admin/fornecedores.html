@@ -3,22 +3,8 @@
 <a href="{{ url_for('admin.cadastros') }}" class="small">&larr; Cadastros</a>
 <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
   <h4 class="mb-0">Fornecedores / Empresas</h4>
-  <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalImportForn">⬆️ Importar CSV</button>
 </div>
 <p class="text-muted small">Cadastro único. Marque se cada registro é <b>Fornecedor</b> (aparece na cotação), <b>Empresa interna</b> (vincula usuários), ou os dois.</p>
-
-<div class="modal fade" id="modalImportForn" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="{{ url_for('admin.fornecedores_importar') }}" enctype="multipart/form-data">
-    <div class="modal-header"><h5 class="modal-title">Importar empresas/fornecedores (Excel)</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-    <div class="modal-body">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <p class="small text-muted mb-2">Baixe o modelo, preencha e envie. Colunas: <code>razao_social, nome_fantasia, cnpj, email, telefone, cidade, estado, tipo</code>. Em <code>tipo</code> use <b>empresa</b> ou <b>fornecedor</b>. Nomes entram em MAIÚSCULA; CNPJ só números. Duplicados por CNPJ são pulados (você vê um resumo).</p>
-      <a class="btn btn-sm btn-outline-secondary mb-3" href="{{ url_for('admin.fornecedores_modelo_csv') }}">⬇️ Baixar modelo Excel</a>
-      <input type="file" name="arquivo" class="form-control" accept=".xlsx,.csv" required>
-    </div>
-    <div class="modal-footer"><button class="btn btn-primary">Importar</button></div>
-  </form>
-</div></div></div>
 
 <div class="row g-3">
   <div class="col-md-5"><div class="card"><div class="card-body">

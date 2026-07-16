@@ -81,6 +81,13 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-sm btn-outline-secondary">{{ 'Desativar perfil' if p.ativo else 'Reativar perfil' }}</button>
       </form>
+      {% if current_user.is_master and p.ativo %}
+      <form method="post" action="{{ url_for('almox.ver_como_ativar') }}" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="perfil" value="{{ p.nome }}">
+        <button class="btn btn-sm btn-outline-primary">👁️ Ver o sistema como este perfil</button>
+      </form>
+      {% endif %}
     </div>
   </div>
   {% else %}

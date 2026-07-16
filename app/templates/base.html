@@ -141,7 +141,7 @@
     </div>
     <div class="sb-search"><input id="menuSearch" placeholder="Buscar no menu..." oninput="filterMenu(this.value)" autocomplete="off"></div>
     <nav class="sb-nav" id="sbNav">
-    {% if current_user.is_admin %}
+    {% if perm.is_admin %}
       <div class="sb-sec">Cadastro<span class="chev">▾</span></div>
       {{ item('almox.colaboradores','users','Colaboradores') }}
       {{ item('almox.papeis','shield','Perfis de acesso') }}
@@ -175,7 +175,7 @@
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
       {{ item('relatorios.carga','chart','Relatório de carga') }}
 
-      {% if current_user.is_admin %}
+      {% if perm.is_admin %}
       <div class="sb-sec">Administrativo<span class="chev">▾</span></div>
       {{ item('almox.adm_notas','doc','Notas fiscais (OPEX/CAPEX)') }}
       {{ item('almox.notificacoes','list','Notificações', n_notif_almox) }}
@@ -189,25 +189,26 @@
       {{ item('geral.novidades','list','Novidades') }}
       {% if current_user.is_master %}{{ item('admin.usuarios','user','Usuários - Antigo') }}{% endif %}
     {% else %}
-      {% if current_user.pode_almox_modulo %}
+      {% if perm.pode_colaboradores %}
       <div class="sb-sec">Cadastro<span class="chev">▾</span></div>
-      {% if current_user.pode_colaboradores %}{{ item('almox.colaboradores','users','Colaboradores') }}{% endif %}
+      {{ item('almox.colaboradores','users','Colaboradores') }}
       {% endif %}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
-      {% if current_user.pode_solicitar %}{{ item('solicitante.nova','doc','Nova solicitação') }}{% endif %}
+      {% if perm.pode_almox_modulo %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
+      {% if perm.pode_solicitar %}{{ item('solicitante.nova','doc','Nova solicitação') }}{% endif %}
       {{ item('solicitante.index','doc','Minhas solicitações') }}
-      {% if current_user.is_almox %}
+      {% if perm.pode_material %}
+        {{ item('almox.materiais','box','Material (estoque)') }}
         {{ item('almox.index','box','Confirmar chegadas') }}
         {{ item('notinhas.index','doc','Notinhas') }}
       {% endif %}
-      {% if current_user.pode_almox_modulo %}
-        {{ item('almox.chaves','key','Chaves') }}
-        {{ item('almox.extintores','ext','Extintores') }}
-      {% endif %}
+      {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
+      {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
 
-      {% if current_user.is_almox %}
+      {% if perm.pode_almox_modulo %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
+      {% if perm.pode_material or perm.pode_chaves or perm.pode_extintores %}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{% endif %}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
       {{ item('relatorios.carga','chart','Relatório de carga') }}
       {% endif %}
@@ -229,7 +230,7 @@
         <div class="crumb">Almoxarifado / <b>{% block crumb %}{{ self.title() }}{% endblock %}</b></div>
       </div>
       <div class="right">
-        {% if current_user.is_admin %}
+        {% if perm.is_admin %}
         <div class="dropdown bell-wrap">
           <a href="#" data-bs-toggle="dropdown" title="Notificações" style="color:var(--texto)"><svg width="20" height="20" style="color:var(--texto-2)"><use href="#ic-list"></use></svg>{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) + (n_pend_extintor or 0) + (n_notif_almox or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}</a>
           <ul class="dropdown-menu dropdown-menu-end" style="min-width:260px;">
@@ -257,6 +258,12 @@
     </div>
     {% endif %}
     <div class="content">
+      {% if ver_como_nome %}
+      <div class="alert d-flex justify-content-between align-items-center py-2 mb-3" style="background:#4B4B4B;color:#fff;border:0">
+        <span>👁️ Você está vendo o sistema como o perfil <b>{{ ver_como_nome }}</b>.</span>
+        <a href="{{ url_for('almox.ver_como_sair') }}" class="btn btn-sm btn-light">Voltar à minha visão</a>
+      </div>
+      {% endif %}
       {% with messages = get_flashed_messages(with_categories=true) %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }}">{{ msg }}</div>{% endfor %}{% endwith %}
       {% block content %}{% endblock %}
       {% if current_user.is_authenticated %}<footer class="text-center pt-4 rodape">v1.12</footer>{% endif %}

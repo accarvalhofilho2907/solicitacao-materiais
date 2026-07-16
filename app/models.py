@@ -102,6 +102,9 @@ class Usuario(UserMixin, db.Model):
     def pode_extintores(self):
         return self.papel in ("admin", "almoxarifado")
     @property
+    def pode_material(self):
+        return self.papel in ("admin", "almoxarifado")
+    @property
     def pode_colaboradores(self):
         return self.papel in ("admin", "almoxarifado")
 
@@ -870,6 +873,42 @@ class PapelColaborador(db.Model):
         return [TAREFAS_DICT.get(t, t) for t in self.lista_tarefas]
 
 
+_GRUPO_CHAVES = {"perm_chaves", "chave_ver", "chave_cadastrar", "chave_editar", "chave_historico",
+                 "quadro_cadastrar", "chave_qr", "chave_retirar_devolver"}
+_GRUPO_EXT = {"perm_extintores", "ext_ver", "ext_inspecionar", "ext_repor", "ext_conferir",
+              "ext_cadastrar", "ext_desativar", "ext_pendencia_etiqueta", "ext_qr"}
+_GRUPO_MAT = {"mat_ver", "mat_cadastrar", "mat_entrada", "mat_saida", "mat_ajuste", "mat_mover",
+              "mat_inventario", "mat_movimentacoes", "mat_negativo", "mat_qr",
+              "mat_devolucao_forcada", "mat_kit", "mat_unidades"}
+_GRUPO_LOC = {"perm_cadastros", "loc_planta", "loc_armazem", "loc_localizador", "loc_gerar"}
+_GRUPO_ALMOX = _GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | {"perm_modulo_almox"}
+
+
+def perm_from_tasks(perms, prop):
+    """Fonte ÚNICA de verdade: dado o conjunto de tarefas de um perfil, diz se a propriedade vale.
+    Honra tanto as chaves 'grossas' (perm_*) quanto as granulares (chave_*, ext_*, mat_*, loc_*)."""
+    perms = perms or set()
+    if prop == "is_admin":
+        return "perm_total" in perms
+    if "perm_total" in perms:
+        return True
+    if prop == "pode_almox_modulo":
+        return bool(perms & _GRUPO_ALMOX)
+    if prop == "is_almox":
+        return ("perm_modulo_almox" in perms) or bool(perms & _GRUPO_MAT)
+    if prop == "pode_chaves":
+        return bool(perms & _GRUPO_CHAVES)
+    if prop == "pode_extintores":
+        return bool(perms & _GRUPO_EXT)
+    if prop == "pode_material":
+        return bool(perms & _GRUPO_MAT)
+    if prop == "pode_colaboradores":
+        return "perm_colaboradores" in perms
+    if prop == "pode_solicitar":
+        return bool(perms & {"perm_solicitar", "solicitar_criar", "solicitar_ver_minhas"})
+    return prop in perms
+
+
 class Colaborador(UserMixin, db.Model):
     __tablename__ = "almox_colaboradores"
     id = db.Column(db.Integer, primary_key=True)
@@ -936,19 +975,21 @@ class Colaborador(UserMixin, db.Model):
     @property
     def is_master(self): return False
     @property
-    def is_almox(self): return self._tem("perm_modulo_almox")
+    def is_almox(self): return perm_from_tasks(self._perms_efetivas(), "is_almox")
     @property
-    def pode_solicitar(self): return self._tem("perm_solicitar")
+    def pode_solicitar(self): return perm_from_tasks(self._perms_efetivas(), "pode_solicitar")
     @property
     def senha_temporaria(self): return False
     @property
-    def pode_almox_modulo(self): return self._tem("perm_modulo_almox")
+    def pode_almox_modulo(self): return perm_from_tasks(self._perms_efetivas(), "pode_almox_modulo")
     @property
-    def pode_chaves(self): return self._tem("perm_chaves")
+    def pode_chaves(self): return perm_from_tasks(self._perms_efetivas(), "pode_chaves")
     @property
-    def pode_extintores(self): return self._tem("perm_extintores")
+    def pode_extintores(self): return perm_from_tasks(self._perms_efetivas(), "pode_extintores")
     @property
-    def pode_colaboradores(self): return self._tem("perm_colaboradores")
+    def pode_material(self): return perm_from_tasks(self._perms_efetivas(), "pode_material")
+    @property
+    def pode_colaboradores(self): return perm_from_tasks(self._perms_efetivas(), "pode_colaboradores")
     @property
     def is_viewer(self):
         # só leitura = nenhuma permissão de acesso/escrita

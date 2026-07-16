@@ -54,8 +54,30 @@
   .aviso{border-radius:10px;padding:10px 12px;font-size:12.5px;margin-top:10px;background:rgba(50,202,160,.1);border:1px solid rgba(50,202,160,.4);color:#9fe6cf}
   .aviso.warn{background:rgba(232,184,75,.12);border-color:rgba(232,184,75,.5);color:#f2d99a}
   .hide{display:none!important}
+  .aic{width:28px;height:28px;color:var(--coral)}
+  .acao .ic{display:flex;justify-content:center;margin-bottom:2px}
+  .pulso svg{width:34px;height:34px}
+  .bic{width:15px;height:15px;vertical-align:-3px;margin-right:5px}
+  .cam-btn svg{width:16px;height:16px;vertical-align:-3px;margin-right:6px}
+  .scan-lbl svg{width:15px;height:15px;vertical-align:-3px;margin-right:5px;color:var(--texto2)}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="ic-base" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></g>
+</defs>
+  <symbol id="ic-retirar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V4"/><path d="M8.5 7.5 12 4l3.5 3.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></symbol>
+  <symbol id="ic-devolver" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="M8.5 10.5 12 14l3.5-3.5"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></symbol>
+  <symbol id="ic-entrada" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
+  <symbol id="ic-inventario" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11 1.6 1.6L14 9"/><path d="M8.5 16.5h5"/></symbol>
+  <symbol id="ic-mover" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h13"/><path d="m13 5 4 4-4 4"/><path d="M20 15H7"/><path d="m11 19-4-4 4-4"/></symbol>
+  <symbol id="ic-ajuste" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5 12.5 20 4 11.5V4h7.5L20 12.5Z"/><circle cx="8" cy="8" r="1.3"/></symbol>
+  <symbol id="ic-badge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.4-1.5 1.4-2.2 2.5-2.2s2.1.7 2.5 2.2"/><path d="M14 10h4"/><path d="M14 13.5h3"/></symbol>
+  <symbol id="ic-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6-5.3 6-10a6 6 0 1 0-12 0c0 4.7 6 10 6 10Z"/><circle cx="12" cy="11" r="2.2"/></symbol>
+  <symbol id="ic-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+  <symbol id="ic-barcode" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6v12M7.5 6v12M11 6v12M14 6v9M17 6v12M20 6v12"/></symbol>
+  <symbol id="ic-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.2"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></symbol>
+</svg>
 <input type="hidden" id="csrf" value="{{ csrf_token() }}">
 <div class="cwrap">
   <div class="ctopo"><div class="clogo">S</div><div><b>Coletor Serena</b><small>Cluster Delta · MA</small></div>
@@ -65,12 +87,12 @@
   <div class="ctela" id="tHome">
     <h2 class="ct">O que você vai fazer?</h2><p class="csub">Leitura por crachá / QR / código de barras.</p>
     <div class="grid">
-      <div class="acao" onclick="iniciar('Retirar')"><div class="ic">📤</div><span>Retirar</span><small>chave ou material</small></div>
-      <div class="acao" onclick="iniciar('Devolver')"><div class="ic">📥</div><span>Devolver</span><small>chave ou material</small></div>
-      <div class="acao wide" onclick="entrada()"><div class="ic">📦</div><span>Entrada (itens comprados)</span><small>ler código de barras · dar entrada</small></div>
-      <div class="acao" onclick="inventario()"><div class="ic">🧮</div><span>Inventário</span><small>conferir/ajustar saldo</small></div>
-      <div class="acao" onclick="moverInit()"><div class="ic">🔄</div><span>Mover material</span><small>entre localizadores</small></div>
-      <div class="acao wide" onclick="ajusteInit()"><div class="ic">🏷️</div><span>Ajuste de instâncias</span><small>Fabricante · CA · TAG · Validade · Lote (por unidade)</small></div>
+      <div class="acao" onclick="iniciar('Retirar')"><div class="ic"><svg class="aic"><use href="#ic-retirar"></use></svg></div><span>Retirar</span><small>chave ou material</small></div>
+      <div class="acao" onclick="iniciar('Devolver')"><div class="ic"><svg class="aic"><use href="#ic-devolver"></use></svg></div><span>Devolver</span><small>chave ou material</small></div>
+      <div class="acao wide" onclick="entrada()"><div class="ic"><svg class="aic"><use href="#ic-entrada"></use></svg></div><span>Entrada (itens comprados)</span><small>ler código de barras · dar entrada</small></div>
+      <div class="acao" onclick="inventario()"><div class="ic"><svg class="aic"><use href="#ic-inventario"></use></svg></div><span>Inventário</span><small>conferir/ajustar saldo</small></div>
+      <div class="acao" onclick="moverInit()"><div class="ic"><svg class="aic"><use href="#ic-mover"></use></svg></div><span>Mover material</span><small>entre localizadores</small></div>
+      <div class="acao wide" onclick="ajusteInit()"><div class="ic"><svg class="aic"><use href="#ic-ajuste"></use></svg></div><span>Ajuste de instâncias</span><small>Fabricante · CA · TAG · Validade · Lote (por unidade)</small></div>
     </div>
   </div>
 
@@ -80,10 +102,10 @@
     <h2 class="ct" id="fTit">Retirar</h2>
     <div class="passos" id="fPassos"></div>
     <div id="fLoc" class="badge-loc hide"></div>
-    <div class="scan" id="fScan"><div class="pulso" id="fIc">🪪</div><h3 id="fScanT">Leia o crachá</h3><p id="fScanP"></p>
+    <div class="scan" id="fScan"><div class="pulso" id="fIc"><svg><use href="#ic-badge"></use></svg></div><h3 id="fScanT">Leia o crachá</h3><p id="fScanP"></p>
       <div class="hint">● leitor pronto — pode bipar</div>
       <input class="scanin" id="fScanIn" placeholder="bipe aqui (ou digite e Enter)" autocomplete="off">
-      <div><button class="cam-btn" onclick="abrirCam()">📷 Abrir câmera</button></div>
+      <div><button class="cam-btn" onclick="abrirCam()"><svg><use href="#ic-camera"></use></svg>Abrir câmera</button></div>
       <div id="reader" class="hide"></div>
     </div>
     <div class="ou">ou busque pelo nome</div>
@@ -99,7 +121,7 @@
     <h2 class="ct">Entrada de itens comprados</h2><p class="csub">Dê entrada no estoque do que foi comprado.</p>
     <div class="secao">
       <div class="cab"><div class="num">1</div><div class="tit">Item<small>bipe o código de barras ou busque</small></div></div>
-      <div class="scan" style="padding:18px 14px;margin:0 0 12px"><div class="pulso" style="width:58px;height:58px;font-size:26px">▐║▌</div>
+      <div class="scan" style="padding:18px 14px;margin:0 0 12px"><div class="pulso" style="width:58px;height:58px"><svg style="width:26px;height:26px"><use href="#ic-barcode"></use></svg></div>
         <h3 style="font-size:15px">Leia o código de barras</h3><div class="hint">● leitor pronto</div>
         <input class="scanin" id="eScanIn" placeholder="bipe o código de barras (Enter)" autocomplete="off"></div>
       <div class="f">
@@ -137,16 +159,16 @@
     <h2 class="ct">Inventário</h2>
     <div id="invScan">
       <p class="csub">Bipe o localizador para conferir os itens dele. Sem crachá.</p>
-      <div class="scan loc"><div class="pulso">📍</div><h3>Leia o localizador</h3><p>Vai direto para os itens da prateleira.</p>
+      <div class="scan loc"><div class="pulso"><svg><use href="#ic-pin"></use></svg></div><h3>Leia o localizador</h3><p>Vai direto para os itens da prateleira.</p>
         <div class="hint">● leitor pronto</div>
         <input class="scanin" id="invScanIn" placeholder="bipe o localizador (Enter) ou A*1*3" autocomplete="off">
-        <div><button class="cam-btn" onclick="abrirCam()">📷 Abrir câmera</button></div><div id="reader" class="hide"></div></div>
+        <div><button class="cam-btn" onclick="abrirCam()"><svg><use href="#ic-camera"></use></svg>Abrir câmera</button></div><div id="reader" class="hide"></div></div>
       <div class="ou">ou busque</div>
       <div class="combo"><input id="invLocBusca" autocomplete="off" oninput="invLocInput()" onfocus="invLocInput()" placeholder="Buscar localizador (A*1*3)..."><div class="lista" id="invLocL"></div></div>
     </div>
     <div id="invLista" class="hide">
       <div class="badge-loc" id="invLocTag"></div>
-      <div class="combo" style="margin-bottom:8px"><input id="invItemFiltro" autocomplete="off" oninput="invRender()" placeholder="🔎 bipe/digite p/ filtrar um item"></div>
+      <div class="combo" style="margin-bottom:8px"><input id="invItemFiltro" autocomplete="off" oninput="invRender()" placeholder="bipe/digite p/ filtrar um item"></div>
       <div class="cesta"><div id="invItens"></div></div>
       <div class="aviso warn hide" id="invAvisoBaixa">Este inventário <b>reduz</b> saldo. As baixas ficam pendentes de aprovação do admin.</div>
       <button class="btn-coral" onclick="invSalvar()">Salvar inventário</button>
@@ -162,7 +184,7 @@
     <div id="mvF1">
       <p class="csub">Fase 1 — bipe o localizador de origem e depois o item.</p>
       <div id="mvOrigTag" class="badge-loc hide"></div>
-      <div class="scan loc"><div class="pulso" id="mvIc">📍</div><h3 id="mvScanT">Leia o localizador de origem</h3><p id="mvScanP">De onde os itens vão sair.</p>
+      <div class="scan loc"><div class="pulso" id="mvIc"><svg><use href="#ic-pin"></use></svg></div><h3 id="mvScanT">Leia o localizador de origem</h3><p id="mvScanP">De onde os itens vão sair.</p>
         <div class="hint">● leitor pronto</div><input class="scanin" id="mvScanIn" placeholder="bipe (Enter)" autocomplete="off"></div>
       <div class="ou">ou busque</div>
       <label class="label" id="mvLb">Localizador de origem</label>
@@ -189,7 +211,7 @@
     <div id="ajScan">
       <div class="passos" id="ajPassos"></div>
       <div id="ajLocTag" class="badge-loc hide"></div>
-      <div class="scan loc"><div class="pulso" id="ajIc">📍</div><h3 id="ajScanT">Leia o localizador</h3><p id="ajScanP">Bipe a prateleira.</p>
+      <div class="scan loc"><div class="pulso" id="ajIc"><svg><use href="#ic-pin"></use></svg></div><h3 id="ajScanT">Leia o localizador</h3><p id="ajScanP">Bipe a prateleira.</p>
         <div class="hint">● leitor pronto</div><input class="scanin" id="ajScanIn" placeholder="bipe (Enter)" autocomplete="off"></div>
       <div class="ou">ou busque</div>
       <label class="label" id="ajLb">Localizador</label>
@@ -214,6 +236,8 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 var CSRF=document.getElementById('csrf').value;
+function icoSvg(n){return '<svg><use href="#ic-'+n+'"></use></svg>';}
+function pinIco(){return '<svg class="bic"><use href="#ic-pin"></use></svg>';}
 function api(u,opt){opt=opt||{};opt.headers=Object.assign({'Content-Type':'application/json','X-CSRFToken':CSRF},opt.headers||{});return fetch(u,opt).then(function(r){return r.json();});}
 function sa(s){return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function show(id){['tHome','tFluxo','tEntrada','tInvent','tMover','tAjuste'].forEach(function(x){document.getElementById(x).classList.add('hide');});document.getElementById(id).classList.remove('hide');stopCam();}
@@ -232,9 +256,9 @@ function render(){
   document.getElementById('fBusca').value='';document.getElementById('fLista').classList.remove('abre');document.getElementById('fScanIn').value='';
   document.getElementById('fFim').classList.toggle('hide',cesta.length===0);renderCesta();
   var scan=document.getElementById('fScan'),loc=document.getElementById('fLoc');
-  if(etapa==='colab'){scan.classList.remove('loc');document.getElementById('fIc').textContent='🪪';t('fScanT','Leia o crachá');t('fScanP','Aproxime o crachá do leitor.');t('fComboLb','Colaborador');ph('fBusca','Digite parte do nome...');loc.classList.add('hide');}
-  else if(etapa==='loc'){scan.classList.add('loc');document.getElementById('fIc').textContent='📍';t('fScanT','Leia o localizador');t('fScanP','Bipe a prateleira de onde vai tirar.');t('fComboLb','Localizador');ph('fBusca','Buscar localizador (A*1*3)...');loc.classList.add('hide');}
-  else{scan.classList.remove('loc');document.getElementById('fIc').textContent='🔳';t('fScanT','Leia a chave ou o material');t('fScanP','O sistema reconhece o tipo.');t('fComboLb','Item (chave ou material)');ph('fBusca','Buscar chave ou material...');if(temLoc){loc.classList.remove('hide');loc.textContent='📍 Localizador: '+locAtual.codigo;}else loc.classList.add('hide');}
+  if(etapa==='colab'){scan.classList.remove('loc');document.getElementById('fIc').innerHTML=icoSvg('badge');t('fScanT','Leia o crachá');t('fScanP','Aproxime o crachá do leitor.');t('fComboLb','Colaborador');ph('fBusca','Digite parte do nome...');loc.classList.add('hide');}
+  else if(etapa==='loc'){scan.classList.add('loc');document.getElementById('fIc').innerHTML=icoSvg('pin');t('fScanT','Leia o localizador');t('fScanP','Bipe a prateleira de onde vai tirar.');t('fComboLb','Localizador');ph('fBusca','Buscar localizador (A*1*3)...');loc.classList.add('hide');}
+  else{scan.classList.remove('loc');document.getElementById('fIc').innerHTML=icoSvg('scan');t('fScanT','Leia a chave ou o material');t('fScanP','O sistema reconhece o tipo.');t('fComboLb','Item (chave ou material)');ph('fBusca','Buscar chave ou material...');if(temLoc){loc.classList.remove('hide');loc.innerHTML=pinIco()+'Localizador: '+locAtual.codigo;}else loc.classList.add('hide');}
   setTimeout(function(){document.getElementById('fScanIn').focus();},60);
 }
 function fBuscaInput(){var q=document.getElementById('fBusca').value;var tipo=etapa==='colab'?'colab':(etapa==='loc'?'loc':'item');
@@ -254,7 +278,7 @@ function escolheFluxo(x){
   }
 }
 function renderCesta(){var box=document.getElementById('fCesta');if(!cesta.length){box.classList.add('hide');return;}box.classList.remove('hide');document.getElementById('fCestaN').textContent=cesta.length;
-  document.getElementById('fCestaIt').innerHTML=cesta.map(function(x){return '<div class="row"><div>'+x.nome+(x.qtd>1?' ×'+x.qtd:'')+'</div><small>'+(x.localizador_cod?('📍 '+x.localizador_cod):(x.tipo==='chave'?'chave':'—'))+'</small></div>';}).join('');}
+  document.getElementById('fCestaIt').innerHTML=cesta.map(function(x){return '<div class="row"><div>'+x.nome+(x.qtd>1?' ×'+x.qtd:'')+'</div><small>'+(x.localizador_cod?(pinIco()+x.localizador_cod):(x.tipo==='chave'?'chave':'—'))+'</small></div>';}).join('');}
 function finalizar(){
   var senha=prompt('Senha do colaborador '+colab.nome+':');if(senha===null)return;
   var url=modo==='Retirar'?'/almoxarifado/coletor/api/retirar':'/almoxarifado/coletor/api/devolver';
@@ -308,7 +332,7 @@ document.getElementById('invScanIn').addEventListener('keydown',function(e){if(e
 function invAbrir(id,cod){invLoc={id:id,cod:cod};api('/almoxarifado/coletor/api/localizador-itens/'+id).then(function(d){
   invItens=(d.itens||[]).map(function(x){return {id:x.id,nome:x.nome,orig:x.saldo,contado:x.saldo,unidade:x.unidade};});
   document.getElementById('invScan').classList.add('hide');document.getElementById('invLista').classList.remove('hide');
-  document.getElementById('invLocTag').textContent='📍 Localizador: '+cod;document.getElementById('invItemFiltro').value='';invRender();});}
+  document.getElementById('invLocTag').innerHTML=pinIco()+'Localizador: '+cod;document.getElementById('invItemFiltro').value='';invRender();});}
 function invRender(){var f=sa(document.getElementById('invItemFiltro').value),box=document.getElementById('invItens');
   var vis=invItens.filter(function(x){return !f||sa(x.nome).indexOf(f)>=0;});
   box.innerHTML=vis.length?vis.map(function(x){var i=invItens.indexOf(x);return '<div class="row"><div>'+x.nome+'<small>saldo: '+x.orig+' '+x.unidade+'</small></div><div style="display:flex;gap:6px;align-items:center"><button class="cam-btn" style="margin:0;padding:6px 10px" onclick="invQ('+i+',-1)">−</button><input value="'+x.contado+'" style="width:56px;text-align:center;background:var(--input);border:1px solid var(--linha);color:var(--texto);border-radius:8px;padding:7px" onchange="invSet('+i+',this.value)"><button class="cam-btn" style="margin:0;padding:6px 10px" onclick="invQ('+i+',1)">+</button></div></div>';}).join(''):'<div class="vazio" style="color:var(--texto2)">Nenhum item.</div>';
@@ -328,9 +352,9 @@ function moverInit(){show('tMover');mvEtapa='orig';mvOrig=null;mvCesta=[];docume
 function mvRender(){document.getElementById('mvBusca').value='';document.getElementById('mvL').classList.remove('abre');document.getElementById('mvScanIn').value='';
   document.getElementById('mvFinalizar').classList.toggle('hide',mvCesta.length===0);
   var tag=document.getElementById('mvOrigTag');
-  if(mvEtapa==='orig'){t('mvScanT','Leia o localizador de origem');t('mvScanP','De onde os itens vão sair.');t('mvLb','Localizador de origem');ph('mvBusca','Buscar localizador...');document.getElementById('mvIc').textContent='📍';tag.classList.add('hide');}
-  else{t('mvScanT','Leia o item');t('mvScanP','Bipe o item que sai deste localizador.');t('mvLb','Item');ph('mvBusca','Buscar item...');document.getElementById('mvIc').textContent='🔳';tag.classList.remove('hide');tag.textContent='📍 Origem: '+mvOrig.cod;}
-  var box=document.getElementById('mvCesta');if(!mvCesta.length){box.classList.add('hide');}else{box.classList.remove('hide');document.getElementById('mvCestaN').textContent=mvCesta.length;document.getElementById('mvCestaIt').innerHTML=mvCesta.map(function(x){return '<div class="row"><div>'+x.nome+' ×'+x.qtd+'</div><small>📍 '+x.origem_cod+'</small></div>';}).join('');}
+  if(mvEtapa==='orig'){t('mvScanT','Leia o localizador de origem');t('mvScanP','De onde os itens vão sair.');t('mvLb','Localizador de origem');ph('mvBusca','Buscar localizador...');document.getElementById('mvIc').innerHTML=icoSvg('pin');tag.classList.add('hide');}
+  else{t('mvScanT','Leia o item');t('mvScanP','Bipe o item que sai deste localizador.');t('mvLb','Item');ph('mvBusca','Buscar item...');document.getElementById('mvIc').innerHTML=icoSvg('scan');tag.classList.remove('hide');tag.innerHTML=pinIco()+'Origem: '+mvOrig.cod;}
+  var box=document.getElementById('mvCesta');if(!mvCesta.length){box.classList.add('hide');}else{box.classList.remove('hide');document.getElementById('mvCestaN').textContent=mvCesta.length;document.getElementById('mvCestaIt').innerHTML=mvCesta.map(function(x){return '<div class="row"><div>'+x.nome+' ×'+x.qtd+'</div><small>'+pinIco()+x.origem_cod+'</small></div>';}).join('');}
   setTimeout(function(){document.getElementById('mvScanIn').focus();},60);}
 function mvInput(){var q=document.getElementById('mvBusca').value;
   if(mvEtapa==='orig'){api('/almoxarifado/coletor/api/buscar?tipo=loc&q='+encodeURIComponent(q)).then(function(d){combo('mvL',(d.itens||[]),q,function(x){mvOrig={id:x.id,cod:x.nome};mvEtapa='item';mvRender();});});}
@@ -343,9 +367,9 @@ function mvAddItem(x){api('/almoxarifado/coletor/api/estoque/'+x.id+'/'+mvOrig.i
   var q=1;if(disp>1){q=parseInt(prompt('Quantos "'+x.nome+'" mover? (tem '+disp+' em '+mvOrig.cod+')',disp),10);if(!q||q<1)return;if(q>disp)q=disp;}
   mvCesta.push({produto_id:x.id,nome:x.nome,origem_loc_id:mvOrig.id,origem_cod:mvOrig.cod,qtd:q});mvEtapa='orig';mvOrig=null;mvRender();});}
 function mvFase2(){document.getElementById('mvF1').classList.add('hide');document.getElementById('mvF2').classList.remove('hide');mvSel={};mvDestLoc=null;document.getElementById('mvDest').value='';document.getElementById('mvDestTag').classList.add('hide');mvF2Render();}
-function mvF2Render(){document.getElementById('mvF2It').innerHTML=mvCesta.map(function(x,i){var on=mvSel[i]?'on':'';return '<div class="row" style="cursor:pointer" onclick="mvToggle('+i+')"><div><span class="sel '+on+'" style="display:inline-block;width:18px;height:18px;border:1px solid var(--linha);border-radius:5px;text-align:center;line-height:16px;margin-right:8px;color:var(--verde)">'+(mvSel[i]?'✓':'')+'</span>'+x.nome+' ×'+x.qtd+'</div><small>📍 '+x.origem_cod+'</small></div>';}).join('');}
+function mvF2Render(){document.getElementById('mvF2It').innerHTML=mvCesta.map(function(x,i){var on=mvSel[i]?'on':'';return '<div class="row" style="cursor:pointer" onclick="mvToggle('+i+')"><div><span class="sel '+on+'" style="display:inline-block;width:18px;height:18px;border:1px solid var(--linha);border-radius:5px;text-align:center;line-height:16px;margin-right:8px;color:var(--verde)">'+(mvSel[i]?'✓':'')+'</span>'+x.nome+' ×'+x.qtd+'</div><small>'+pinIco()+x.origem_cod+'</small></div>';}).join('');}
 function mvToggle(i){mvSel[i]=!mvSel[i];mvF2Render();}
-function mvDestInput(){var q=document.getElementById('mvDest').value;api('/almoxarifado/coletor/api/buscar?tipo=loc&q='+encodeURIComponent(q)).then(function(d){combo('mvDestL',(d.itens||[]),q,function(x){mvDestLoc={id:x.id,cod:x.nome};document.getElementById('mvDest').value=x.nome;var tg=document.getElementById('mvDestTag');tg.classList.remove('hide');tg.textContent='📍 Destino: '+x.nome;});});}
+function mvDestInput(){var q=document.getElementById('mvDest').value;api('/almoxarifado/coletor/api/buscar?tipo=loc&q='+encodeURIComponent(q)).then(function(d){combo('mvDestL',(d.itens||[]),q,function(x){mvDestLoc={id:x.id,cod:x.nome};document.getElementById('mvDest').value=x.nome;var tg=document.getElementById('mvDestTag');tg.classList.remove('hide');tg.innerHTML=pinIco()+'Destino: '+x.nome;});});}
 function mvConfirmar(ciente){
   var marcados=mvCesta.filter(function(_,i){return mvSel[i];});
   if(!marcados.length){toast('Marque ao menos um item.');return;}
@@ -372,8 +396,8 @@ function ajusteInit(){show('tAjuste');ajEtapa='loc';ajLoc=null;ajItem=null;docum
 function ajRender(){document.getElementById('ajBusca').value='';document.getElementById('ajL').classList.remove('abre');document.getElementById('ajScanIn').value='';
   var seq=['loc','item'],idx=seq.indexOf(ajEtapa);document.getElementById('ajPassos').innerHTML=seq.map(function(s,i){return '<div class="p '+(i<idx?'ok':(i===idx?'on':''))+'"></div>';}).join('');
   var tag=document.getElementById('ajLocTag');
-  if(ajEtapa==='loc'){t('ajScanT','Leia o localizador');t('ajScanP','Bipe a prateleira.');t('ajLb','Localizador');ph('ajBusca','Buscar localizador...');document.getElementById('ajIc').textContent='📍';tag.classList.add('hide');}
-  else{t('ajScanT','Leia o item');t('ajScanP','Bipe o item para ver as unidades.');t('ajLb','Item');ph('ajBusca','Buscar item...');document.getElementById('ajIc').textContent='🔳';tag.classList.remove('hide');tag.textContent='📍 '+ajLoc.cod;}
+  if(ajEtapa==='loc'){t('ajScanT','Leia o localizador');t('ajScanP','Bipe a prateleira.');t('ajLb','Localizador');ph('ajBusca','Buscar localizador...');document.getElementById('ajIc').innerHTML=icoSvg('pin');tag.classList.add('hide');}
+  else{t('ajScanT','Leia o item');t('ajScanP','Bipe o item para ver as unidades.');t('ajLb','Item');ph('ajBusca','Buscar item...');document.getElementById('ajIc').innerHTML=icoSvg('scan');tag.classList.remove('hide');tag.innerHTML=pinIco()+ajLoc.cod;}
   setTimeout(function(){document.getElementById('ajScanIn').focus();},60);}
 function ajInput(){var q=document.getElementById('ajBusca').value;
   if(ajEtapa==='loc'){api('/almoxarifado/coletor/api/buscar?tipo=loc&q='+encodeURIComponent(q)).then(function(d){combo('ajL',(d.itens||[]),q,function(x){ajLoc={id:x.id,cod:x.nome};ajEtapa='item';ajRender();});});}
@@ -384,10 +408,10 @@ document.getElementById('ajScanIn').addEventListener('keydown',function(e){if(e.
 function ajAbrir(){api('/almoxarifado/coletor/api/instancias/'+ajItem.id+'/'+ajLoc.id).then(function(d){
   ajInsts=d.instancias||[];ajOpc=d.opcionais||[];ajSaldoLoc=d.saldo_loc||0;
   document.getElementById('ajScan').classList.add('hide');document.getElementById('ajInst').classList.remove('hide');document.getElementById('ajEdit').classList.add('hide');
-  document.getElementById('ajCtx').textContent='📍 '+ajLoc.cod+' · '+ajItem.nome+' (saldo '+ajSaldoLoc+')';
+  document.getElementById('ajCtx').innerHTML=pinIco()+ajLoc.cod+' · '+ajItem.nome+' (saldo '+ajSaldoLoc+')';
   document.getElementById('ajInstIt').innerHTML=ajInsts.length?ajInsts.map(function(x,i){return '<div class="row" style="cursor:pointer" onclick="ajEditar('+i+')"><div><b>'+x.tag+'</b> ×'+x.quantidade+'<small>lote '+(x.lote||'—')+' · CA '+(x.ca||'—')+'</small></div><span style="color:var(--coral)">ajustar ›</span></div>';}).join(''):'<div class="vazio" style="color:var(--texto2)">Nenhuma instância registrada. Use o botão abaixo.</div>';});}
 function ajEditar(i){ajSel=(i===null?null:ajInsts[i]);document.getElementById('ajInst').classList.add('hide');document.getElementById('ajEdit').classList.remove('hide');
-  var disp=ajSel?ajSel.quantidade:ajSaldoLoc;document.getElementById('ajEditCtx').textContent='📍 '+ajItem.nome+' · '+(ajSel?ajSel.tag:'nova instância');
+  var disp=ajSel?ajSel.quantidade:ajSaldoLoc;document.getElementById('ajEditCtx').innerHTML=pinIco()+ajItem.nome+' · '+(ajSel?ajSel.tag:'nova instância');
   document.getElementById('ajQtd').value=ajSel?ajSel.quantidade:(ajSaldoLoc||1);document.getElementById('ajDispHint').textContent='(disponível: '+disp+')';
   var mapa={tag:'TAG (vazio = automático)',ca:'CA',validade:'Validade',validade_calib:'Validade de calibração',lote:'Lote'};
   var campos=ajOpc.length?ajOpc:['tag'];

@@ -25,9 +25,8 @@
       <select name="mes_validade" class="form-select"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
       <select name="ano_validade" class="form-select"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
     </div></div>
-  <div class="col-6 col-md-3"><label class="form-label small">Teste hidrostático</label>
+  <div class="col-6 col-md-3"><label class="form-label small">Teste hidrostático (ano)</label>
     <div class="d-flex gap-1">
-      <select name="mes_th" class="form-select"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
       <select name="ano_th" class="form-select"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
     </div></div>
 </div></div>

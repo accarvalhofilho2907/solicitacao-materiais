@@ -29,7 +29,7 @@
     <div class="col-6 col-md-2"><b>Tipo/Carga:</b> {{ e.tipo or '—' }}</div>
     <div class="col-6 col-md-2"><b>Classe:</b> {{ e.classe or '—' }}</div>
     <div class="col-6 col-md-3"><b>Validade carga:</b> {{ competencia(e.validade) }}</div>
-    <div class="col-6 col-md-3"><b>Teste hidrostático:</b> {{ competencia(e.teste_hidrostatico) }}</div>
+    <div class="col-6 col-md-3"><b>Teste hidrostático:</b> {{ e.teste_hidrostatico.year if e.teste_hidrostatico else '—' }}</div>
     <div class="col-6 col-md-3"><b>Última inspeção:</b> {{ e.inspecao.strftime('%d/%m/%Y') if e.inspecao else '—' }}</div>
     {% if e.retirado_por %}<div class="col-6 col-md-3"><b>Retirado por:</b> {{ e.retirado_por }}</div>{% endif %}
   </div>
@@ -66,6 +66,33 @@
   </div>
 {% endmacro %}
 
+{% macro item_datas_bloco() %}
+  <div class="py-2 mt-1 border-top">
+    <div class="d-flex justify-content-between align-items-center">
+      <span class="small fw-bold">Data de recarga e teste hidrostático conferem com as datas do app?</span>
+      <div class="btn-group btn-group-sm" role="group">
+        <input type="radio" class="btn-check" name="item_datas" id="datas_sim" value="sim" checked onclick="var c=document.getElementById('corrDatas'); if(c) c.style.display='none'">
+        <label class="btn btn-outline-success" for="datas_sim">Sim</label>
+        <input type="radio" class="btn-check" name="item_datas" id="datas_nao" value="nao" onclick="var c=document.getElementById('corrDatas'); if(c) c.style.display='block'">
+        <label class="btn btn-outline-danger" for="datas_nao">Não</label>
+      </div>
+    </div>
+    <div id="corrDatas" style="display:none" class="mt-2">
+      <div class="small text-muted mb-1">Informe as datas corretas lidas no extintor:</div>
+      <div class="row g-2">
+        <div class="col-6"><label class="form-label small">Validade da carga (recarga)</label>
+          <div class="d-flex gap-1">
+            <select name="corr_mes_validade" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}" {{ 'selected' if e.validade and e.validade.month==m }}>{{ meses[m] }}</option>{% endfor %}</select>
+            <select name="corr_ano_validade" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}" {{ 'selected' if e.validade and e.validade.year==a }}>{{ a }}</option>{% endfor %}</select>
+          </div></div>
+        <div class="col-6"><label class="form-label small">Teste hidrostático (ano)</label>
+          <select name="corr_ano_th" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}" {{ 'selected' if e.teste_hidrostatico and e.teste_hidrostatico.year==a }}>{{ a }}</option>{% endfor %}</select>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
 {% macro selects_validade() %}
   <div class="row g-2">
     <div class="col-6"><label class="form-label small">Validade carga</label>
@@ -73,9 +100,8 @@
         <select name="mes_validade" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
         <select name="ano_validade" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
       </div></div>
-    <div class="col-6"><label class="form-label small">Teste hidrostático</label>
+    <div class="col-6"><label class="form-label small">Teste hidrostático (ano)</label>
       <div class="d-flex gap-1">
-        <select name="mes_th" class="form-select form-select-sm"><option value="">Mês</option>{% for m in range(1,13) %}<option value="{{ m }}">{{ meses[m] }}</option>{% endfor %}</select>
         <select name="ano_th" class="form-select form-select-sm"><option value="">Ano</option>{% for a in anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
       </div></div>
   </div>
@@ -97,6 +123,7 @@
         <h6 class="small text-muted">Inspeção — marque cada item</h6>
         {{ checklist('insp', check) }}
         {{ item_etiqueta_bloco('insp') }}
+        {{ item_datas_bloco() }}
         <textarea class="form-control form-control-sm mt-2" name="obs" rows="2" placeholder="Observações (opcional)"></textarea>
         <button class="btn btn-primary btn-sm mt-2">Registrar inspeção</button>
       </form>

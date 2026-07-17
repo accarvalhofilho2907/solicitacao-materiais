@@ -26,7 +26,7 @@
   </select></div>
   <div class="col-6 col-md-3"><select name="situacao" class="form-select form-select-sm" onchange="this.form.submit()">
     <option value="">Todas situações</option>
-    {% for k, v in situacao_label.items() %}<option value="{{ k }}" {{ 'selected' if situacao==k }}>{{ v[0] }}</option>{% endfor %}
+    {% for k, lbl in situacao_opcoes %}<option value="{{ k }}" {{ 'selected' if situacao==k }}>{{ lbl }}</option>{% endfor %}
   </select></div>
   <div class="col-6 col-md-2"><input name="local" class="form-control form-control-sm" value="{{ local }}" placeholder="Local contém..." onchange="this.form.submit()"></div>
   <div class="col-md-2"><a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
@@ -45,7 +45,7 @@
       <td class="small">{{ e.local or '—' }}</td>
       <td class="small">{{ e.tipo or '—' }}</td>
       <td class="small">{{ competencia(e.validade) }}</td>
-      <td class="small">{{ competencia(e.teste_hidrostatico) }}</td>
+      <td class="small">{{ e.teste_hidrostatico.year if e.teste_hidrostatico else '—' }}</td>
       <td><span class="badge bg-{{ cls }}">{{ lbl }}</span></td>
     </tr>
     {% else %}

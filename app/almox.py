@@ -266,12 +266,15 @@ def home():
             venc = prox = 0
             for e in Extintor.query.filter_by(ativo=True).all():
                 k = _situacao_extintor(e)[0]
-                if k in ("IRREGULAR", "VENCIDO", "EM_RECARGA"):
+                if k in ("IRREGULAR", "VENCIDO"):
                     venc += 1
                 elif k == "PROX_VENC":
                     prox += 1
             if venc:
-                pend.append((venc, "Extintores vencidos / irregulares", url_for("almox.extintores", situacao="VENCIDO")))
+                pend.append((venc, "Extintores irregulares / vencidos", url_for("almox.extintores", situacao="VENCIDO")))
+            n_etq = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
+            if n_etq:
+                pend.append((n_etq, "Pendências de etiqueta", url_for("almox.pendencias_etiqueta")))
             if prox:
                 tiles.append((prox, "Extintores vencendo", "warn", url_for("almox.extintores", situacao="PROX_VENC")))
         if cap["material"]:
@@ -575,6 +578,25 @@ SITUACAO_LABEL = {
     "PRONTO_REPO": ("Pronto p/ reposição", "primary"),
 }
 
+# Opções do filtro (sem duplicar "Irregular / Vencido": VENCIDO cobre também IRREGULAR)
+SITUACAO_OPCOES = [
+    ("NO_PRAZO", "No prazo"),
+    ("PROX_VENC", "Próximo do vencimento"),
+    ("VENCIDO", "Irregular / Vencido"),
+    ("ATENCAO", "Atenção (etiqueta)"),
+    ("EM_RECARGA", "Em recarga"),
+    ("PRONTO_REPO", "Pronto p/ reposição"),
+]
+
+
+def _match_situacao(sel, k):
+    """Filtro de situação: 'VENCIDO' cobre tanto o vencido por data quanto o irregular operacional."""
+    if not sel:
+        return True
+    if sel == "VENCIDO":
+        return k in ("VENCIDO", "IRREGULAR")
+    return k == sel
+
 
 def _competencia(d):
     """Rótulo MMM/AAAA de uma data (competência)."""
@@ -616,14 +638,38 @@ def _situacao_extintor(e):
 
 def _parse_mmaaaa(prefixo, form):
     """Lê dois selects (mes_<prefixo>, ano_<prefixo>) e devolve date no dia 01, ou None."""
-    mes = form.get(f"mes_{prefixo}") or ""
-    ano = form.get(f"ano_{prefixo}") or ""
+    return _parse_mmaaaa_campos(f"mes_{prefixo}", f"ano_{prefixo}", form)
+
+
+def _parse_mmaaaa_campos(mes_field, ano_field, form):
+    mes = form.get(mes_field) or ""
+    ano = form.get(ano_field) or ""
     if mes.isdigit() and ano.isdigit():
         try:
             return date(int(ano), int(mes), 1)
         except ValueError:
             return None
     return None
+
+
+def _parse_ano(prefixo, form):
+    """Teste hidrostático é ANUAL: lê só ano_<prefixo> e devolve 31/12 daquele ano (vale o ano todo)."""
+    return _parse_ano_campo(f"ano_{prefixo}", form)
+
+
+def _parse_ano_campo(ano_field, form):
+    ano = form.get(ano_field) or ""
+    if ano.isdigit():
+        try:
+            return date(int(ano), 12, 31)
+        except ValueError:
+            return None
+    return None
+
+
+def _th_label(d):
+    """Rótulo do teste hidrostático (só o ano)."""
+    return str(d.year) if d else "—"
 
 
 def _anos_range():
@@ -685,7 +731,7 @@ def extintores():
         if tipo and tipo.lower() not in (e.tipo or "").lower():
             continue
         k, lbl, cls = _situacao_extintor(e)
-        if situacao and situacao != k:
+        if not _match_situacao(situacao, k):
             continue
         linhas.append((e, k, lbl, cls))
     predios = sorted({e.predio for e in Extintor.query.filter_by(ativo=True).all() if e.predio})
@@ -694,6 +740,7 @@ def extintores():
     return render_template("almox/extintores.html", linhas=linhas, predio=predio, local=local,
                            tipo=tipo, situacao=situacao, predios=predios, tipos=tipos,
                            predio_label=PREDIO_LABEL, situacao_label=SITUACAO_LABEL,
+                           situacao_opcoes=SITUACAO_OPCOES,
                            competencia=_competencia, n_pend=n_pend)
 
 
@@ -771,6 +818,23 @@ def extintor_inspecionar(eid):
     import json as _json
     e = db.session.get(Extintor, eid) or abort(404)
     itens, core_nok, et_nok = _coletar_checklist(request.form)
+    # Item especial: datas de recarga/TH conferem com o extintor? Se "nao", corrige as datas.
+    datas_conf = request.form.get("item_datas")  # "sim" | "nao" | None
+    if datas_conf == "nao":
+        nv = _parse_mmaaaa_campos("corr_mes_validade", "corr_ano_validade", request.form)
+        nth = _parse_ano_campo("corr_ano_th", request.form)
+        corr = []
+        if nv:
+            e.validade = nv
+            corr.append(f"validade -> {_competencia(nv)}")
+        if nth:
+            e.teste_hidrostatico = nth
+            corr.append(f"TH -> {_th_label(nth)}")
+        itens["Datas conferem com o app?"] = "não (corrigidas: " + ", ".join(corr) + ")" if corr else "não"
+        if corr:
+            _log("Extintor", f"{e.codigo}: datas ajustadas na inspeção ({'; '.join(corr)})")
+    elif datas_conf:
+        itens["Datas conferem com o app?"] = datas_conf
     nome, cid = _quem(request.form)
     resultado = _aplicar_resultado(e, core_nok, et_nok, nome)
     e.inspecao = date.today()
@@ -802,7 +866,7 @@ def extintor_reposicao(eid):
     itens, core_nok, et_nok = _coletar_checklist(request.form)
     nome, cid = _quem(request.form)
     nova_val = _parse_mmaaaa("validade", request.form)
-    novo_th = _parse_mmaaaa("th", request.form)
+    novo_th = _parse_ano("th", request.form)
     if nova_val:
         e.validade = nova_val
     if novo_th:
@@ -813,9 +877,9 @@ def extintor_reposicao(eid):
                    resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
                    etiqueta_ok=(not et_nok), colaborador_id=cid, colaborador_nome=nome,
                    operador_id=getattr(current_user, "id", None),
-                   obs=f"Troca programada. Validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)}"))
+                   obs=f"Troca programada. Validade {_competencia(e.validade)}, TH {_th_label(e.teste_hidrostatico)}"))
     _log("Extintor", f"{e.codigo}: reposição/troca por {nome} "
-                     f"(validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)})")
+                     f"(validade {_competencia(e.validade)}, TH {_th_label(e.teste_hidrostatico)})")
     db.session.commit()
     flash("Reposição (troca) registrada.", "success")
     return _redir_ficha(e)
@@ -872,7 +936,7 @@ def extintor_repor(eid):
         abort(403)
     nome, cid = _quem(request.form)
     nova_val = _parse_mmaaaa("validade", request.form)
-    novo_th = _parse_mmaaaa("th", request.form)
+    novo_th = _parse_ano("th", request.form)
     if nova_val:
         e.validade = nova_val
     if novo_th:
@@ -882,7 +946,7 @@ def extintor_repor(eid):
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="reposicao",
                    resultado="conforme", colaborador_id=cid, colaborador_nome=nome,
                    operador_id=getattr(current_user, "id", None),
-                   obs=f"Reposto no local. Validade {_competencia(e.validade)}, TH {_competencia(e.teste_hidrostatico)}"))
+                   obs=f"Reposto no local. Validade {_competencia(e.validade)}, TH {_th_label(e.teste_hidrostatico)}"))
     _log("Extintor", f"{e.codigo}: reposto no local por {nome}")
     db.session.commit()
     flash("Reposição concluída. Extintor No prazo.", "success")
@@ -938,7 +1002,7 @@ def extintor_novo():
         uid = "EXT-" + secrets.token_hex(4).upper()
     e = Extintor(codigo=codigo, predio=predio, local=local, tipo=tipo, classe=classe,
                  validade=_parse_mmaaaa("validade", request.form),
-                 teste_hidrostatico=_parse_mmaaaa("th", request.form),
+                 teste_hidrostatico=_parse_ano("th", request.form),
                  situacao="NO_PRAZO", status="No Local", qr_uid=uid, ativo=True)
     db.session.add(e)
     db.session.flush()
@@ -1103,10 +1167,10 @@ def extintores_pdf():
         if tipo and tipo.lower() not in (e.tipo or "").lower():
             continue
         k, lbl, _ = _situacao_extintor(e)
-        if situacao and situacao != k:
+        if not _match_situacao(situacao, k):
             continue
         data.append([e.codigo or "", e.predio or "", e.local or "", e.tipo or "", e.classe or "",
-                     _competencia(e.validade), _competencia(e.teste_hidrostatico), lbl])
+                     _competencia(e.validade), _th_label(e.teste_hidrostatico), lbl])
     if len(data) == 1:
         data.append(["—"] * 8)
     t = Table(data, repeatRows=1,

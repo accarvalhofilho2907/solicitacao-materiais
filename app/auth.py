@@ -8,12 +8,10 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def _home_para(u):
-    # Colaborador logado no sistema
-    if isinstance(u, Colaborador):
-        return url_for("almox.home") if u.pode_almox_modulo else url_for("solicitante.index")
-    if u.is_admin:
-        return url_for("admin.dashboard")
-    # solicitante, almoxarifado e visualizador usam o painel do solicitante
+    # Home única para todos: quem acessa o módulo (admin, almoxarifado, colaborador com
+    # permissão) cai na home nova (híbrida); quem não acessa vai ao painel do solicitante.
+    if getattr(u, "is_admin", False) or getattr(u, "pode_almox_modulo", False):
+        return url_for("almox.home")
     return url_for("solicitante.index")
 
 

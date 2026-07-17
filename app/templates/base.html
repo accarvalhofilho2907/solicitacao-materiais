@@ -137,7 +137,7 @@
     <div class="sb-brand">
       <div class="logo">S</div>
       <div><b>Serena Almox</b><small>Cluster Delta · MA</small></div>
-      <a class="sb-home" title="Início" href="{{ url_for('admin.dashboard') if current_user.is_admin else url_for('solicitante.index') }}"><svg width="18" height="18"><use href="#ic-home"></use></svg></a>
+      <a class="sb-home" title="Início" href="{{ url_for('almox.home') if (perm.is_admin or perm.pode_almox_modulo) else url_for('solicitante.index') }}"><svg width="18" height="18"><use href="#ic-home"></use></svg></a>
     </div>
     <div class="sb-search"><input id="menuSearch" placeholder="Buscar no menu..." oninput="filterMenu(this.value)" autocomplete="off"></div>
     <nav class="sb-nav" id="sbNav">

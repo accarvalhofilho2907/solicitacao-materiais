@@ -2,25 +2,53 @@
 <html lang="pt-BR"><head>
 <meta charset="utf-8"><title>QR dos extintores</title>
 <style>
-  body{font-family:Arial,Helvetica,sans-serif;margin:12mm}
-  .noprint{margin-bottom:12px}
-  @media print{.noprint{display:none}}
+  body{font-family:Arial,Helvetica,sans-serif;margin:10mm}
+  .noprint{margin-bottom:12px;font-size:13px}
+  .noprint a{margin:0 2px}
+  @media print{.noprint{display:none} body{margin:0}}
+
+  /* ---- A4 (folha) ---- */
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-  .termica{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  .cel{border:1px dashed #bbb;border-radius:4px;padding:8px;text-align:center;page-break-inside:avoid}
-  .cel svg{width:82px;height:82px}
-  .termica .cel svg{width:95px;height:95px}
-  .cod{font-weight:bold;font-size:11px;margin-top:4px}
-  .loc{font-size:9px;color:#444}
-  .uid{font-size:8px;color:#999}
+  .grid .cel{border:1px dashed #bbb;border-radius:6px;padding:8px;text-align:center;page-break-inside:avoid}
+  .grid .cel svg{width:84px;height:84px}
+  .grid .cod{font-weight:bold;font-size:11px;margin-top:4px}
+  .grid .loc{font-size:9px;color:#444}
+  .grid .uid{font-size:8px;color:#999}
+
+  /* ---- Térmica: bobina 45x20mm, 2 etiquetas por linha (padrão) ---- */
+  {% if formato == 'termica' %}
+  @page{ size:96mm 22mm; margin:1mm; }
+  {% endif %}
+  .bobina{display:flex;flex-wrap:wrap;gap:2mm}
+  .bobina .cel{
+    width:45mm;height:20mm;box-sizing:border-box;
+    display:flex;align-items:center;gap:1.4mm;
+    padding:1mm 1.4mm 1mm 0;overflow:hidden;
+    border:0.2mm solid #000;border-radius:1.2mm;
+    page-break-inside:avoid;background:#fff;color:#000;
+  }
+  .bobina .accent{width:1.6mm;align-self:stretch;background:#000;border-radius:1.2mm 0 0 1.2mm;flex:0 0 1.6mm}
+  .bobina .qr{flex:0 0 16mm;display:flex;align-items:center;justify-content:center}
+  .bobina .qr svg{width:16mm;height:16mm;display:block}
+  .bobina .txt{flex:1;min-width:0;line-height:1.12;padding-left:.5mm}
+  .bobina .tag{display:inline-block;font-size:5pt;font-weight:700;letter-spacing:.08em;
+    border:0.2mm solid #000;border-radius:1mm;padding:0 .8mm;margin-bottom:.4mm}
+  .bobina .cod{font-weight:800;font-size:10pt;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bobina .loc{font-size:6.5pt;margin-top:.5mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bobina .brand{font-size:5pt;letter-spacing:.06em;margin-top:.6mm;color:#000;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media print{ .bobina{gap:0} }
 </style></head><body>
 <div class="noprint">
   <button onclick="window.print()">🖨️ Imprimir</button>
   {% set q = ('&ids=' ~ request.args.get('ids')) if request.args.get('ids') else '' %}
-  &nbsp;Formato: <a href="?formato=a4{{ q }}">Folha A4</a> | <a href="?formato=termica{{ q }}">Etiqueta térmica</a>
-  <span style="font-size:12px;color:#555"> — {{ itens|length }} extintor(es)</span>
+  &nbsp;Formato:
+  <a href="?formato=termica{{ q }}">Etiqueta térmica 45×20mm (padrão)</a> |
+  <a href="?formato=a4{{ q }}">Folha A4</a>
+  <span style="color:#555"> — {{ itens|length }} extintor(es)</span>
 </div>
-<div class="{{ 'termica' if formato=='termica' else 'grid' }}">
+
+{% if formato == 'a4' %}
+<div class="grid">
   {% for e in itens %}
   <div class="cel">
     {{ qr_svg(request.host_url ~ 'almoxarifado/e/' ~ (e.qr_uid or e.id))|safe }}
@@ -30,4 +58,20 @@
   </div>
   {% else %}<p>Nenhum extintor.</p>{% endfor %}
 </div>
+{% else %}
+<div class="bobina">
+  {% for e in itens %}
+  <div class="cel">
+    <div class="accent"></div>
+    <div class="qr">{{ qr_svg(request.host_url ~ 'almoxarifado/e/' ~ (e.qr_uid or e.id))|safe }}</div>
+    <div class="txt">
+      <span class="tag">🧯 EXTINTOR</span>
+      <div class="cod">{{ e.codigo or '—' }}</div>
+      <div class="loc">{{ e.predio or '' }}{% if e.local %} · {{ e.local }}{% endif %}</div>
+      <div class="brand">SERENA · CLUSTER DELTA</div>
+    </div>
+  </div>
+  {% else %}<p>Nenhum extintor.</p>{% endfor %}
+</div>
+{% endif %}
 </body></html>

@@ -134,20 +134,32 @@
         {{ checklist('repo', check) }}
         {{ item_etiqueta_bloco('repo') }}
         <div class="mt-2">{{ selects_validade() }}</div>
-        <button class="btn btn-success btn-sm mt-2">Confirmar reposição</button>
+        <button class="btn btn-success btn-sm mt-2">Feito a reposição</button>
       </form>
     </div></div>
   </div>
   {% endif %}
 
-  {# ------- Irregular/Vencido: só "Levado ao Almox D6" ------- #}
+  {# ------- Irregular/Vencido: regularizar (Almox D6) OU fazer reposição ------- #}
   {% if sit_k in ['IRREGULAR','VENCIDO'] %}
-  <div class="col-md-6"><div class="card h-100"><div class="card-body">
-    <h6>Extintor irregular</h6>
-    <p class="small text-muted">Regularize levando ao Almox D6 para recarga. O responsável é você — não precisa digitar nome.</p>
-    <form method="post" action="{{ url_for('almox.extintor_regularizar', eid=e.id) }}">
+  <div class="col-12"><div class="card"><div class="card-body">
+    <h6 class="mb-2">Extintor irregular / vencido</h6>
+    <p class="small text-muted">Regularize levando ao Almox D6 para recarga, ou faça a reposição (troca programada) por um novo extintor.</p>
+    <div class="d-flex gap-2 flex-wrap">
+      <form method="post" action="{{ url_for('almox.extintor_regularizar', eid=e.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-info">Levado ao Almox D6 p/ Recarga</button>
+      </form>
+      <button class="btn btn-outline-primary" type="button" onclick="mostra('formRepoIrr')">Fazer reposição (troca programada)</button>
+    </div>
+
+    <form method="post" id="formRepoIrr" action="{{ url_for('almox.extintor_reposicao', eid=e.id) }}" class="mt-3" style="display:none">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-info">Levado ao Almox D6 p/ Recarga</button>
+      <h6 class="small text-muted">Reposição (troca) — checklist do NOVO extintor + nova validade</h6>
+      {{ checklist('repoirr', check) }}
+      {{ item_etiqueta_bloco('repoirr') }}
+      <div class="mt-2">{{ selects_validade() }}</div>
+      <button class="btn btn-success btn-sm mt-2">Feito a reposição</button>
     </form>
   </div></div></div>
   {% endif %}

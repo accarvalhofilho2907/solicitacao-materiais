@@ -1134,7 +1134,7 @@ def extintores_qr():
         lista_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
         consulta = consulta.filter(Extintor.id.in_(lista_ids))
     itens = consulta.order_by(Extintor.predio, Extintor.local).all()
-    formato = request.args.get("formato", "a4")
+    formato = request.args.get("formato", "termica")
     return render_template("almox/extintores_qr.html", itens=itens, qr_svg=_qr_svg, formato=formato)
 
 

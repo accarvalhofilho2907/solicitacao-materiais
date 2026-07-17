@@ -16,7 +16,7 @@
       <h4 class="mb-1">🧯 {{ e.codigo or 'Extintor' }} <span class="badge bg-{{ sit_cls }}">{{ sit_lbl }}</span></h4>
       <div class="small text-muted">QR: {{ e.qr_uid or '—' }}</div>
     </div>
-    {% if perm.ext_desativar and not campo %}
+    {% if not campo and perm.ext_desativar %}
     <form method="post" action="{{ url_for('almox.extintor_desativar', eid=e.id) }}" onsubmit="return confirm('Desativar este extintor?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-outline-danger">Desativar</button>

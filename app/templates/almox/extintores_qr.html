@@ -10,7 +10,7 @@
   /* ---- A4 (folha) ---- */
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
   .grid .cel{border:1px dashed #bbb;border-radius:6px;padding:8px;text-align:center;page-break-inside:avoid}
-  .grid .cel svg{width:84px;height:84px}
+  .grid .cel .qr img{width:84px;height:84px;image-rendering:pixelated}
   .grid .cod{font-weight:bold;font-size:11px;margin-top:4px}
   .grid .loc{font-size:9px;color:#444}
   .grid .uid{font-size:8px;color:#999}
@@ -29,7 +29,7 @@
   }
   .bobina .accent{width:1.4mm;align-self:stretch;background:#000;border-radius:1.2mm 0 0 1.2mm;flex:0 0 1.4mm}
   .bobina .qr{flex:0 0 15mm;display:flex;align-items:center;justify-content:center}
-  .bobina .qr svg{width:15mm;height:15mm;display:block}
+  .bobina .qr img{width:15mm;height:15mm;display:block;image-rendering:pixelated}
   .bobina .txt{flex:1;min-width:0;line-height:1.1;padding-left:.5mm}
   .bobina .tag{display:inline-block;font-size:5pt;font-weight:700;letter-spacing:.06em;
     border:0.2mm solid #000;border-radius:1mm;padding:0 .7mm;margin-bottom:.3mm}
@@ -38,6 +38,7 @@
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .bobina .brand{font-size:4.5pt;letter-spacing:.05em;margin-top:.4mm;color:#000;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   @media print{ .bobina{gap:0;padding:0} }
+  .carregando{color:#888;font-size:12px;margin:8px 0}
 </style></head><body>
 <div class="noprint">
   <button onclick="window.print()">🖨️ Imprimir</button>
@@ -46,13 +47,14 @@
   <a href="?formato=termica{{ q }}">Etiqueta térmica 45×20mm (padrão)</a> |
   <a href="?formato=a4{{ q }}">Folha A4</a>
   <span style="color:#555"> — {{ itens|length }} extintor(es)</span>
+  <div class="carregando" id="carregando">Gerando QR codes…</div>
 </div>
 
 {% if formato == 'a4' %}
 <div class="grid">
   {% for e in itens %}
   <div class="cel">
-    {{ qr_svg(request.host_url ~ 'almoxarifado/e/' ~ (e.qr_uid or e.id))|safe }}
+    <div class="qr" data-url="{{ request.host_url }}almoxarifado/e/{{ e.qr_uid or e.id }}"></div>
     <div class="cod">{{ e.codigo or '' }}</div>
     <div class="loc">{{ e.predio or '' }} · {{ e.local or '' }}</div>
     <div class="uid">{{ e.qr_uid or '' }}</div>
@@ -64,7 +66,7 @@
   {% for e in itens %}
   <div class="cel">
     <div class="accent"></div>
-    <div class="qr">{{ qr_svg(request.host_url ~ 'almoxarifado/e/' ~ (e.qr_uid or e.id))|safe }}</div>
+    <div class="qr" data-url="{{ request.host_url }}almoxarifado/e/{{ e.qr_uid or e.id }}"></div>
     <div class="txt">
       <span class="tag">🧯 EXTINTOR</span>
       <div class="cod">{{ e.codigo or '—' }}</div>
@@ -75,4 +77,28 @@
   {% else %}<p>Nenhum extintor.</p>{% endfor %}
 </div>
 {% endif %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+  (function(){
+    var boxes = document.querySelectorAll('.qr[data-url]');
+    var i = 0;
+    function lote(){
+      var fim = Math.min(i + 40, boxes.length);
+      for(; i < fim; i++){
+        var box = boxes[i];
+        try{
+          var qr = qrcode(0, 'M');
+          qr.addData(box.getAttribute('data-url'));
+          qr.make();
+          box.innerHTML = qr.createImgTag(4, 0);
+        }catch(e){ box.textContent = 'QR?'; }
+      }
+      if(i < boxes.length){ setTimeout(lote, 0); }   // gera em lotes p/ não travar a tela
+      else{ var c = document.getElementById('carregando'); if(c) c.style.display='none'; }
+    }
+    if(window.qrcode){ lote(); }
+    else{ var c=document.getElementById('carregando'); if(c) c.textContent='Falha ao carregar o gerador de QR (verifique a internet).'; }
+  })();
+</script>
 </body></html>

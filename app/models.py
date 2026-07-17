@@ -111,6 +111,18 @@ class Usuario(UserMixin, db.Model):
     def pode_relatorios(self):
         return self.papel in ("admin", "almoxarifado")
     @property
+    def pode_coletor(self):
+        return self.papel in ("admin", "almoxarifado")
+    @property
+    def pode_criar_solicitacao(self):
+        return self.papel in ("admin", "almoxarifado", "solicitante")
+    @property
+    def pode_ver_solicitacoes(self):
+        return self.papel in ("admin", "almoxarifado", "solicitante")
+    def tem_tarefa(self, tarefa):
+        # staff do módulo (admin/almoxarifado) pode todas as tarefas do módulo
+        return self.papel in ("admin", "almoxarifado")
+    @property
     def pode_colaboradores(self):
         return self.papel in ("admin", "almoxarifado")
 
@@ -224,7 +236,9 @@ class Fornecedor(db.Model):
 class Solicitacao(db.Model):
     __tablename__ = "solicitacoes"
     id = db.Column(db.Integer, primary_key=True)
-    solicitante_id = db.Column(db.ForeignKey("usuarios.id"), nullable=False)
+    solicitante_id = db.Column(db.ForeignKey("usuarios.id"), nullable=True)
+    solicitante_colab_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    solicitante_nome = db.Column(db.String(160))   # snapshot do autor (usuário OU colaborador)
     tipo_material_id = db.Column(db.ForeignKey("tipos_material.id"))
     material = db.Column(db.String(200), nullable=False)
     quantidade = db.Column(db.Integer, nullable=False, default=1)
@@ -265,6 +279,18 @@ class Solicitacao(db.Model):
 
     @property
     def status_label(self): return STATUS_LABEL.get(self.status, self.status)
+
+    @property
+    def solicitante_display(self):
+        if self.solicitante_nome:
+            return self.solicitante_nome
+        if self.solicitante_colab_id:
+            cb = db.session.get(Colaborador, self.solicitante_colab_id)
+            if cb:
+                return cb.nome
+        if self.solicitante_id and self.solicitante:
+            return self.solicitante.nome
+        return "—"
 
     @property
     def cotacao_vencida(self):
@@ -347,9 +373,14 @@ class LogSolicitacao(db.Model):
     solicitacao_id = db.Column(db.ForeignKey("solicitacoes.id"), nullable=False)
     evento = db.Column(db.String(300), nullable=False)
     autor_id = db.Column(db.ForeignKey("usuarios.id"))
+    autor_nome = db.Column(db.String(160))   # snapshot (usuário OU colaborador)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     autor = db.relationship("Usuario")
+
+    @property
+    def autor_display(self):
+        return self.autor_nome or (self.autor.nome if self.autor_id and self.autor else "—")
 
 
 class Sugestao(db.Model):
@@ -752,6 +783,7 @@ TAREFAS_PERFIL = [
     ("quadro_cadastrar", "Cadastrar quadro de chaves", "Chaves", False),
     ("chave_qr", "Imprimir QR de chaves / quadro", "Chaves", False),
     ("chave_retirar_devolver", "Retirar / devolver chave (coletor)", "Chaves", False),
+    ("chave_desativar", "Desativar / reativar chave", "Chaves", False),
     # Extintores
     ("ext_ver", "Ver extintores", "Extintores", False),
     ("ext_inspecionar", "Inspecionar extintor", "Extintores", False),
@@ -880,19 +912,21 @@ class PapelColaborador(db.Model):
 
 
 _GRUPO_CHAVES = {"perm_chaves", "chave_ver", "chave_cadastrar", "chave_editar", "chave_historico",
-                 "quadro_cadastrar", "chave_qr", "chave_retirar_devolver"}
+                 "quadro_cadastrar", "chave_qr", "chave_retirar_devolver", "chave_desativar"}
 _GRUPO_EXT = {"perm_extintores", "ext_ver", "ext_inspecionar", "ext_repor", "ext_conferir",
               "ext_cadastrar", "ext_desativar", "ext_pendencia_etiqueta", "ext_qr"}
 _GRUPO_MAT = {"mat_ver", "mat_cadastrar", "mat_entrada", "mat_saida", "mat_ajuste", "mat_mover",
               "mat_inventario", "mat_movimentacoes", "mat_negativo", "mat_qr",
               "mat_devolucao_forcada", "mat_kit", "mat_unidades"}
 _GRUPO_LOC = {"perm_cadastros", "loc_planta", "loc_armazem", "loc_localizador", "loc_gerar"}
-_GRUPO_ALMOX = _GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | {"perm_modulo_almox"}
+_GRUPO_COLETOR = {"col_chaves", "col_material", "col_movimentacao", "col_inventario"}
+_GRUPO_ALMOX = (_GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | _GRUPO_COLETOR
+                | {"perm_modulo_almox"})
 
 
 def perm_from_tasks(perms, prop):
     """Fonte ÚNICA de verdade: dado o conjunto de tarefas de um perfil, diz se a propriedade vale.
-    Honra tanto as chaves 'grossas' (perm_*) quanto as granulares (chave_*, ext_*, mat_*, loc_*)."""
+    Honra tanto as chaves 'grossas' (perm_*) quanto as granulares (chave_*, ext_*, mat_*, loc_*, col_*)."""
     perms = perms or set()
     if prop == "is_admin":
         return "perm_total" in perms
@@ -912,8 +946,14 @@ def perm_from_tasks(perms, prop):
         return ("perm_cadastros" in perms) or bool(perms & _GRUPO_LOC)
     if prop == "pode_relatorios":
         return ("perm_relatorios" in perms) or bool(perms & {"carga_receber", "carga_enviar"})
+    if prop == "pode_coletor":
+        return bool(perms & _GRUPO_COLETOR)
     if prop == "pode_colaboradores":
         return "perm_colaboradores" in perms
+    if prop == "pode_criar_solicitacao":
+        return bool(perms & {"perm_solicitar", "solicitar_criar"})
+    if prop == "pode_ver_solicitacoes":
+        return bool(perms & {"perm_solicitar", "solicitar_criar", "solicitar_ver_minhas", "solicitar_ver_todas"})
     if prop == "pode_solicitar":
         return bool(perms & {"perm_solicitar", "solicitar_criar", "solicitar_ver_minhas"})
     return prop in perms
@@ -1002,6 +1042,13 @@ class Colaborador(UserMixin, db.Model):
     def pode_locais(self): return perm_from_tasks(self._perms_efetivas(), "pode_locais")
     @property
     def pode_relatorios(self): return perm_from_tasks(self._perms_efetivas(), "pode_relatorios")
+    @property
+    def pode_coletor(self): return perm_from_tasks(self._perms_efetivas(), "pode_coletor")
+    @property
+    def pode_criar_solicitacao(self): return perm_from_tasks(self._perms_efetivas(), "pode_criar_solicitacao")
+    @property
+    def pode_ver_solicitacoes(self): return perm_from_tasks(self._perms_efetivas(), "pode_ver_solicitacoes")
+    def tem_tarefa(self, tarefa): return perm_from_tasks(self._perms_efetivas(), tarefa)
     @property
     def pode_colaboradores(self): return perm_from_tasks(self._perms_efetivas(), "pode_colaboradores")
     @property

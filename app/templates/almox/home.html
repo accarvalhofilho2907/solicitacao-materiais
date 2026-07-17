@@ -1,52 +1,90 @@
 {% extends "base.html" %}
-{% block title %}Almoxarifado{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
-  <h4 class="mb-0">Almoxarifado</h4>
-  <span class="badge bg-secondary">Perfil: {{ current_user.papel }}</span>
-</div>
-<p class="text-muted small">Resumo do dia a dia e atalhos.</p>
+<style>
+  .home-wrap{max-width:900px}
+  .hi{font-size:1.25rem;font-weight:700;margin:.2rem 0 .1rem}
+  .hi small{color:var(--muted,#a8a29d);font-weight:400;font-size:.6em}
+  .hsub{color:var(--muted,#a8a29d);font-size:.9rem;margin:0 0 1.2rem}
+  .hsec{color:#FF5246;text-transform:uppercase;letter-spacing:.04em;font-size:.72rem;font-weight:600;margin:1.4rem 0 .6rem}
+  .hrow{display:flex;flex-wrap:wrap;gap:.7rem}
+  .hchip{display:flex;align-items:center;gap:.55rem;background:#3a3a3a;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:.7rem .9rem;min-width:160px;text-decoration:none;color:inherit}
+  .hchip:hover{border-color:#FF5246}
+  .hchip .i{width:34px;height:34px;border-radius:9px;background:rgba(255,82,70,.16);color:#FF5246;display:grid;place-items:center;font-size:1.05rem}
+  .hchip b{font-weight:600;font-size:.92rem}
+  .hpend{display:flex;align-items:center;gap:.8rem;background:#333;border:1px solid rgba(255,255,255,.08);border-left:4px solid #FF5246;border-radius:12px;padding:.8rem .9rem;margin-bottom:.55rem;text-decoration:none;color:inherit}
+  .hpend:hover{background:#3a3a3a}
+  .hpend .n{font-size:1.5rem;font-weight:700;min-width:44px;text-align:center;color:#ff8b82}
+  .hpend small{color:var(--muted,#a8a29d)}
+  .htiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.7rem}
+  .htile{background:#3a3a3a;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:.9rem;text-decoration:none;color:inherit;display:block}
+  .htile:hover{border-color:#FF5246}
+  .htile .v{font-size:1.7rem;font-weight:700;line-height:1}
+  .htile .k{color:var(--muted,#a8a29d);font-size:.8rem;margin-top:.25rem}
+  .htile.warn .v{color:#f0be3c}
+  /* quiosque */
+  .kiosk{min-height:58vh;display:grid;place-items:center;text-align:center;padding:1.5rem 0}
+  .bigbtn{display:block;background:linear-gradient(135deg,#FF5246,#e0392d);border:0;color:#fff;border-radius:22px;padding:2.4rem 2rem;width:min(430px,94%);text-decoration:none;box-shadow:0 12px 30px rgba(255,82,70,.3)}
+  .bigbtn .ic{font-size:3rem}
+  .bigbtn .t{font-size:1.45rem;font-weight:700;margin-top:.4rem}
+  .bigbtn .s{opacity:.92;font-size:.92rem;margin-top:.2rem}
+  .kiosk .extra{margin-top:1.1rem;display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap}
+  .kiosk .extra a{color:#EDE9E5;text-decoration:none;border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:.4rem .9rem;font-size:.85rem}
+</style>
 
-{% if resumo %}
-<div class="row g-2 mb-4">
-  <div class="col-6 col-md-3"><a href="{{ url_for('almox.relatorio_chaves') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
-    <div class="h4 mb-0 text-warning">{{ resumo.chaves_em_uso }}</div><div class="small text-muted">chaves em uso agora</div></div></a></div>
-  <div class="col-6 col-md-3"><a href="{{ url_for('almox.extintores', situacao='IRREGULAR') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
-    <div class="h4 mb-0 text-danger">{{ resumo.ext_irregular }}</div><div class="small text-muted">extintores irregulares/recarga</div></div></a></div>
-  <div class="col-6 col-md-3"><a href="{{ url_for('almox.extintores', situacao='PROX_VENC') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
-    <div class="h4 mb-0 text-warning">{{ resumo.ext_prox }}</div><div class="small text-muted">extintores a vencer</div></div></a></div>
-  <div class="col-6 col-md-3"><a href="{{ url_for('almox.materiais') }}" class="card text-decoration-none"><div class="card-body py-2 text-center">
-    <div class="h4 mb-0 {{ 'text-danger' if resumo.mat_baixo else 'text-success' }}">{{ resumo.mat_baixo }}</div><div class="small text-muted">materiais abaixo do mínimo</div></div></a></div>
-</div>
-{% if resumo.pend_etiqueta %}
-<div class="alert alert-warning py-2"><a href="{{ url_for('almox.pendencias_etiqueta') }}" class="text-decoration-none">{{ resumo.pend_etiqueta }} pendência(s) de etiqueta de extintor abertas — resolver</a></div>
-{% endif %}
-{% endif %}
+{% set primeiro = (current_user.nome or 'você').split(' ')[0] %}
+<div class="home-wrap">
 
-<h6 class="text-muted text-uppercase small mb-2">Atalhos</h6>
-<div class="row g-3">
-  {% set atalhos = [
-    ('almox.coletor', 'Coletor', 'Operação em campo (celular)', true),
-    ('almox.materiais', 'Material (estoque)', 'Itens, saldos e localizadores', current_user.pode_almox_modulo),
-    ('almox.materiais_mov', 'Movimentações de material', 'Histórico de entradas/saídas', current_user.pode_almox_modulo),
-    ('almox.fabricantes', 'Fabricantes', 'Cadastro usado na entrada', current_user.pode_almox_modulo),
-    ('almox.chaves', 'Chaves', 'Quadros e retiradas', current_user.pode_chaves),
-    ('almox.extintores', 'Extintores', 'Inspeções e situação', current_user.pode_extintores),
-    ('almox.colaboradores', 'Colaboradores', 'Cadastro e perfis de acesso', current_user.pode_colaboradores),
-    ('almox.relatorios_central', 'Central de relatórios', 'Chaves, material, extintores', current_user.pode_almox_modulo),
-    ('almox.administrativo', 'Administrativo', 'Notas fiscais e notificações', current_user.is_admin),
-  ] %}
-  {% for endpoint, nome, desc, ok in atalhos %}
-    {% if ok %}
-    <div class="col-6 col-md-4 col-lg-3">
-      <a href="{{ url_for(endpoint) }}" class="card h-100 text-decoration-none">
-        <div class="card-body">
-          <div class="fw-semibold">{{ nome }}</div>
-          <div class="small text-muted">{{ desc }}</div>
-        </div>
+{% if modo == 'quiosque' and principal %}
+  {# ---- QUIOSQUE: colapsa na ação principal do perfil ---- #}
+  <div class="kiosk">
+    <div>
+      <a class="bigbtn" href="{{ url_for(principal[2]) }}">
+        <div class="ic">{{ principal[1] }}</div>
+        <div class="t">{{ principal[0] }}</div>
+        <div class="s">{{ principal[3] }}</div>
       </a>
+      {% if acoes|length > 1 %}
+      <div class="extra">
+        {% for label, ic, ep in acoes %}{% if ep != principal[2] %}<a href="{{ url_for(ep) }}">{{ ic }} {{ label }}</a>{% endif %}{% endfor %}
+      </div>
+      {% endif %}
     </div>
-    {% endif %}
+  </div>
+
+{% else %}
+  {# ---- PAINEL: perfil amplo ---- #}
+  <div class="hi">Olá, {{ primeiro }} 👋</div>
+  <p class="hsub">Aqui está o que precisa da sua atenção.</p>
+
+  {% if acoes %}
+  <div class="hsec">Ações rápidas</div>
+  <div class="hrow">
+    {% for label, ic, ep in acoes %}
+    <a class="hchip" href="{{ url_for(ep) }}"><span class="i">{{ ic }}</span><b>{{ label }}</b></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if pend %}
+  <div class="hsec">Pendências</div>
+  {% for n, texto, link in pend %}
+  <a class="hpend" href="{{ link }}"><div class="n">{{ n }}</div><div><b>{{ texto }}</b><br><small>abrir</small></div></a>
   {% endfor %}
+  {% endif %}
+
+  {% if tiles %}
+  <div class="hsec">Resumo</div>
+  <div class="htiles">
+    {% for v, k, cls, link in tiles %}
+    <a class="htile {{ cls }}" href="{{ link }}"><div class="v">{{ v }}</div><div class="k">{{ k }}</div></a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not acoes and not pend and not tiles %}
+  <p class="text-muted">Sem atalhos disponíveis para o seu perfil no momento.</p>
+  {% endif %}
+{% endif %}
+
 </div>
 {% endblock %}

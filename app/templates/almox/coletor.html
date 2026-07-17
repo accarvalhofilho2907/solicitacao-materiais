@@ -87,12 +87,22 @@
   <div class="ctela" id="tHome">
     <h2 class="ct">O que você vai fazer?</h2><p class="csub">Leitura por crachá / QR / código de barras.</p>
     <div class="grid">
-      <div class="acao" onclick="iniciar('Retirar')"><div class="ic"><svg class="aic"><use href="#ic-retirar"></use></svg></div><span>Retirar</span><small>chave ou material</small></div>
-      <div class="acao" onclick="iniciar('Devolver')"><div class="ic"><svg class="aic"><use href="#ic-devolver"></use></svg></div><span>Devolver</span><small>chave ou material</small></div>
+      {% if abas.chaves or abas.material %}
+      <div class="acao" onclick="iniciar('Retirar')"><div class="ic"><svg class="aic"><use href="#ic-retirar"></use></svg></div><span>Retirar</span><small>{{ 'chave ou material' if abas.chaves and abas.material else ('chave' if abas.chaves else 'material') }}</small></div>
+      <div class="acao" onclick="iniciar('Devolver')"><div class="ic"><svg class="aic"><use href="#ic-devolver"></use></svg></div><span>Devolver</span><small>{{ 'chave ou material' if abas.chaves and abas.material else ('chave' if abas.chaves else 'material') }}</small></div>
+      {% endif %}
+      {% if abas.material %}
       <div class="acao wide" onclick="entrada()"><div class="ic"><svg class="aic"><use href="#ic-entrada"></use></svg></div><span>Entrada (itens comprados)</span><small>ler código de barras · dar entrada</small></div>
+      {% endif %}
+      {% if abas.inventario %}
       <div class="acao" onclick="inventario()"><div class="ic"><svg class="aic"><use href="#ic-inventario"></use></svg></div><span>Inventário</span><small>conferir/ajustar saldo</small></div>
+      {% endif %}
+      {% if abas.mover %}
       <div class="acao" onclick="moverInit()"><div class="ic"><svg class="aic"><use href="#ic-mover"></use></svg></div><span>Mover material</span><small>entre localizadores</small></div>
+      {% endif %}
+      {% if abas.inventario %}
       <div class="acao wide" onclick="ajusteInit()"><div class="ic"><svg class="aic"><use href="#ic-ajuste"></use></svg></div><span>Ajuste de instâncias</span><small>Fabricante · CA · TAG · Validade · Lote (por unidade)</small></div>
+      {% endif %}
     </div>
   </div>
 

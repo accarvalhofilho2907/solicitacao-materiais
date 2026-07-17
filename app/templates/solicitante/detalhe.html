@@ -18,7 +18,7 @@
     <dt class="col-sm-3">Fabricante</dt><dd class="col-sm-9">{{ s.fabricante or '-' }}</dd>
     <dt class="col-sm-3">Tipo</dt><dd class="col-sm-9">{{ s.tipo.nome if s.tipo else '-' }}</dd>
     <dt class="col-sm-3">Local / frente</dt><dd class="col-sm-9">{{ s.local_servico or '-' }}</dd>
-    <dt class="col-sm-3">Solicitante</dt><dd class="col-sm-9">{{ s.solicitante.nome }}</dd>
+    <dt class="col-sm-3">Solicitante</dt><dd class="col-sm-9">{{ s.solicitante_display }}</dd>
     <dt class="col-sm-3">Similar</dt><dd class="col-sm-9">{% if s.link_similar %}<a href="{{ s.link_similar }}" target="_blank">{{ s.link_similar }}</a>{% else %}-{% endif %}</dd>
     {% if s.prazo_recebimento %}<dt class="col-sm-3">Prazo recebimento</dt><dd class="col-sm-9">{{ s.prazo_recebimento.strftime('%d/%m/%Y') }}</dd>{% endif %}
   </dl>

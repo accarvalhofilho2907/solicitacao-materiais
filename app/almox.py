@@ -209,25 +209,83 @@ def _venc_info(validade):
 @almox_bp.route("/")
 @modulo_required
 def home():
-    topicos = [t for t in TOPICOS
-               if not (t.get("somente_colab") and not current_user.pode_colaboradores)
-               and not (t.get("somente_admin") and not current_user.is_admin)]
-    # Painel: números do dia a dia (usa dados já existentes)
-    resumo = {"chaves_em_uso": 0, "ext_irregular": 0, "ext_prox": 0,
-              "mat_baixo": 0, "pend_etiqueta": 0}
+    cap = {
+        "coletor": _efetivo("pode_coletor"),
+        "material": _efetivo("pode_material"),
+        "chaves": _efetivo("pode_chaves"),
+        "extintores": _efetivo("pode_extintores"),
+        "solic": _efetivo("pode_ver_solicitacoes"),
+        "relatorios": _efetivo("pode_relatorios"),
+        "colaboradores": _efetivo("pode_colaboradores"),
+    }
+    is_admin = _efetivo("is_admin")
+
+    # Ações rápidas disponíveis (rótulo, ícone-emoji, endpoint) conforme permissão
+    ACOES = []
+    if cap["coletor"]:
+        ACOES.append(("Abrir coletor", "📷", "almox.coletor"))
+    if cap["solic"]:
+        ACOES.append(("Minhas solicitações", "📝", "solicitante.index"))
+    if cap["material"]:
+        ACOES.append(("Material (estoque)", "📦", "almox.materiais"))
+        ACOES.append(("Confirmar chegadas", "📥", "almox.index"))
+    if cap["chaves"]:
+        ACOES.append(("Chaves", "🔑", "almox.chaves"))
+    if cap["extintores"]:
+        ACOES.append(("Extintores", "🧯", "almox.extintores"))
+
+    # "amplo" -> painel; senão -> quiosque na ação principal
+    areas = [k for k in ("coletor", "material", "chaves", "extintores", "solic") if cap[k]]
+    amplo = is_admin or cap["material"] or cap["colaboradores"] or len(areas) >= 2
+    modo = "painel" if amplo else "quiosque"
+    principal = None
+    if modo == "quiosque":
+        ordem = ["coletor", "solic", "chaves", "extintores", "material"]
+        alvo = next((a for a in ordem if cap[a]), None)
+        _mapa = {
+            "coletor": ("Abrir Coletor", "📷", "almox.coletor", "Retirar e devolver pelo QR"),
+            "solic": ("Minhas solicitações", "📝", "solicitante.index", "Acompanhe e abra novas"),
+            "chaves": ("Chaves", "🔑", "almox.chaves", "Retirar e devolver chaves"),
+            "extintores": ("Extintores", "🧯", "almox.extintores", "Inspeções e reposição"),
+            "material": ("Material", "📦", "almox.materiais", "Estoque e movimentações"),
+        }
+        principal = _mapa.get(alvo)
+
+    # Pendências (cada uma gated pela permissão de quem pode agir) — com link de atalho
+    pend = []
+    tiles = []
     try:
-        resumo["chaves_em_uso"] = Chave.query.filter_by(ativo=True, status="Em uso").count()
-        for e in Extintor.query.filter_by(ativo=True).all():
-            k = _situacao_extintor(e)[0]
-            if k in ("IRREGULAR", "VENCIDO", "EM_RECARGA"):
-                resumo["ext_irregular"] += 1
-            elif k == "PROX_VENC":
-                resumo["ext_prox"] += 1
-        resumo["mat_baixo"] = sum(1 for p in ProdutoAlmox.query.filter_by(ativo=True).all() if p.abaixo_minimo)
-        resumo["pend_etiqueta"] = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
+        if is_admin:
+            nb = AjusteInventario.query.filter_by(status="pendente").count()
+            if nb:
+                pend.append((nb, "Baixas de inventário a aprovar", url_for("almox.inventario_pendentes")))
+            nnf = NotaFiscalAlmox.query.filter(NotaFiscalAlmox.classificacao.is_(None)).count()
+            if nnf:
+                pend.append((nnf, "NFs a classificar (OPEX/CAPEX)", url_for("almox.administrativo")))
+        if cap["extintores"]:
+            venc = prox = 0
+            for e in Extintor.query.filter_by(ativo=True).all():
+                k = _situacao_extintor(e)[0]
+                if k in ("IRREGULAR", "VENCIDO", "EM_RECARGA"):
+                    venc += 1
+                elif k == "PROX_VENC":
+                    prox += 1
+            if venc:
+                pend.append((venc, "Extintores vencidos / irregulares", url_for("almox.extintores", situacao="VENCIDO")))
+            if prox:
+                tiles.append((prox, "Extintores vencendo", "warn", url_for("almox.extintores", situacao="PROX_VENC")))
+        if cap["material"]:
+            mb = sum(1 for p in ProdutoAlmox.query.filter_by(ativo=True).all() if p.abaixo_minimo)
+            if mb:
+                tiles.append((mb, "Abaixo do mínimo", "warn", url_for("almox.materiais", baixo="1")))
+        if cap["chaves"]:
+            eu = Chave.query.filter_by(ativo=True, status="Em uso").count()
+            tiles.append((eu, "Chaves em uso", "", url_for("almox.chaves")))
     except Exception:
         pass
-    return render_template("almox/home.html", topicos=topicos, resumo=resumo)
+
+    return render_template("almox/home.html", modo=modo, principal=principal,
+                           acoes=ACOES, pend=pend, tiles=tiles, cap=cap)
 
 
 @almox_bp.route("/em-construcao/<slug>")
@@ -244,12 +302,15 @@ def em_construcao(slug):
 @_guard("pode_chaves")
 def chaves():
     q = (request.args.get("q") or "").strip()
-    consulta = Chave.query.filter_by(ativo=True)
+    inativos = request.args.get("inativos") == "1"
+    consulta = Chave.query.filter_by(ativo=not inativos) if not inativos else Chave.query.filter_by(ativo=False)
     itens = [c for c in consulta.order_by(Chave.descricao).all()
              if not q or q.lower() in " ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]).lower()]
     quadros = QuadroChave.query.filter_by(ativo=True).order_by(QuadroChave.nome).all()
     colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
-    return render_template("almox/chaves.html", itens=itens, q=q, quadros=quadros, colabs=colabs)
+    n_inativas = Chave.query.filter_by(ativo=False).count()
+    return render_template("almox/chaves.html", itens=itens, q=q, quadros=quadros, colabs=colabs,
+                           inativos=inativos, n_inativas=n_inativas)
 
 
 def _resolver_quadro(form):
@@ -284,6 +345,31 @@ def chave_nova():
     db.session.commit()
     flash("Chave cadastrada." + ("" if quadro_id else " (Sem quadro — você pode definir depois em Editar.)"), "success")
     return redirect(url_for("almox.chaves"))
+
+
+@almox_bp.route("/chaves/<int:cid>/desativar", methods=["POST"])
+@_guard("chave_desativar")
+def chave_desativar(cid):
+    c = db.session.get(Chave, cid) or abort(404)
+    if c.status == "Em uso":
+        flash("Chave em uso não pode ser desativada. Faça a devolução primeiro.", "warning")
+        return redirect(url_for("almox.chaves"))
+    c.ativo = False
+    _log("Chave", f"Chave {c.descricao} desativada por {current_user.nome}")
+    db.session.commit()
+    flash("Chave desativada.", "success")
+    return redirect(url_for("almox.chaves"))
+
+
+@almox_bp.route("/chaves/<int:cid>/reativar", methods=["POST"])
+@_guard("chave_desativar")
+def chave_reativar(cid):
+    c = db.session.get(Chave, cid) or abort(404)
+    c.ativo = True
+    _log("Chave", f"Chave {c.descricao} reativada por {current_user.nome}")
+    db.session.commit()
+    flash("Chave reativada.", "success")
+    return redirect(url_for("almox.chaves", inativos="1"))
 
 
 @almox_bp.route("/chaves/<int:cid>/editar", methods=["POST"])
@@ -804,7 +890,7 @@ def extintor_repor(eid):
 
 
 @almox_bp.route("/extintores/<int:eid>/desativar", methods=["POST"])
-@_guard("pode_extintores")
+@_guard("ext_desativar")
 def extintor_desativar(eid):
     e = db.session.get(Extintor, eid) or abort(404)
     e.ativo = False
@@ -815,7 +901,7 @@ def extintor_desativar(eid):
 
 
 @almox_bp.route("/extintores/cadastro")
-@_guard("pode_extintores")
+@_guard("ext_cadastrar")
 def extintor_cadastro():
     def distintos(col):
         vals = db.session.query(col).filter(col.isnot(None), col != "").distinct().all()
@@ -832,7 +918,7 @@ def extintor_cadastro():
 
 
 @almox_bp.route("/extintores/novo", methods=["POST"])
-@_guard("pode_extintores")
+@_guard("ext_cadastrar")
 def extintor_novo():
     import secrets, json as _json
     predio = (request.form.get("predio") or "").strip().upper()
@@ -1368,9 +1454,37 @@ from flask import jsonify
 
 
 @almox_bp.route("/coletor")
-@modulo_required
+@_guard("pode_coletor")
 def coletor():
-    return render_template("almox/coletor.html")
+    abas = {
+        "chaves": _efetivo("col_chaves"),
+        "material": _efetivo("col_material"),
+        "mover": _efetivo("col_movimentacao"),
+        "inventario": _efetivo("col_inventario"),
+    }
+    return render_template("almox/coletor.html", abas=abas)
+
+
+def _aba_coletor_ok(aba):
+    """True se o usuário (ou perfil simulado) pode a aba do coletor: chaves|material|mover|inventario."""
+    mapa = {"chaves": "col_chaves", "material": "col_material",
+            "mover": "col_movimentacao", "inventario": "col_inventario"}
+    return _efetivo(mapa.get(aba, ""))
+
+
+def _aba_material_qualquer():
+    """Qualquer aba que lida com material/localizador (material, mover ou inventário)."""
+    return _aba_coletor_ok("material") or _aba_coletor_ok("mover") or _aba_coletor_ok("inventario")
+
+
+def _nega_aba(aba, msg=None):
+    textos = {
+        "chaves": "Seu perfil não pode usar o coletor para chaves.",
+        "material": "Seu perfil não pode usar o coletor para material.",
+        "mover": "Seu perfil não pode movimentar entre localizadores.",
+        "inventario": "Seu perfil não pode fazer inventário pelo coletor.",
+    }
+    return jsonify(ok=False, erro=msg or textos.get(aba, "Ação não permitida para o seu perfil.")), 403
 
 
 def _uid_limpo(qr_uid):
@@ -1393,6 +1507,8 @@ def coletor_api_colaborador(qr_uid):
 @almox_bp.route("/coletor/api/chave/<path:qr_uid>")
 @modulo_required
 def coletor_api_chave(qr_uid):
+    if not _aba_coletor_ok("chaves"):
+        return _nega_aba("chaves")
     uid = _uid_limpo(qr_uid)
     c = Chave.query.filter_by(qr_uid=uid, ativo=True).first()
     if not c:
@@ -1404,6 +1520,7 @@ def coletor_api_chave(qr_uid):
 @almox_bp.route("/coletor/api/confirmar", methods=["POST"])
 @modulo_required
 def coletor_api_confirmar():
+    if not _aba_coletor_ok("chaves"): return _nega_aba("chaves")
     """Aplica as ações de chave confirmadas pela senha do colaborador.
     payload: {colaborador_id, senha, acoes:[{chave_id, acao: 'retirar'|'devolver'}]}"""
     data = request.get_json(silent=True) or {}
@@ -1781,6 +1898,7 @@ def materiais_qr():
 @almox_bp.route("/coletor/api/produto/<path:qr_uid>")
 @modulo_required
 def coletor_api_produto(qr_uid):
+    if not _aba_coletor_ok("material"): return _nega_aba("material")
     uid = _uid_limpo(qr_uid)
     p = ProdutoAlmox.query.filter_by(qr_uid=uid, ativo=True).first()
     if not p:
@@ -1791,6 +1909,7 @@ def coletor_api_produto(qr_uid):
 @almox_bp.route("/coletor/api/material-saida", methods=["POST"])
 @modulo_required
 def coletor_api_material_saida():
+    if not _aba_coletor_ok("material"): return _nega_aba("material")
     """payload: {colaborador_id, senha, itens:[{produto_id, qtd}]}"""
     data = request.get_json(silent=True) or {}
     colab = db.session.get(Colaborador, data.get("colaborador_id") or 0)
@@ -1852,6 +1971,7 @@ def coletor_api_locais():
 @almox_bp.route("/coletor/api/mover-legado", methods=["POST"])
 @modulo_required
 def coletor_api_mover_legado():
+    if not _aba_coletor_ok("mover"): return _nega_aba("mover")
     data = request.get_json(silent=True) or {}
     p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
     destino = db.session.get(LocalAlmox, data.get("local_id") or 0)
@@ -1903,6 +2023,7 @@ def inventario_salvar():
 @almox_bp.route("/coletor/api/inventario", methods=["POST"])
 @modulo_required
 def coletor_api_inventario():
+    if not _aba_coletor_ok("inventario"): return _nega_aba("inventario")
     """payload: {produto_id, contado}"""
     data = request.get_json(silent=True) or {}
     p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
@@ -2078,6 +2199,81 @@ def localizadores_gerar():
 def relatorios_central():
     """Central de relatórios: reúne num lugar só todos os relatórios e exportações."""
     return render_template("almox/relatorios_central.html")
+
+
+@almox_bp.route("/dashboard")
+@_guard("pode_relatorios")
+def dashboard():
+    from datetime import timedelta
+    # ---- Material ----
+    ativos = ProdutoAlmox.query.filter_by(ativo=True).all()
+    mat_itens = len(ativos)
+    mat_baixo = sum(1 for p in ativos if p.abaixo_minimo)
+    mat_unidades = int(sum(p.saldo or 0 for p in ativos))
+    baixas_pend = AjusteInventario.query.filter_by(status="pendente").count()
+    nfs_classificar = NotaFiscalAlmox.query.filter(NotaFiscalAlmox.classificacao.is_(None)).count()
+
+    # ---- Solicitações por status (dinâmico) ----
+    LABELS = {
+        "AGUARDANDO_APROVACAO": ("Aguardando aprovação", "#f0be3c"),
+        "AGUARDANDO_ENVIO_COTACAO": ("Aguardando envio p/ cotação", "#5b9bd5"),
+        "AGUARDANDO_RECEBIMENTO_COTACAO": ("Aguardando cotação", "#5b9bd5"),
+        "AGUARDANDO_DEFINICAO_FORNECEDOR": ("Definição de fornecedor", "#8a7bd5"),
+        "AGUARDANDO_CHEGADA": ("Aguardando chegada", "#8a7bd5"),
+        "CONCLUIDO": ("Concluídas", "#32CAA0"),
+        "CONCLUIDA": ("Concluídas", "#32CAA0"),
+        "CANCELADA": ("Canceladas", "#ff8b82"),
+        "CANCELADO": ("Canceladas", "#ff8b82"),
+    }
+    rows = db.session.query(Solicitacao.status, db.func.count(Solicitacao.id)).group_by(Solicitacao.status).all()
+    smax = max([c for _, c in rows], default=0) or 1
+    solic = []
+    for st, c in sorted(rows, key=lambda r: -r[1]):
+        lbl, cor = LABELS.get(st, (st or "—", "#9a9a9a"))
+        solic.append({"status": st, "label": lbl, "cor": cor, "n": c, "pct": round(c / smax * 100)})
+
+    # ---- Extintores por situação (donut) ----
+    no_prazo = venc = prox = 0
+    for e in Extintor.query.filter_by(ativo=True).all():
+        k = _situacao_extintor(e)[0]
+        if k == "NO_PRAZO":
+            no_prazo += 1
+        elif k == "PROX_VENC":
+            prox += 1
+        else:
+            venc += 1
+    ext_total = no_prazo + venc + prox
+    segs, cum = [], 0.0
+    for val, cor, key, lbl in [(no_prazo, "#32CAA0", "NO_PRAZO", "No prazo"),
+                               (prox, "#f0be3c", "PROX_VENC", "Vencendo"),
+                               (venc, "#ff8b82", "VENCIDO", "Vencido / irregular")]:
+        ln = (val / ext_total * 100) if ext_total else 0
+        segs.append({"cor": cor, "dash": f"{ln:.1f} {100 - ln:.1f}",
+                     "offset": f"{(25 - cum):.1f}", "key": key, "label": lbl, "n": val})
+        cum += ln
+
+    # ---- Chaves ----
+    ch_total = Chave.query.filter_by(ativo=True).count()
+    ch_uso = Chave.query.filter_by(ativo=True, status="Em uso").count()
+
+    # ---- Movimentações (7 dias) ----
+    desde = datetime.utcnow() - timedelta(days=7)
+    mov_ent = mov_sai = 0
+    try:
+        mov_ent = MovimentacaoMaterial.query.filter(MovimentacaoMaterial.tipo == "entrada",
+                                                    MovimentacaoMaterial.criado_em >= desde).count()
+        mov_sai = MovimentacaoMaterial.query.filter(MovimentacaoMaterial.tipo == "saida",
+                                                    MovimentacaoMaterial.criado_em >= desde).count()
+    except Exception:
+        pass
+
+    return render_template("almox/dashboard.html",
+                           mat_itens=mat_itens, mat_baixo=mat_baixo, mat_unidades=mat_unidades,
+                           baixas_pend=baixas_pend, nfs_classificar=nfs_classificar,
+                           solic=solic, ext=dict(no_prazo=no_prazo, prox=prox, venc=venc,
+                           total=ext_total, segs=segs),
+                           ch_total=ch_total, ch_uso=ch_uso, mov_ent=mov_ent, mov_sai=mov_sai,
+                           is_admin=_efetivo("is_admin"))
 
 
 # ==================== IMPORTAÇÃO EM LOTE — COLABORADORES ====================
@@ -2283,6 +2479,7 @@ def _resolver_localizador(termo):
 @almox_bp.route("/coletor/api/localizador/<path:qr_uid>")
 @modulo_required
 def coletor_api_localizador(qr_uid):
+    if not _aba_material_qualquer(): return _nega_aba("material", "Seu perfil nao usa o coletor para material/localizadores.")
     loc = _resolver_localizador(qr_uid)
     if not loc:
         return jsonify(ok=False, erro="Localizador não encontrado."), 404
@@ -2296,6 +2493,8 @@ def coletor_api_item(qr_uid):
     uid = _uid_limpo(qr_uid)
     up = uid.upper()
     if up.startswith("CH-") or up.startswith("QUAD-"):
+        if not _aba_coletor_ok("chaves"):
+            return _nega_aba("chaves", "Seu perfil não usa o coletor para chaves.")
         c = Chave.query.filter_by(qr_uid=uid, ativo=True).first()
         if not c:
             return jsonify(ok=False, erro="Chave não encontrada."), 404
@@ -2303,6 +2502,8 @@ def coletor_api_item(qr_uid):
                        info=c.quadro_nome, status=c.status, com_quem=c.com_quem)
     p = ProdutoAlmox.query.filter_by(qr_uid=uid, ativo=True).first()
     if p:
+        if not _aba_material_qualquer():
+            return _nega_aba("material", "Seu perfil não usa o coletor para material.")
         return jsonify(ok=True, tipo="material", id=p.id, nome=p.nome,
                        info=(p.unidade or "UN"), saldo=p.saldo or 0, localizador=p.local_nome)
     return jsonify(ok=False, erro="Item não encontrado."), 404
@@ -2316,6 +2517,13 @@ def coletor_api_buscar():
     tipo = request.args.get("tipo", "")
     q = _norm(request.args.get("q", ""))
     res = []
+    # bloqueios por aba
+    if tipo == "loc" and not _aba_material_qualquer():
+        return _nega_aba("material")
+    if tipo in ("fabricante", "nf") and not _aba_coletor_ok("material"):
+        return _nega_aba("material")
+    if tipo == "colab" and not (_aba_coletor_ok("chaves") or _aba_coletor_ok("material")):
+        return _nega_aba("chaves")
     if tipo == "colab":
         for c in Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all():
             if not q or q in _norm(c.nome) or q in _norm(c.empresa):
@@ -2326,14 +2534,16 @@ def coletor_api_buscar():
                 res.append({"id": l.id, "nome": l.codigo, "info": l.caminho})
         res.sort(key=lambda x: x["nome"])
     elif tipo == "item":
-        for p in ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all():
-            if not q or q in _norm(p.nome) or q in _norm(p.codigo) or q in _norm(p.codigo_barras):
-                res.append({"id": p.id, "tipo": "material", "nome": p.nome,
-                            "info": "Material · " + (p.local_nome or "—"), "saldo": p.saldo or 0})
-        for c in Chave.query.filter_by(ativo=True).order_by(Chave.descricao).all():
-            if not q or q in _norm(c.descricao) or q in _norm(c.quadro_nome):
-                res.append({"id": c.id, "tipo": "chave", "nome": c.descricao,
-                            "info": "Chave · " + (c.quadro_nome or "—"), "status": c.status})
+        if _aba_material_qualquer():
+            for p in ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all():
+                if not q or q in _norm(p.nome) or q in _norm(p.codigo) or q in _norm(p.codigo_barras):
+                    res.append({"id": p.id, "tipo": "material", "nome": p.nome,
+                                "info": "Material · " + (p.local_nome or "—"), "saldo": p.saldo or 0})
+        if _aba_coletor_ok("chaves"):
+            for c in Chave.query.filter_by(ativo=True).order_by(Chave.descricao).all():
+                if not q or q in _norm(c.descricao) or q in _norm(c.quadro_nome):
+                    res.append({"id": c.id, "tipo": "chave", "nome": c.descricao,
+                                "info": "Chave · " + (c.quadro_nome or "—"), "status": c.status})
     elif tipo == "fabricante":
         for f in Fabricante.query.filter_by(ativo=True).order_by(Fabricante.nome).all():
             if not q or q in _norm(f.nome):
@@ -2372,7 +2582,11 @@ def coletor_api_retirar():
     itens = data.get("itens") or []
     if not itens:
         return jsonify(ok=False, erro="Cesta vazia."), 400
-    # valida saldo de materiais antes de aplicar (POR LOCALIZADOR quando informado)
+    _tipos = {it.get("tipo") for it in itens}
+    if "chave" in _tipos and not _aba_coletor_ok("chaves"):
+        return _nega_aba("chaves")
+    if "material" in _tipos and not _aba_coletor_ok("material"):
+        return _nega_aba("material")
     plano_mat, faltas, plano_chave = [], [], []
     for it in itens:
         if it.get("tipo") == "material":
@@ -2435,6 +2649,11 @@ def coletor_api_devolver():
     itens = data.get("itens") or []
     if not itens:
         return jsonify(ok=False, erro="Cesta vazia."), 400
+    _tipos = {it.get("tipo") for it in itens}
+    if "chave" in _tipos and not _aba_coletor_ok("chaves"):
+        return _nega_aba("chaves")
+    if "material" in _tipos and not _aba_coletor_ok("material"):
+        return _nega_aba("material")
     feitas = []
     for it in itens:
         if it.get("tipo") == "material":
@@ -2468,6 +2687,8 @@ def coletor_api_entrada():
     {produto_id, qtd, valor_unit, fabricante_id, fabricante_nd,
      opcionais:{tag,ca,validade,validade_calib,lote},
      nf:{modo:'sem'|'vincular'|'manual', nf_id, fornecedor, numero}}"""
+    if not _aba_coletor_ok("material"):
+        return _nega_aba("material")
     from datetime import datetime as _dt
     data = request.get_json(silent=True) or {}
     p = db.session.get(ProdutoAlmox, data.get("produto_id") or 0)
@@ -2525,6 +2746,7 @@ def coletor_api_entrada():
 @almox_bp.route("/coletor/api/item-pendente", methods=["POST"])
 @modulo_required
 def coletor_api_item_pendente():
+    if not _aba_coletor_ok("material"): return _nega_aba("material")
     """Cadastro rápido de item NÃO existente durante a entrada: cria PENDENTE de aprovação."""
     import secrets
     data = request.get_json(silent=True) or {}
@@ -2548,6 +2770,7 @@ def coletor_api_item_pendente():
 @almox_bp.route("/coletor/api/item-opcionais/<int:pid>")
 @modulo_required
 def coletor_api_item_opcionais(pid):
+    if not _aba_coletor_ok("material"): return _nega_aba("material")
     p = db.session.get(ProdutoAlmox, pid)
     if not p or not p.ativo:
         return jsonify(ok=False, erro="Item não encontrado."), 404
@@ -2560,6 +2783,7 @@ def coletor_api_item_opcionais(pid):
 @almox_bp.route("/coletor/api/localizador-itens/<int:loc_id>")
 @modulo_required
 def coletor_api_localizador_itens(loc_id):
+    if not _aba_material_qualquer(): return _nega_aba("material")
     """Itens estocados no localizador (saldo POR localizador), para conferência de inventário."""
     linhas = EstoqueLocalizador.query.filter_by(localizador_id=loc_id).all()
     itens = []
@@ -2585,6 +2809,7 @@ def _current_pode_conferir(senha):
 @almox_bp.route("/coletor/api/inventario-salvar", methods=["POST"])
 @modulo_required
 def coletor_api_inventario_salvar():
+    if not _aba_coletor_ok("inventario"): return _nega_aba("inventario")
     """payload: {localizador_id, localizador_cod, senha, itens:[{produto_id, contado}]}
     Acréscimo aplica na hora; BAIXA fica pendente de aprovação do admin (não altera saldo ainda)."""
     data = request.get_json(silent=True) or {}
@@ -2702,6 +2927,7 @@ def relatorio_perdas():
 @almox_bp.route("/coletor/api/estoque/<int:produto_id>/<int:loc_id>")
 @modulo_required
 def coletor_api_estoque(produto_id, loc_id):
+    if not _aba_material_qualquer(): return _nega_aba("material")
     """Quantidade de um item numa prateleira específica (para saber se há 2+ ao mover)."""
     p = db.session.get(ProdutoAlmox, produto_id)
     if not p:
@@ -2713,6 +2939,7 @@ def coletor_api_estoque(produto_id, loc_id):
 @almox_bp.route("/coletor/api/mover", methods=["POST"])
 @modulo_required
 def coletor_api_mover_v2():
+    if not _aba_coletor_ok("mover"): return _nega_aba("mover")
     """MOVER material entre localizadores. Fase 2 (destinar).
     payload: {senha, destino_loc_id, destino_cod, ciente, itens:[{produto_id, origem_loc_id, origem_cod, qtd}]}
     Se algum item já existir em OUTRO localizador (além do destino), retorna needs_confirm até 'ciente'."""
@@ -2774,6 +3001,7 @@ def coletor_api_mover_v2():
 @almox_bp.route("/coletor/api/instancias/<int:produto_id>/<int:loc_id>")
 @modulo_required
 def coletor_api_instancias(produto_id, loc_id):
+    if not _aba_coletor_ok("inventario"): return _nega_aba("inventario")
     """Instâncias (unidades/TAG) de um item num localizador + os campos opcionais do cadastro-raiz."""
     p = db.session.get(ProdutoAlmox, produto_id)
     if not p:
@@ -2792,6 +3020,7 @@ def coletor_api_instancias(produto_id, loc_id):
 @almox_bp.route("/coletor/api/instancia-salvar", methods=["POST"])
 @modulo_required
 def coletor_api_instancia_salvar():
+    if not _aba_coletor_ok("inventario"): return _nega_aba("inventario")
     """Ajusta os dados de N unidades de um item (não mexe na quantidade de estoque).
     payload: {produto_id, loc_id, instancia_id (ou null), quantidade, campos:{tag,ca,validade,validade_calib,lote}, senha}"""
     from datetime import datetime as _dt
@@ -3025,14 +3254,19 @@ def _perms_simuladas():
 
 
 def _efetivo(prop):
-    """Valor efetivo de uma permissão: se estiver simulando um perfil, usa as tarefas dele
-    (mesma fonte de verdade do Colaborador: perm_from_tasks); senão, o valor real do usuário logado.
-    is_master nunca é simulado (garante a saída)."""
+    """Valor efetivo de uma permissão/tarefa. Se simulando um perfil, usa as tarefas dele
+    (perm_from_tasks); senão usa a propriedade do usuário, e se não existir, cai em tem_tarefa
+    (para nomes de tarefa como ext_cadastrar, ext_desativar, chave_desativar). is_master nunca simula."""
+    if prop == "is_master":
+        return bool(getattr(current_user, "is_master", False))
     perms = _perms_simuladas()
-    if perms is None or prop == "is_master":
-        return bool(getattr(current_user, prop, False))
-    from .models import perm_from_tasks
-    return perm_from_tasks(perms, prop)
+    if perms is not None:
+        from .models import perm_from_tasks
+        return perm_from_tasks(perms, prop)
+    if hasattr(current_user, prop):
+        return bool(getattr(current_user, prop))
+    tem = getattr(current_user, "tem_tarefa", None)
+    return bool(tem(prop)) if tem else False
 
 
 def _bloqueado_ver_como():
@@ -3079,6 +3313,8 @@ def _inject_ver_como():
     p = _Perm()
     for prop in ("is_admin", "is_master", "is_almox", "pode_almox_modulo", "pode_chaves",
                  "pode_extintores", "pode_material", "pode_locais", "pode_relatorios",
-                 "pode_colaboradores", "pode_solicitar"):
+                 "pode_coletor", "pode_criar_solicitacao", "pode_ver_solicitacoes",
+                 "pode_colaboradores", "pode_solicitar",
+                 "ext_cadastrar", "ext_desativar", "chave_desativar"):
         setattr(p, prop, _efetivo(prop))
     return {"perm": p, "ver_como_nome": nome}

@@ -6,6 +6,7 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('almox.quadros_chave') }}">Quadros</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('almox.chaves_qr') }}" target="_blank">Imprimir QR</a>
+    {% if perm.chave_desativar %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('almox.chaves', inativos='' if inativos else '1') }}">{{ 'Ver ativas' if inativos else 'Ver desativadas' }}{% if n_inativas and not inativos %} ({{ n_inativas }}){% endif %}</a>{% endif %}
     <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#novaModal">＋ Nova chave</button>
   </div>
 </div>
@@ -23,6 +24,19 @@
       <td class="text-end">
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('almox.chave_historico', cid=c.id) }}">Histórico</a>
         <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#e{{ c.id }}">Editar</button>
+        {% if perm.chave_desativar %}
+          {% if inativos %}
+          <form method="post" action="{{ url_for('almox.chave_reativar', cid=c.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-success">Reativar</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('almox.chave_desativar', cid=c.id) }}" class="d-inline" onsubmit="return confirm('Desativar esta chave?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger">Desativar</button>
+          </form>
+          {% endif %}
+        {% endif %}
       </td>
     </tr>
     <tr class="collapse" id="e{{ c.id }}"><td colspan="5"><form method="post" action="{{ url_for('almox.chave_editar', cid=c.id) }}" class="row g-2">

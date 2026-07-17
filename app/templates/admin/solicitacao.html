@@ -26,7 +26,7 @@
         <dt class="col-4">Fabricante</dt><dd class="col-8">{{ s.fabricante or '-' }}</dd>
         <dt class="col-4">Tipo</dt><dd class="col-8">{{ s.tipo.nome if s.tipo else '-' }}</dd>
         <dt class="col-4">Local / frente</dt><dd class="col-8">{{ s.local_servico or '-' }}</dd>
-        <dt class="col-4">Solicitante</dt><dd class="col-8">{{ s.solicitante.nome }}</dd>
+        <dt class="col-4">Solicitante</dt><dd class="col-8">{{ s.solicitante_display }}</dd>
         <dt class="col-4">Similar</dt><dd class="col-8">{% if s.link_similar %}<a href="{{ s.link_similar }}" target="_blank">link</a>{% else %}-{% endif %}</dd>
         {% if s.prazo_recebimento %}<dt class="col-4">Prazo receb.</dt><dd class="col-8">{{ s.prazo_recebimento.strftime('%d/%m/%Y') }}</dd>{% endif %}
         {% if s.frete_tipo %}<dt class="col-4">Frete</dt><dd class="col-8">{{ s.frete_tipo }}{% if s.frete_modalidade %} · {{ s.frete_modalidade|capitalize }}{% endif %}{% if s.transportadora %} · {{ s.transportadora.nome }}{% endif %}{% if s.cidade_retirada %} · {{ s.cidade_retirada.rotulo }}{% endif %}</dd>{% endif %}
@@ -70,7 +70,7 @@
       <h6>Histórico</h6>
       <ul class="list-unstyled small mb-0">
         {% for l in s.logs %}<li class="border-start ps-2 mb-1" style="border-color:var(--coral)!important;border-width:2px!important;">
-          <span class="text-muted">{{ l.criado_em.strftime('%d/%m/%Y %H:%M') }}</span> — {{ l.evento }}{% if l.autor %} <span class="text-muted">({{ l.autor.nome }})</span>{% endif %}</li>
+          <span class="text-muted">{{ l.criado_em.strftime('%d/%m/%Y %H:%M') }}</span> — {{ l.evento }}{% if l.autor_display and l.autor_display != "—" %} <span class="text-muted">({{ l.autor_display }})</span>{% endif %}</li>
         {% else %}<li class="text-muted">Sem registros ainda.</li>{% endfor %}
       </ul>
     </div></div>

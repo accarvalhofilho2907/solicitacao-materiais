@@ -156,6 +156,7 @@
       {{ item('admin.atividades','tag','Atividades') }}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
+      {{ item('solicitante.index','doc','Solicitações') }}
       {{ item('admin.aprovacoes','check','Aprovações', n_aprovacoes) }}
       {{ item('almox.index','box','Chegadas') }}
       {{ item('admin.coletas_proprias','truck','Coletas próprias') }}
@@ -170,6 +171,7 @@
       {{ item('almox.localizadores_gerar','cog','Gerar localizadores') }}
 
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
+      {{ item('almox.dashboard','chart','Dashboard') }}
       {{ item('almox.relatorios_central','chart','Central de relatórios') }}
       {{ item('almox.relatorio_perdas','chart','Perdas de estoque') }}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
@@ -186,7 +188,6 @@
       {{ item('admin.backup','save','Baixar backup (.sql)') }}
       {{ item('admin.sugestoes','bulb','Sugestões') }}
       {{ item('geral.faq','quest','FAQ') }}
-      {{ item('geral.novidades','list','Novidades') }}
       {% if current_user.is_master %}{{ item('admin.usuarios','user','Usuários - Antigo') }}{% endif %}
     {% else %}
       {% if perm.pode_colaboradores %}
@@ -195,9 +196,8 @@
       {% endif %}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
-      {% if perm.pode_almox_modulo %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
-      {% if perm.pode_solicitar %}{{ item('solicitante.nova','doc','Nova solicitação') }}{% endif %}
-      {{ item('solicitante.index','doc','Minhas solicitações') }}
+      {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
+      {% if perm.pode_ver_solicitacoes %}{{ item('solicitante.index','doc','Minhas solicitações') }}{% endif %}
       {% if perm.pode_material %}
         {{ item('almox.materiais','box','Material (estoque)') }}
         {{ item('almox.index','box','Confirmar chegadas') }}
@@ -208,7 +208,7 @@
 
       {% if perm.pode_relatorios or perm.is_almox %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
-      {% if perm.pode_relatorios %}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{% endif %}
+      {% if perm.pode_relatorios %}{{ item('almox.dashboard','chart','Dashboard') }}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{% endif %}
       {% if perm.is_almox %}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
       {{ item('relatorios.carga','chart','Relatório de carga') }}
@@ -218,7 +218,6 @@
       <div class="sb-sec">Ajuda<span class="chev">▾</span></div>
       {{ item('geral.faq','quest','FAQ') }}
       {{ item('geral.sugerir','bulb','Sugerir melhoria') }}
-      {{ item('geral.novidades','list','Novidades') }}
     {% endif %}
     </nav>
   </aside>

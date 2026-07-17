@@ -70,7 +70,7 @@
     <tbody>{% for p in pedidos %}<tr>
       <td><input type="checkbox" class="cbItem" name="ids" value="{{ p.id }}" checked></td>
       <td>{{ p.id }}</td><td>{{ p.material }} <span class="text-muted small">(x{{ p.quantidade }})</span></td>
-      <td class="small">{{ p.solicitante.nome }}</td><td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span>{% if p.cotacao_vencida %} <span class="badge bg-danger">prazo vencido</span>{% endif %}{% if p.chegada_atrasada %} <span class="badge bg-danger">chegada atrasada</span>{% endif %}</td>
+      <td class="small">{{ p.solicitante_display }}</td><td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span>{% if p.cotacao_vencida %} <span class="badge bg-danger">prazo vencido</span>{% endif %}{% if p.chegada_atrasada %} <span class="badge bg-danger">chegada atrasada</span>{% endif %}</td>
       <td class="text-nowrap">{% if p.status == 'AGUARDANDO_APROVACAO' %}<span class="badge bg-warning text-dark">aprovar</span> {% endif %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.solicitacao', sid=p.id, voltar=request.query_string.decode()) }}">Abrir</a></td></tr>
     {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nada encontrado.</td></tr>{% endfor %}</tbody>
   </table></div></div>

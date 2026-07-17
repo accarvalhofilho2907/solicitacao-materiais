@@ -22,7 +22,7 @@
           <button class="btn btn-sm btn-outline-secondary" title="Salvar quantidade">✓</button>
         </form>
       </td>
-      <td class="small">{{ p.solicitante.nome }}</td>
+      <td class="small">{{ p.solicitante_display }}</td>
       <td class="small">{{ p.tipo.nome if p.tipo else '-' }}</td>
       <td class="small text-muted">{{ p.criado_em.strftime('%d/%m %H:%M') }}</td>
       <td class="text-nowrap">

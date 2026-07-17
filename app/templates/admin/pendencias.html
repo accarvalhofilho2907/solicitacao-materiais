@@ -10,7 +10,7 @@
     <thead class="table-light"><tr><th>Nº</th><th>Material</th><th>Solicitante</th><th>{{ campo }}</th><th></th></tr></thead>
     <tbody>{% for p in itens %}<tr>
       <td>{{ p.id }}</td><td>{{ p.material }} <span class="text-muted small">(x{{ p.quantidade }})</span></td>
-      <td class="small">{{ p.solicitante.nome }}</td>
+      <td class="small">{{ p.solicitante_display }}</td>
       <td class="small">{% if campo == 'Prazo cotação' %}{{ p.prazo_cotacao.strftime('%d/%m/%Y') if p.prazo_cotacao else '-' }}
           {% elif campo == 'Prazo chegada' %}{{ p.prazo_recebimento.strftime('%d/%m/%Y') if p.prazo_recebimento else '-' }}
           {% else %}{{ p.criado_em.strftime('%d/%m/%Y') }}{% endif %}</td>

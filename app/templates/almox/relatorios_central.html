@@ -3,6 +3,7 @@
 {% block content %}
 <h4 class="mb-1">Central de relatórios</h4>
 <p class="text-muted small">Todos os relatórios e exportações num lugar só. Cada card abre o relatório; onde houver, use os botões CSV/PDF para baixar.</p>
+<a href="{{ url_for('almox.dashboard') }}" class="btn btn-sm btn-primary mb-3">📊 Abrir Dashboard (visão geral)</a>
 
 {% macro card(titulo, itens) %}
 <div class="col-md-6 col-lg-4">

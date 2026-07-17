@@ -18,6 +18,8 @@ sol_bp = Blueprint("solicitante", __name__, url_prefix="/solicitante")
 @sol_bp.route("/")
 @login_required
 def index():
+    if not (current_user.is_admin or getattr(current_user, "pode_ver_solicitacoes", False)):
+        abort(403)
     # Painel de visualização livre: todos veem todas (filtros avançados como o admin)
     q = Solicitacao.query
     f_status = request.args.getlist("status")
@@ -44,10 +46,10 @@ def index():
     pedidos = q.order_by(Solicitacao.atualizado_em.desc()).all()
     if f_busca:  # busca ignora acentos (item 150)
         pedidos = [s for s in pedidos if contem_busca(s.material, f_busca)]
-    pode_criar = current_user.is_admin or current_user.pode_solicitar
+    pode_criar = current_user.is_admin or getattr(current_user, "pode_criar_solicitacao", False)
     return render_template("solicitante/index.html", pedidos=pedidos,
         tipos=TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all(),
-        solicitantes=Usuario.query.filter(Usuario.papel.in_(["solicitante", "almoxarifado"])).order_by(Usuario.nome).all(),
+        solicitantes=Usuario.query.filter(Usuario.papel.in_(["solicitante", "almoxarifado"]), Usuario.ativo.is_(True)).order_by(Usuario.nome).all(),
         fornecedores=Fornecedor.query.order_by(Fornecedor.nome_fantasia).all(),
         f_status=f_status, f_sol=[int(x) for x in f_sol], f_forn=[int(x) for x in f_forn],
         f_tipo=f_tipo, f_busca=f_busca, f_de=f_de, f_ate=f_ate, pode_criar=pode_criar)
@@ -56,12 +58,15 @@ def index():
 @sol_bp.route("/nova", methods=["GET", "POST"])
 @login_required
 def nova():
-    if not (current_user.is_admin or current_user.pode_solicitar):
+    if not (current_user.is_admin or getattr(current_user, "pode_criar_solicitacao", False)):
         abort(403)
     tipos = TipoMaterial.query.filter_by(ativo=True).order_by(TipoMaterial.nome).all()
     if request.method == "POST":
+        _ehcolab = getattr(current_user, "__tablename__", "") == "almox_colaboradores"
         s = Solicitacao(
-            solicitante_id=current_user.id,
+            solicitante_id=(None if _ehcolab else current_user.id),
+            solicitante_colab_id=(current_user.id if _ehcolab else None),
+            solicitante_nome=current_user.nome,
             tipo_material_id=request.form.get("tipo_material_id") or None,
             material=request.form.get("material", "").strip(),
             quantidade=int(request.form.get("quantidade") or 1),
@@ -80,7 +85,9 @@ def nova():
             url = salvar_imagem(f)
             if url:
                 db.session.add(Imagem(solicitacao_id=s.id, url=url))
-        db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=current_user.id,
+        db.session.add(LogSolicitacao(solicitacao_id=s.id,
+                                      autor_id=(None if _ehcolab else current_user.id),
+                                      autor_nome=current_user.nome,
                                       evento="Solicitação criada (aguardando aprovação)"))
         try:
             from .logsys import registrar as _logsys
@@ -115,7 +122,7 @@ def detalhe(sid):
                          f"{current_user.nome} respondeu na solicitação Nº {s.id}.\n{texto}")
             flash("Comentário enviado.", "success")
         return redirect(url_for("solicitante.detalhe", sid=s.id))
-    pode_criar = current_user.is_admin or current_user.pode_solicitar
+    pode_criar = current_user.is_admin or getattr(current_user, "pode_criar_solicitacao", False)
     voltar = request.args.get("voltar", "")
     voltar_url = url_for("solicitante.index") + (("?" + voltar) if voltar else "")
     return render_template("solicitante/detalhe.html", s=s, leitura=not pode_comentar,

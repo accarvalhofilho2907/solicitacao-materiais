@@ -88,8 +88,17 @@ def _light_migrate():
             db.session.commit()
         except Exception:
             db.session.rollback()
+        # Solicitante: solicitante_id apontava só p/ usuarios; colaborador que cria caía no id de
+        # outro usuário. Agora usa snapshot (solicitante_nome) + solicitante_colab_id; solicitante_id
+        # deixa de ser NOT NULL.
+        try:
+            db.session.execute(text('ALTER TABLE solicitacoes ALTER COLUMN solicitante_id DROP NOT NULL'))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
     # Backfill: todos os cadastros em MAIÚSCULAS (item 88). Idempotente.
     _maiusculas_cadastros(insp)
+    _migrar_solicitante_nome()
     # Unificação Fornecedores/Empresas (item 150). Aditiva e idempotente.
     _unificar_empresas_fornecedores(insp)
 
@@ -326,6 +335,35 @@ def _seed_fabricantes():
     for nome in ["3M", "CISER", "SIEMENS", "WEG", "PADO", "TRAMONTINA"]:
         db.session.add(Fabricante(nome=nome, ativo=True))
     db.session.commit()
+
+
+def _migrar_solicitante_nome():
+    """Backfill do nome do solicitante (snapshot). Antes, colaborador que criava solicitação caía no
+    id de um usuário qualquer. Usa o log de sistema (AlmoxLog '#<id>: criada') como fonte confiável do
+    autor; para registros antigos sem log, cai no usuário vinculado. Idempotente (só onde nome é nulo)."""
+    import re
+    from .models import Solicitacao, AlmoxLog
+    try:
+        pend = Solicitacao.query.filter(Solicitacao.solicitante_nome.is_(None)).all()
+        if not pend:
+            return
+        mapa = {}
+        for lg in AlmoxLog.query.filter(AlmoxLog.categoria == "Solicitação").all():
+            m = re.match(r"#(\d+):\s*criada", (lg.detalhe or ""))
+            if m and lg.autor_nome:
+                mapa[int(m.group(1))] = lg.autor_nome
+        n = 0
+        for s in pend:
+            nome = mapa.get(s.id)
+            if not nome and s.solicitante_id and s.solicitante:
+                nome = s.solicitante.nome
+            if nome:
+                s.solicitante_nome = nome
+                n += 1
+        if n:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def _migrar_estoque_localizador():

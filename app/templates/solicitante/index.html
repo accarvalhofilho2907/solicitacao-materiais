@@ -26,7 +26,7 @@
   <div class="card"><div class="table-responsive"><table class="table table-hover mb-0 align-middle">
     <thead class="table-light"><tr><th><input type="checkbox" id="selTodos" checked onclick="document.querySelectorAll('.cbItem').forEach(c=>c.checked=this.checked)"></th><th>Nº</th><th>Material</th><th>Solicitante</th><th>Status</th><th>Atualizado</th><th></th></tr></thead>
     <tbody>{% for p in pedidos %}<tr><td><input type="checkbox" class="cbItem" name="ids" value="{{ p.id }}" checked></td><td>{{ p.id }}</td><td>{{ p.material }} <span class="text-muted small">(x{{ p.quantidade }})</span></td>
-      <td class="small">{{ p.solicitante.nome }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span></td><td class="small text-muted">{{ p.atualizado_em.strftime('%d/%m %H:%M') }}</td>
+      <td class="small">{{ p.solicitante_display }}</td><td><span class="badge bg-secondary">{{ p.status_label }}</span></td><td class="small text-muted">{{ p.atualizado_em.strftime('%d/%m %H:%M') }}</td>
       <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('solicitante.detalhe', sid=p.id, voltar=request.query_string.decode()) }}">Abrir</a></td></tr>
     {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nenhuma solicitação.</td></tr>{% endfor %}</tbody>
   </table></div></div>

@@ -17,26 +17,27 @@
 
   /* ---- Térmica: bobina 45x20mm, 2 etiquetas por linha (padrão) ---- */
   {% if formato == 'termica' %}
-  @page{ size:96mm 22mm; margin:1mm; }
+  @page{ size:96mm 22mm; margin:0; }
   {% endif %}
-  .bobina{display:flex;flex-wrap:wrap;gap:2mm}
+  .bobina{display:flex;flex-wrap:wrap;gap:2mm;padding:1mm}
   .bobina .cel{
     width:45mm;height:20mm;box-sizing:border-box;
-    display:flex;align-items:center;gap:1.4mm;
-    padding:1mm 1.4mm 1mm 0;overflow:hidden;
+    display:flex;align-items:center;gap:1.2mm;
+    padding:1mm 1.2mm 1mm 0;overflow:hidden;
     border:0.2mm solid #000;border-radius:1.2mm;
     page-break-inside:avoid;background:#fff;color:#000;
   }
-  .bobina .accent{width:1.6mm;align-self:stretch;background:#000;border-radius:1.2mm 0 0 1.2mm;flex:0 0 1.6mm}
-  .bobina .qr{flex:0 0 16mm;display:flex;align-items:center;justify-content:center}
-  .bobina .qr svg{width:16mm;height:16mm;display:block}
-  .bobina .txt{flex:1;min-width:0;line-height:1.12;padding-left:.5mm}
-  .bobina .tag{display:inline-block;font-size:5pt;font-weight:700;letter-spacing:.08em;
-    border:0.2mm solid #000;border-radius:1mm;padding:0 .8mm;margin-bottom:.4mm}
-  .bobina .cod{font-weight:800;font-size:10pt;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bobina .loc{font-size:6.5pt;margin-top:.5mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bobina .brand{font-size:5pt;letter-spacing:.06em;margin-top:.6mm;color:#000;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  @media print{ .bobina{gap:0} }
+  .bobina .accent{width:1.4mm;align-self:stretch;background:#000;border-radius:1.2mm 0 0 1.2mm;flex:0 0 1.4mm}
+  .bobina .qr{flex:0 0 15mm;display:flex;align-items:center;justify-content:center}
+  .bobina .qr svg{width:15mm;height:15mm;display:block}
+  .bobina .txt{flex:1;min-width:0;line-height:1.1;padding-left:.5mm}
+  .bobina .tag{display:inline-block;font-size:5pt;font-weight:700;letter-spacing:.06em;
+    border:0.2mm solid #000;border-radius:1mm;padding:0 .7mm;margin-bottom:.3mm}
+  .bobina .cod{font-weight:800;font-size:9.5pt;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bobina .loc{font-size:6pt;line-height:1.08;margin-top:.4mm;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .bobina .brand{font-size:4.5pt;letter-spacing:.05em;margin-top:.4mm;color:#000;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media print{ .bobina{gap:0;padding:0} }
 </style></head><body>
 <div class="noprint">
   <button onclick="window.print()">🖨️ Imprimir</button>

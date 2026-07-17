@@ -1138,6 +1138,105 @@ def extintores_qr():
     return render_template("almox/extintores_qr.html", itens=itens, qr_svg=_qr_svg, formato=formato)
 
 
+@almox_bp.route("/extintores/etiquetas.pdf")
+@_guard("pode_extintores")
+def extintores_etiquetas_pdf():
+    """PDF no tamanho EXATO do rolo de etiquetas (2 colunas de 45x20mm). Cada pagina = uma linha
+    (as duas etiquetas lado a lado). Impressao 100%, sem escala -> encaixa em cada etiqueta.
+    Medidas ajustaveis por querystring (mm): lw, lh, ml, gap, mr, rowgap, qr, dx, dy."""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.graphics import renderPDF
+    from flask import Response
+    import io
+
+    def _f(k, d):
+        try:
+            return float(request.args.get(k, d))
+        except (TypeError, ValueError):
+            return d
+
+    ids = request.args.get("ids") or ""
+    consulta = Extintor.query.filter_by(ativo=True)
+    if ids.strip():
+        lista_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+        consulta = consulta.filter(Extintor.id.in_(lista_ids))
+    itens = consulta.order_by(Extintor.predio, Extintor.local).all()
+
+    # Geometria (mm) — medidas reais do rolo (ajustaveis via querystring)
+    LW = _f("lw", 45.0)      # largura etiqueta
+    LH = _f("lh", 20.0)      # altura etiqueta
+    ML = _f("ml", 2.0)       # margem esquerda
+    GAP = _f("gap", 2.0)     # vao entre as duas colunas
+    MR = _f("mr", 1.0)       # margem direita
+    ROWGAP = _f("rowgap", 3.0)   # vao entre linhas (gap do sensor)
+    QR = _f("qr", 16.0)      # tamanho do QR
+    DX = _f("dx", 0.0) * mm  # ajuste fino do conteudo X
+    DY = _f("dy", 0.0) * mm  # ajuste fino do conteudo Y
+    modo = request.args.get("modo", "gap")   # 'gap' (pagina = etiqueta) ou 'continuo' (inclui rowgap)
+
+    LINER = ML + LW + GAP + LW + MR          # 95
+    PW = LINER * mm
+    PH = (LH + (ROWGAP if modo == "continuo" else 0)) * mm
+    base = (ROWGAP * mm) if modo == "continuo" else 0   # no continuo, gap fica embaixo
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(PW, PH))
+    host = request.host_url
+    colx = [ML * mm, (ML + LW + GAP) * mm]
+
+    def wrap(s, n):
+        out, cur = [], ""
+        for w in (s or "").split():
+            if len(cur) + len(w) + (1 if cur else 0) <= n:
+                cur = (cur + " " + w).strip()
+            else:
+                out.append(cur); cur = w
+        if cur:
+            out.append(cur)
+        return out or [""]
+
+    def draw_label(x0, e):
+        url = host + "almoxarifado/e/" + (e.qr_uid or str(e.id))
+        qrsize = QR * mm
+        qx = x0 + 1.5 * mm + DX
+        qy = base + (LH * mm - qrsize) / 2 + DY
+        try:
+            w = QrCodeWidget(url); b = w.getBounds()
+            ww, hh = b[2] - b[0], b[3] - b[1]
+            d = Drawing(qrsize, qrsize, transform=[qrsize / ww, 0, 0, qrsize / hh, 0, 0]); d.add(w)
+            renderPDF.draw(d, c, qx, qy)
+        except Exception:
+            pass
+        tx = qx + qrsize + 1.6 * mm
+        top = base + LH * mm - 4.2 * mm + DY
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(tx, top, (e.codigo or "-"))
+        c.setFont("Helvetica", 6)
+        loc = " · ".join([p for p in [e.predio, e.local] if p])
+        yy = top - 3.1 * mm
+        for ln in wrap(loc, 24)[:2]:
+            c.drawString(tx, yy, ln); yy -= 2.5 * mm
+        c.setFont("Helvetica", 4.5)
+        c.drawString(tx, base + 1.4 * mm + DY, "SERENA · CLUSTER DELTA")
+
+    i = 0
+    if not itens:
+        c.showPage()
+    while i < len(itens):
+        for col in range(2):
+            if i < len(itens):
+                draw_label(colx[col], itens[i]); i += 1
+        c.showPage()
+        c.setPageSize((PW, PH))
+    c.save()
+    buf.seek(0)
+    return Response(buf.read(), mimetype="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=etiquetas_extintores.pdf"})
+
+
 @almox_bp.route("/extintores/pdf")
 @_guard("pode_extintores")
 def extintores_pdf():

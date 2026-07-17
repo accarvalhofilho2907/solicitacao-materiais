@@ -227,8 +227,10 @@
 
 <script>
 function mostra(id){
-  document.getElementById('formInsp').style.display = (id==='formInsp')?'block':'none';
-  document.getElementById('formRepo').style.display = (id==='formRepo')?'block':'none';
+  ['formInsp','formRepo','formRepoIrr'].forEach(function(f){
+    var el = document.getElementById(f);
+    if(el){ el.style.display = (f===id) ? 'block' : 'none'; }
+  });
 }
 </script>
 {% endblock %}

@@ -124,14 +124,6 @@
         {{ checklist('insp', check) }}
         {{ item_etiqueta_bloco('insp') }}
         {{ item_datas_bloco() }}
-        <div class="py-2 border-top">
-          <label class="small fw-bold d-block mb-1">Classe do extintor (corrigir se necessário)</label>
-          <select name="corr_classe" class="form-select form-select-sm" style="max-width:180px">
-            <option value="ABC" {{ 'selected' if (e.classe or '')|upper == 'ABC' }}>ABC</option>
-            <option value="BC" {{ 'selected' if (e.classe or '')|upper == 'BC' }}>BC</option>
-            {% if e.classe and (e.classe|upper) not in ['ABC','BC'] %}<option value="{{ e.classe }}" selected>{{ e.classe }} (atual)</option>{% endif %}
-          </select>
-        </div>
         <textarea class="form-control form-control-sm mt-2" name="obs" rows="2" placeholder="Observações (opcional)"></textarea>
         <button class="btn btn-primary btn-sm mt-2">Registrar inspeção</button>
       </form>

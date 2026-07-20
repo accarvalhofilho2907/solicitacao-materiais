@@ -862,6 +862,10 @@ def log_sistema():
     qy = AlmoxLog.query
     if cat:
         qy = qy.filter(AlmoxLog.categoria == cat)
+    if q:
+        like = f"%{q.upper()}%"
+        qy = qy.filter(db.func.upper(AlmoxLog.detalhe).like(like) |
+                       db.func.upper(AlmoxLog.autor_nome).like(like))
     if di:
         try: qy = qy.filter(AlmoxLog.criado_em >= datetime.strptime(di, "%Y-%m-%d"))
         except ValueError: pass
@@ -870,10 +874,7 @@ def log_sistema():
             fim = datetime.strptime(dfim, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             qy = qy.filter(AlmoxLog.criado_em <= fim)
         except ValueError: pass
-    logs = qy.order_by(AlmoxLog.criado_em.desc()).limit(2000 if q else 1000).all()
-    if q:
-        logs = [l for l in logs
-                if contem_busca((l.detalhe or "") + " " + (l.autor_nome or ""), q)][:1000]
+    logs = qy.order_by(AlmoxLog.criado_em.desc()).limit(1000).all()
     categorias = sorted({l[0] for l in db.session.query(AlmoxLog.categoria).distinct().all() if l[0]})
     ctx = dict(categoria=cat, q=q, data_ini=di, data_fim=dfim)
     return render_template("admin/log_sistema.html", logs=logs, categorias=categorias, ctx=ctx)

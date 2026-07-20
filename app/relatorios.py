@@ -356,40 +356,21 @@ def carga_gerar():
         db.session.rollback()
         current_app.logger.exception("Falha ao criar cadastro pendente no relatório de carga (ignorado)")
 
-    # Fotos enviadas (item 135) — salvas em arquivo TEMPORARIO no disco (streaming, uma por vez),
-    # para NAO acumular 25-50 fotos na memoria (evita OOM no Render). Guardamos so o caminho.
-    import tempfile as _tmp, shutil as _sh, os as _os
+    # Fotos enviadas (item 135) — trafegam ao servidor só para montar o PDF; não são arquivadas.
     fotos = []
-    temp_uploads = []
 
-    def _salvar_foto_temp(fs):
-        try:
-            fs.stream.seek(0)
-        except Exception:
-            pass
-        tf = _tmp.NamedTemporaryFile(suffix=".img", delete=False)
-        _sh.copyfileobj(fs.stream, tf, length=1024 * 256)
-        tf.close()
-        if _os.path.getsize(tf.name) <= 0:
-            try:
-                _os.unlink(tf.name)
-            except Exception:
-                pass
-            return None
-        temp_uploads.append(tf.name)
-        return tf.name
-
+    # Foto da Nota Fiscal e do CT-e (aparecem ao preencher o número — item 128)
     foto_nf = request.files.get("foto_nf")
     if foto_nf and foto_nf.filename:
-        p = _salvar_foto_temp(foto_nf)
-        if p:
-            fotos.append({"path": p, "legenda": f"Nota Fiscal {dados.get('nota_fiscal','')}".strip(),
+        conteudo = foto_nf.read()
+        if conteudo:
+            fotos.append({"bytes": conteudo, "legenda": f"Nota Fiscal {dados.get('nota_fiscal','')}".strip(),
                           "avaria": False, "obs": ""})
     foto_cte = request.files.get("foto_cte")
     if foto_cte and foto_cte.filename:
-        p = _salvar_foto_temp(foto_cte)
-        if p:
-            fotos.append({"path": p, "legenda": f"CT-e {dados.get('cte','')}".strip(),
+        conteudo = foto_cte.read()
+        if conteudo:
+            fotos.append({"bytes": conteudo, "legenda": f"CT-e {dados.get('cte','')}".strip(),
                           "avaria": False, "obs": ""})
 
     idx = 0
@@ -397,8 +378,8 @@ def carga_gerar():
         if not arquivo or not arquivo.filename:
             continue
         idx += 1
-        p = _salvar_foto_temp(arquivo)
-        if not p:
+        conteudo = arquivo.read()
+        if not conteudo:
             continue
         foto_id = f"foto_{idx}"
         avaria = foto_id in avarias_ids
@@ -406,7 +387,7 @@ def carga_gerar():
         if avaria:
             obs_lista = f.getlist(f"obs_{foto_id}")
             obs = obs_lista[0].strip() if obs_lista else ""
-        fotos.append({"path": p, "legenda": arquivo.filename, "avaria": avaria, "obs": obs})
+        fotos.append({"bytes": conteudo, "legenda": arquivo.filename, "avaria": avaria, "obs": obs})
 
     try:
         pdf = gerar_pdf_relatorio_carga(modo, dados, fotos=fotos)
@@ -415,12 +396,6 @@ def carga_gerar():
         flash("Não foi possível gerar o PDF (verifique as fotos anexadas e tente novamente). "
               "Se persistir, gere sem as fotos e anexe-as separadamente.", "danger")
         return redirect(url_for("relatorios.carga"))
-    finally:
-        for _p in temp_uploads:
-            try:
-                _os.unlink(_p)
-            except Exception:
-                pass
 
     nome = _nome_arquivo_carga(modo, dados)
     # ASCII-safe para o header (evita erro de encoding no header sob Gunicorn);

@@ -5,7 +5,6 @@ from flask import Blueprint, render_template, redirect, url_for, abort, flash, c
 from flask_login import login_required, current_user, login_user
 
 from .extensions import db
-from .util import contem_busca
 from .models import Solicitacao, LogSolicitacao
 from .emails import enviar_email
 
@@ -255,7 +254,6 @@ def home():
     # Pendências (cada uma gated pela permissão de quem pode agir) — com link de atalho
     pend = []
     tiles = []
-    listas_pend = []
     try:
         if is_admin:
             nb = AjusteInventario.query.filter_by(status="pendente").count()
@@ -265,27 +263,20 @@ def home():
             if nnf:
                 pend.append((nnf, "NFs a classificar (OPEX/CAPEX)", url_for("almox.administrativo")))
         if cap["extintores"]:
-            irregulares, proximos = [], []
-            for e in Extintor.query.filter_by(ativo=True).order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
+            venc = prox = 0
+            for e in Extintor.query.filter_by(ativo=True).all():
                 k = _situacao_extintor(e)[0]
-                loc = " · ".join([p for p in [e.predio, e.local] if p])
-                item = (e.codigo or "—", loc, url_for("almox.extintor_ficha", eid=e.id))
                 if k in ("IRREGULAR", "VENCIDO"):
-                    irregulares.append(item)
+                    venc += 1
                 elif k == "PROX_VENC":
-                    proximos.append(item)
-            LIM = 10
-            listas_pend.append({"titulo": "Extintores irregulares / vencidos", "cls": "bad",
-                                "itens": irregulares[:LIM], "total": len(irregulares),
-                                "mais": max(0, len(irregulares) - LIM),
-                                "ver_todos": url_for("almox.extintores", situacao="VENCIDO")})
-            listas_pend.append({"titulo": "Extintores próximos do vencimento", "cls": "warn",
-                                "itens": proximos[:LIM], "total": len(proximos),
-                                "mais": max(0, len(proximos) - LIM),
-                                "ver_todos": url_for("almox.extintores", situacao="PROX_VENC")})
+                    prox += 1
+            if venc:
+                pend.append((venc, "Extintores irregulares / vencidos", url_for("almox.extintores", situacao="VENCIDO")))
             n_etq = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
             if n_etq:
                 pend.append((n_etq, "Pendências de etiqueta", url_for("almox.pendencias_etiqueta")))
+            if prox:
+                tiles.append((prox, "Extintores vencendo", "warn", url_for("almox.extintores", situacao="PROX_VENC")))
         if cap["material"]:
             mb = sum(1 for p in ProdutoAlmox.query.filter_by(ativo=True).all() if p.abaixo_minimo)
             if mb:
@@ -297,7 +288,7 @@ def home():
         pass
 
     return render_template("almox/home.html", modo=modo, principal=principal,
-                           acoes=ACOES, pend=pend, tiles=tiles, listas_pend=listas_pend, cap=cap)
+                           acoes=ACOES, pend=pend, tiles=tiles, cap=cap)
 
 
 @almox_bp.route("/em-construcao/<slug>")
@@ -317,7 +308,7 @@ def chaves():
     inativos = request.args.get("inativos") == "1"
     consulta = Chave.query.filter_by(ativo=not inativos) if not inativos else Chave.query.filter_by(ativo=False)
     itens = [c for c in consulta.order_by(Chave.descricao).all()
-             if not q or contem_busca(" ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]), q)]
+             if not q or q.lower() in " ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]).lower()]
     quadros = QuadroChave.query.filter_by(ativo=True).order_by(QuadroChave.nome).all()
     colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     n_inativas = Chave.query.filter_by(ativo=False).count()
@@ -735,9 +726,9 @@ def extintores():
     linhas = []
     todos = consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
     for e in todos:
-        if local and not contem_busca(e.local, local):
+        if local and local.lower() not in (e.local or "").lower():
             continue
-        if tipo and not contem_busca(e.tipo, tipo):
+        if tipo and tipo.lower() not in (e.tipo or "").lower():
             continue
         k, lbl, cls = _situacao_extintor(e)
         if not _match_situacao(situacao, k):
@@ -745,17 +736,9 @@ def extintores():
         linhas.append((e, k, lbl, cls))
     predios = sorted({e.predio for e in Extintor.query.filter_by(ativo=True).all() if e.predio})
     tipos = sorted({e.tipo for e in Extintor.query.filter_by(ativo=True).all() if e.tipo})
-    # Locais disponiveis conforme os OUTROS filtros (predio/tipo/situacao) — p/ a lista suspensa dependente
-    base_loc = Extintor.query.filter_by(ativo=True)
-    if predio:
-        base_loc = base_loc.filter_by(predio=predio)
-    locais = sorted({e.local for e in base_loc.all()
-                     if e.local
-                     and (not tipo or contem_busca(e.tipo, tipo))
-                     and _match_situacao(situacao, _situacao_extintor(e)[0])})
     n_pend = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
     return render_template("almox/extintores.html", linhas=linhas, predio=predio, local=local,
-                           tipo=tipo, situacao=situacao, predios=predios, tipos=tipos, locais=locais,
+                           tipo=tipo, situacao=situacao, predios=predios, tipos=tipos,
                            predio_label=PREDIO_LABEL, situacao_label=SITUACAO_LABEL,
                            situacao_opcoes=SITUACAO_OPCOES,
                            competencia=_competencia, n_pend=n_pend)
@@ -852,13 +835,6 @@ def extintor_inspecionar(eid):
             _log("Extintor", f"{e.codigo}: datas ajustadas na inspeção ({'; '.join(corr)})")
     elif datas_conf:
         itens["Datas conferem com o app?"] = datas_conf
-    # Correcao de classe ABC <-> BC
-    nova_classe = (request.form.get("corr_classe") or "").strip().upper()
-    if nova_classe and nova_classe != (e.classe or "").upper():
-        antiga = e.classe or "—"
-        e.classe = nova_classe
-        itens["Classe corrigida"] = f"{antiga} → {nova_classe}"
-        _log("Extintor", f"{e.codigo}: classe alterada de {antiga} para {nova_classe} na inspeção")
     nome, cid = _quem(request.form)
     resultado = _aplicar_resultado(e, core_nok, et_nok, nome)
     e.inspecao = date.today()
@@ -1164,9 +1140,9 @@ def _extintores_filtrados():
         consulta = consulta.filter(Extintor.id.in_(lista_ids))
     out = []
     for e in consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
-        if local and not contem_busca(e.local, local):
+        if local and local.lower() not in (e.local or "").lower():
             continue
-        if tipo and not contem_busca(e.tipo, tipo):
+        if tipo and tipo.lower() not in (e.tipo or "").lower():
             continue
         if not _match_situacao(situacao, _situacao_extintor(e)[0]):
             continue
@@ -1280,7 +1256,7 @@ def extintores_etiquetas_pdf():
         for ln in wrap(loc, 24)[:2]:
             c.drawString(tx, yy, ln); yy -= 2.5 * mm
         c.setFont("Helvetica", 4.5)
-        c.drawString(tx, base + 1.4 * mm + DY, "SERENA · CLUSTER DELTA")
+        c.drawString(tx, base + 3.0 * mm + DY, "SERENA · CLUSTER DELTA")
 
     i = 0
     if not itens:
@@ -1321,9 +1297,9 @@ def extintores_pdf():
     elems = [Paragraph("Extintores — " + (predio or "Todos os prédios"), styles["Title"]), Spacer(1, 6)]
     data = [["Código", "Prédio", "Local", "Tipo/Carga", "Classe", "Validade", "TH", "Situação"]]
     for e in consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
-        if local and not contem_busca(e.local, local):
+        if local and local.lower() not in (e.local or "").lower():
             continue
-        if tipo and not contem_busca(e.tipo, tipo):
+        if tipo and tipo.lower() not in (e.tipo or "").lower():
             continue
         k, lbl, _ = _situacao_extintor(e)
         if not _match_situacao(situacao, k):
@@ -1574,13 +1550,13 @@ def _filtra_movimentacoes():
         except ValueError: pass
     if chave_id.isdigit():
         qy = qy.filter(MovimentacaoChave.chave_id == int(chave_id))
+    if colaborador:
+        qy = qy.filter(db.func.upper(MovimentacaoChave.colaborador_nome).like(f"%{colaborador.upper()}%"))
+    if quadro:
+        qy = qy.filter(db.func.upper(MovimentacaoChave.quadro_nome).like(f"%{quadro.upper()}%"))
     if acao in ("retirada", "devolucao"):
         qy = qy.filter(MovimentacaoChave.acao == acao)
     movs = qy.order_by(MovimentacaoChave.criado_em.desc()).all()
-    if colaborador:
-        movs = [m for m in movs if contem_busca(m.colaborador_nome, colaborador)]
-    if quadro:
-        movs = [m for m in movs if contem_busca(m.quadro_nome, quadro)]
     ctx = dict(data_ini=di, data_fim=dfim, chave_id=chave_id, colaborador=colaborador,
                quadro=quadro, acao=acao)
     return movs, ctx
@@ -1804,9 +1780,9 @@ def _filtra_saldo():
     loc = request.args.get("loc") or ""
     baixo = request.args.get("baixo") == "1"
     q = ProdutoAlmox.query.filter_by(ativo=True)
-    itens = q.order_by(ProdutoAlmox.nome).all()
     if cat:
-        itens = [p for p in itens if contem_busca(p.categoria, cat)]
+        q = q.filter(db.func.upper(ProdutoAlmox.categoria).like(f"%{cat.upper()}%"))
+    itens = q.order_by(ProdutoAlmox.nome).all()
     if loc.isdigit():
         ids = {el.produto_id for el in EstoqueLocalizador.query.filter(
             EstoqueLocalizador.localizador_id == int(loc),

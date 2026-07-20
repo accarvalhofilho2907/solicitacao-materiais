@@ -42,11 +42,10 @@
 </style></head><body>
 <div class="noprint">
   <button onclick="window.print()">🖨️ Imprimir</button>
-  {% set q = ('&ids=' ~ request.args.get('ids')) if request.args.get('ids') else '' %}
   &nbsp;Formato:
-  <a href="?formato=termica{{ q }}">Etiqueta térmica 45×20mm (padrão)</a> |
-  <a href="?formato=a4{{ q }}">Folha A4</a>
-  &nbsp;|&nbsp; <a href="{{ url_for('almox.extintores_etiquetas_pdf') }}{{ ('?ids=' ~ request.args.get('ids')) if request.args.get('ids') else '' }}" target="_blank"><b>📄 PDF exato (45×20, 2 colunas)</b></a>
+  <a href="{{ url_for('almox.extintores_qr', formato='termica', predio=f_predio, local=f_local, tipo=f_tipo, situacao=f_situacao, ids=f_ids) }}">Etiqueta térmica 45×20mm (padrão)</a> |
+  <a href="{{ url_for('almox.extintores_qr', formato='a4', predio=f_predio, local=f_local, tipo=f_tipo, situacao=f_situacao, ids=f_ids) }}">Folha A4</a>
+  &nbsp;|&nbsp; <a href="{{ url_for('almox.extintores_etiquetas_pdf', predio=f_predio, local=f_local, tipo=f_tipo, situacao=f_situacao, ids=f_ids) }}" target="_blank"><b>📄 PDF exato (45×20, 2 colunas)</b></a>
   <span style="color:#555"> — {{ itens|length }} extintor(es)</span>
   <div class="carregando" id="carregando">Gerando QR codes…</div>
 </div>

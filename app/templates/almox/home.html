@@ -15,6 +15,14 @@
   .hpend:hover{background:#3a3a3a}
   .hpend .n{font-size:1.5rem;font-weight:700;min-width:44px;text-align:center;color:#ff8b82}
   .hpend small{color:var(--muted,#a8a29d)}
+  .hlista{background:#333;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:.7rem .9rem;margin-bottom:.6rem}
+  .hlista-h{font-weight:600;font-size:.9rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.5rem}
+  .badge-bad,.badge-warn{font-size:.8rem;font-weight:700;border-radius:20px;padding:.05rem .55rem;color:#fff}
+  .badge-bad{background:#c0392b}.badge-warn{background:#c9992b}
+  .hlinha{display:flex;justify-content:space-between;gap:.8rem;padding:.35rem .2rem;border-top:1px solid rgba(255,255,255,.05);text-decoration:none;color:inherit}
+  .hlinha:hover{background:#3a3a3a}
+  .hlinha b{font-weight:600}.hlinha span{color:var(--muted,#a8a29d);font-size:.85rem;text-align:right}
+  .hmais{display:block;margin-top:.4rem;color:#FF5246;font-size:.82rem;text-decoration:none}
   .htiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.7rem}
   .htile{background:#3a3a3a;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:.9rem;text-decoration:none;color:inherit;display:block}
   .htile:hover{border-color:#FF5246}
@@ -65,11 +73,20 @@
   </div>
   {% endif %}
 
-  {% if pend %}
+  {% if pend or listas_pend %}
   <div class="hsec">Pendências</div>
   {% for n, texto, link in pend %}
   <a class="hpend" href="{{ link }}"><div class="n">{{ n }}</div><div><b>{{ texto }}</b><br><small>abrir</small></div></a>
   {% endfor %}
+  {% for grupo in listas_pend %}{% if grupo.total %}
+  <div class="hlista">
+    <div class="hlista-h"><span class="badge-{{ grupo.cls }}">{{ grupo.total }}</span> {{ grupo.titulo }}</div>
+    {% for cod, loc, url in grupo.itens %}
+    <a class="hlinha" href="{{ url }}"><b>{{ cod }}</b><span>{{ loc }}</span></a>
+    {% endfor %}
+    {% if grupo.mais %}<a class="hmais" href="{{ grupo.ver_todos }}">e mais {{ grupo.mais }} — ver todos</a>{% endif %}
+  </div>
+  {% endif %}{% endfor %}
   {% endif %}
 
   {% if tiles %}
@@ -81,7 +98,7 @@
   </div>
   {% endif %}
 
-  {% if not acoes and not pend and not tiles %}
+  {% if not acoes and not pend and not tiles and not listas_pend %}
   <p class="text-muted">Sem atalhos disponíveis para o seu perfil no momento.</p>
   {% endif %}
 {% endif %}

@@ -28,17 +28,15 @@ except Exception:
     _TEM_PIL = False
 
 
-def _normalizar_imagem(raw_bytes, max_lado=2400, quality=90):
-    """Converte qualquer foto (JPEG/PNG/EXIF-rotacionada/RGBA) em um JPEG RGB limpo,
-    com a orientação EXIF já aplicada. Mantém resolução ALTA (2400px, q90) para dar
-    zoom e ler nº de série / etiquetas. Devolve bytes JPEG ou None se não abrir.
-    O controle de memória com muitas fotos é feito por STREAMING (uma foto por vez)
-    em gerar_pdf_relatorio_carga, não reduzindo a qualidade."""
+def _normalizar_imagem(raw, max_lado=2400, quality=90):
+    """Converte foto (JPEG/PNG/EXIF/RGBA) em JPEG RGB limpo. 'raw' pode ser bytes OU
+    um caminho de arquivo no disco (streaming, uma foto por vez). 2400px q90."""
     if not _TEM_PIL:
-        return raw_bytes  # sem Pillow, tenta entregar como veio (ReportLab pode aceitar)
+        return raw if isinstance(raw, (bytes, bytearray)) else None
     im = None
     try:
-        im = PILImage.open(BytesIO(raw_bytes))
+        fonte = BytesIO(raw) if isinstance(raw, (bytes, bytearray)) else raw
+        im = PILImage.open(fonte)
         im = ImageOps.exif_transpose(im)   # corrige rotação vinda do celular
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")
@@ -278,7 +276,7 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
             legenda = foto.get("legenda") or "Foto da carga"
             if foto.get("avaria"):
                 legenda += "  —  ⚠ AVARIADO"
-            img_bytes = _normalizar_imagem(foto.get("bytes"))
+            img_bytes = _normalizar_imagem(foto.get("bytes") or foto.get("path"))
             foto["bytes"] = None  # libera a foto original (pesada) da memória assim que normaliza
             if not img_bytes:
                 # não conseguiu processar a imagem: registra aviso mas NÃO derruba o PDF

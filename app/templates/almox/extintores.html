@@ -28,7 +28,11 @@
     <option value="">Todas situações</option>
     {% for k, lbl in situacao_opcoes %}<option value="{{ k }}" {{ 'selected' if situacao==k }}>{{ lbl }}</option>{% endfor %}
   </select></div>
-  <div class="col-6 col-md-2"><input name="local" class="form-control form-control-sm" value="{{ local }}" placeholder="Local contém..." onchange="this.form.submit()"></div>
+  <div class="col-6 col-md-2"><select name="local" class="form-select form-select-sm" onchange="this.form.submit()">
+    <option value="">Local (todos)</option>
+    {% for lo in locais %}<option value="{{ lo }}" {{ 'selected' if local==lo }}>{{ lo }}</option>{% endfor %}
+    {% if local and local not in locais %}<option value="{{ local }}" selected>{{ local }}</option>{% endif %}
+  </select></div>
   <div class="col-md-2"><a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
 </form>
 

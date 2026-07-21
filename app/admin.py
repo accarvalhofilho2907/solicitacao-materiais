@@ -16,6 +16,23 @@ from .models import (
 )
 from .storage import salvar_imagem
 from .emails import enviar_email
+
+
+def _mail_solic(s, assunto, corpo, **kw):
+    """Envia e-mail ao solicitante SÓ se houver endereço (usuario ou colaborador).
+    Solicitacoes feitas por colaborador tem s.solicitante (Usuario) = None."""
+    dest = None
+    if getattr(s, "solicitante", None) is not None and getattr(s.solicitante, "email", None):
+        dest = s.solicitante.email
+    elif getattr(s, "solicitante_colab_id", None):
+        try:
+            from .models import Colaborador
+            cb = db.session.get(Colaborador, s.solicitante_colab_id)
+            dest = getattr(cb, "email", None) if cb else None
+        except Exception:
+            dest = None
+    if dest:
+        enviar_email(dest, assunto, corpo, **kw)
 from .pdf import gerar_pdf_pedido, gerar_pdf_pedido_lote
 from .pdf_orcamento import extrair_itens, _parse_valor
 from .util import (normalizar_telefone_br, somar_dias_uteis, contem_busca, sem_acentos,
@@ -245,7 +262,7 @@ def _aprovar(s):
     if s.status == "AGUARDANDO_APROVACAO":
         s.status = "AGUARDANDO_ENVIO_COTACAO"
         _log(s, "Aprovada (liberada para cotação)")
-        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} aprovada", f"Sua solicitação Nº {s.id} foi aprovada.")
+        _mail_solic(s, f"Solicitação Nº {s.id} aprovada", f"Sua solicitação Nº {s.id} foi aprovada.")
         return True
     return False
 
@@ -330,7 +347,7 @@ def mudar_status(sid):
         s.status = novo
         _log(s, f"Status alterado para: {s.status_label}")
         db.session.commit()
-        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — status atualizado", f"Status: {s.status_label}.")
+        _mail_solic(s, f"Solicitação Nº {s.id} — status atualizado", f"Status: {s.status_label}.")
         flash("Status atualizado.", "success")
     return redirect(url_for("admin.solicitacao", sid=s.id))
 
@@ -343,7 +360,7 @@ def comentar(sid):
     if texto:
         db.session.add(Comentario(solicitacao_id=s.id, autor_id=current_user.id, texto=texto))
         db.session.commit()
-        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — nova mensagem",
+        _mail_solic(s, f"Solicitação Nº {s.id} — nova mensagem",
                      f"{texto}\n\n{current_app.config['BASE_URL']}/solicitante/solicitacao/{s.id}")
         flash("Mensagem enviada.", "success")
     return redirect(url_for("admin.solicitacao", sid=s.id))
@@ -680,7 +697,7 @@ def alterar_quantidade(sid):
         s.quantidade_alterada_em = datetime.utcnow()
         _log(s, f"Quantidade alterada de {anterior} para {nova}")
         db.session.commit()
-        enviar_email(s.solicitante.email, f"Solicitação Nº {s.id} — quantidade ajustada",
+        _mail_solic(s, f"Solicitação Nº {s.id} — quantidade ajustada",
                      f"A quantidade foi ajustada para {nova} pelo administrador.")
         flash("Quantidade atualizada.", "success")
     return redirect(request.referrer or url_for("admin.solicitacao", sid=s.id))

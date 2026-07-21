@@ -1546,3 +1546,38 @@ Testado: multi predio/tipo; checkbox default marcado; classe na coluna; pendenci
   (relatorio/lista) com ?ids= dos marcados. QR labels continuam pelo botao "QR" -> pagina QR -> "PDF exato".
 - extintores_pdf: adicionado RESUMO por tipo/carga + classe ANTES do relatorio completo (ex.: PQS-06KG ABC 10;
   PQS-06KG BC 02) com linha TOTAL. Ajuda o prestador a organizar a reposicao/recarga.
+
+### 41 — FIX aprovar dava 500 (solicitante None) ✓ (21/07)
+Log: AttributeError 'NoneType' has no attribute 'email' em _aprovar -> enviar_email(s.solicitante.email,...).
+Causa: solicitacoes feitas por COLABORADOR tem s.solicitante (Usuario) = None (solicitante_id nullable).
+Correcao: wrapper _mail_solic(s, assunto, corpo) que so envia se houver e-mail (Usuario ou Colaborador);
+trocados os 4 usos de enviar_email(s.solicitante.email, ...) por _mail_solic(s, ...). Testado: solicitante
+None nao crasha e nao envia; com e-mail envia. Aprovar individual e em lote voltam a funcionar.
+
+### 42. REQUISITO (Antonio) — editar solicitacao pelo caminho Movimento>>Solicitacoes — REGISTRADO (aguarda "pode executar")
+Problema: menu Movimento>>Solicitacoes -> solicitante.index -> solicitante.detalhe (so COMENTAR). As edicoes
+completas estao em admin.solicitacao (editar-campos, quantidade, status, cotacao...). Admin/gestor abrindo
+por esse caminho nao consegue editar.
+PLANO (a confirmar): para usuarios admin/almox, a lista de solicitacoes (solicitante.index) abrir cada item
+em admin.solicitacao (editavel) em vez de solicitante.detalhe; para os demais, segue no solicitante.detalhe.
+Alternativa: botao "Abrir edicao (admin)" no detalhe do solicitante quando for admin.
+DUVIDA: quais edicoes exatamente Antonio precisa (editar material/qtd/campos? status? tudo do admin?).
+
+### REGRA DE FLUXO (reforcada 21/07)
+- TODA alteracao de codigo — incluindo CORRECOES/BUGS — deve ser registrada no roadmap ANTES de executar.
+- Acumular varios itens e executar TODOS numa RODADA SO, apenas quando Antonio autorizar ("pode executar").
+- A regra volta a valer apos cada rodada (nao assumir autorizacao em bloco).
+
+### 42. (definido) Botao "Editar (admin)" no detalhe do solicitante — na FILA (aguarda rodada)
+Decisao de Antonio: usar BOTAO (nao redirecionar). No solicitante.detalhe, quando o usuario for admin/almox,
+mostrar um botao "✎ Editar (admin)" que abre admin.solicitacao(sid) (tela com edicao completa). A tela de
+comentarios do solicitante continua como esta para os demais.
+
+--- FILA ATUAL (aguardando "pode executar" para rodar de uma vez) ---
+- [42] Botao "Editar (admin)" no detalhe do solicitante.
+(adicionar aqui os proximos itens que Antonio enviar antes de rodar a leva)
+
+### 42 — EXECUTADO (21/07) ✓
+Botao "✎ Editar (admin)" adicionado no solicitante.detalhe, visivel so p/ admin/almox (perm.is_admin ou
+perm.is_almox), abrindo admin.solicitacao(sid) (edicao completa). Solicitante comum nao ve. Testado: admin
+ve o botao apontando para /admin/solicitacao/<id>. FILA zerada.

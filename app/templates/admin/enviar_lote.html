@@ -42,11 +42,11 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div><strong>{{ g.fornecedor.nome }}</strong> <span class="text-muted small">#{{ g.seq }} · {% if g.fornecedor.email %}{{ g.fornecedor.email }}{% else %}sem e-mail{% endif %}{% if g.fornecedor.telefone %} · 📞 {{ g.fornecedor.telefone }}{% endif %}</span></div>
       <div class="d-flex gap-1 flex-wrap">
-        {% if g.wa %}<a class="btn btn-sm btn-success py-0" target="_blank" href="{{ g.wa }}">WhatsApp</a>{% endif %}
+        {% if g.wa %}<button type="button" class="btn btn-sm btn-success py-0" onclick="abrirWhatsForn({{ g.fornecedor.id }})">WhatsApp</button>{% endif %}
         {% if g.fornecedor.email %}
         <button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="abrirPopupSPE({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', idsMarcados({{ g.fornecedor.id }}))">E-mail</button>
         {% endif %}
-        <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTexto('lt{{ g.fornecedor.id }}')">Texto pronto</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="copiarTextoForn({{ g.fornecedor.id }})">Texto pronto</button>
         <button type="button" class="btn btn-sm btn-warning py-0" onclick="abrirPopupFinalizar({{ g.fornecedor.id }}, '{{ g.fornecedor.nome|e }}', idsMarcados({{ g.fornecedor.id }}))">Cotação enviada</button>
       </div>
     </div>
@@ -122,6 +122,25 @@ function idsMarcados(fid){
 }
 function marcarTodos(fid, marcar){
   document.querySelectorAll('.chk-item-'+fid).forEach(function(c){ c.checked = marcar; });
+}
+function copiarTextoForn(fid){
+  var ids = idsMarcados(fid);
+  if(!ids.length){ alert('Marque ao menos um item.'); return; }
+  fetch("{{ url_for('admin.enviar_lote_texto') }}?forn="+fid+"&ids="+ids.join(","))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.ok || !d.texto){ alert('Nada para copiar.'); return; }
+      navigator.clipboard.writeText(d.texto).then(function(){ alert('Texto copiado (somente itens marcados)!'); });
+    }).catch(function(){ alert('Falha ao gerar o texto.'); });
+}
+function abrirWhatsForn(fid){
+  var ids = idsMarcados(fid);
+  if(!ids.length){ alert('Marque ao menos um item.'); return; }
+  fetch("{{ url_for('admin.enviar_lote_texto') }}?forn="+fid+"&ids="+ids.join(","))
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.wa){ window.open(d.wa, '_blank'); } else { alert('Fornecedor sem WhatsApp ou nenhum item marcado.'); }
+    }).catch(function(){ alert('Falha ao gerar o WhatsApp.'); });
 }
 function enviarEmailComSPE(ev){
   ev.preventDefault();

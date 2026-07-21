@@ -1581,3 +1581,63 @@ comentarios do solicitante continua como esta para os demais.
 Botao "✎ Editar (admin)" adicionado no solicitante.detalhe, visivel so p/ admin/almox (perm.is_admin ou
 perm.is_almox), abrindo admin.solicitacao(sid) (edicao completa). Solicitante comum nao ve. Testado: admin
 ve o botao apontando para /admin/solicitacao/<id>. FILA zerada.
+
+### 43. BUG (Antonio) — Enviar Cotacao: "Texto pronto" copia itens desmarcados — na FILA (aguarda rodada)
+Causa: enviar_lote.html linha 62 tem <textarea id="lt{fid}">{{ g.texto }}</textarea> com o texto PRONTO do
+servidor (_corpo_cotacao(f, g["itens"]) = TODOS os itens). copiarTexto('lt{fid}') copia esse blob inteiro,
+ignorando os checkboxes .chk-item-{fid}. Por isso item desmarcado ainda entra no texto.
+PLANO: montar o "Texto pronto" a partir dos itens MARCADOS. Ideia: servidor expor, por item, a linha de
+texto (ex.: data-linha no checkbox) + cabecalho e rodape separados; copiarTexto(fid) monta cabecalho +
+linhas dos itens :checked + rodape. Ajustar _corpo_cotacao para devolver as partes (cabecalho, linhas por
+item, rodape) OU reconstruir a linha por item no template. Aplicar tambem ao WhatsApp (wa) e ao envio por
+e-mail/SPE, para respeitarem a selecao. Testar: desmarcar 1 item -> some do texto, do WhatsApp e do envio.
+
+--- FILA ATUAL (aguardando "pode executar") ---
+- [43] Enviar Cotacao: Texto pronto (e WhatsApp/envio) deve respeitar os itens marcados.
+
+### CHAVES — nova fila (registrada 21/07; aguarda "pode executar" para rodar em UMA leva)
+[44] Mover "Chaves" do menu Movimento -> Cadastrar (la so edita/desativa/cadastra chave).
+[45] Trazer "Coletor" para Movimento (util p/ retirada de material), respeitando permissao de perfil
+     (pode_coletor). Aparece so p/ quem tem a tarefa.
+[46] Central de Relatorios >> Chaves: remover Exportar CSV, Exportar PDF, imprimir QR das chaves e imprimir
+     QR dos quadros (sem filtro ali nao faz sentido).
+[47] Renomear "Situacao de chaves" -> "Movimentacao de chaves" (menu + titulo + rota/label).
+[48] NOVO relatorio "Situacao de chaves" (status atual): lista todas as chaves mostrando se esta NO QUADRO
+     ou COM COLABORADOR e, nesse caso, DESDE QUANDO (data/hora + dias). ALERTA ao entrar na area de chaves
+     quando algum colaborador esta ha MAIS DE 3 DIAS com a chave (limite 3 dias configuravel; a confirmar
+     se dias corridos ou uteis; aviso no topo listando chave+colaborador+dias).
+[49] Cadastro de chaves: filtro MULTI-SELECAO (dropdown, igual extintores) + CHECKBOX por linha (marcado
+     por padrao) + "marcar todos" + botao para emitir QR em LOTE (dos marcados/filtrados). Mesmo padrao dos
+     extintores (busca contem sem acento, etc.).
+[50] QR da chave em FOLHA A4. Etiqueta 44x44mm (quadrada) = duas metades de 44x22mm; metade de cima normal,
+     metade de baixo GIRADA 180 (espelhada) -> o "pe" das duas no meio (linha da dobra). Dobrando no meio,
+     os dois lados ficam no sentido certo no chaveiro. Na A4, grade dessas etiquetas 44x44.
+DUVIDAS p/ Antonio: (a) alerta +3 dias = dias corridos ou uteis? (b) confirmar formato do aviso (topo da tela
+de chaves listando as atrasadas).
+
+### CHAVES — leva em execucao (21/07)
+[44] FEITO — "Chaves" movido do Movimento para Cadastro (menu base.html).
+[45] FEITO — "Coletor" adicionado ao Movimento (gated por perm.pode_coletor).
+[46] FEITO — Central de Relatorios >> Chaves: removidos Exportar CSV/PDF e imprimir QR chaves/quadros.
+[47] FEITO — card renomeado "Situacao das chaves" -> "Movimentacao de chaves" (rota relatorio_chaves).
+[48] FEITO — novo relatorio "Situacao de chaves" (rota relatorio_chaves_situacao + template chaves_situacao.html):
+     lista todas as chaves (no quadro x com colaborador, desde quando, dias UTEIS); alerta+popup p/ chaves ha
+     mais de 3 dias uteis (LIMITE_DIAS_CHAVE=3). Helpers _dias_uteis, _chaves_situacao, _quadro_nome_chave.
+[48b] PENDENTE — mostrar o alerta TAMBEM ao entrar na area de chaves (almox.chaves), nao so no relatorio.
+[49] PENDENTE — cadastro de chaves: filtro multi-selecao (dropdown) + checkbox por linha + QR em lote (padrao extintores).
+[50] PENDENTE — QR da chave em A4, etiqueta dobravel 44x44 (2 metades 44x22; a de baixo girada 180).
+[43] PENDENTE — Enviar Cotacao: "Texto pronto"/WhatsApp/envio respeitar itens marcados.
+
+### CHAVES + 43 — restante EXECUTADO (21/07) ✓
+[48b] Alerta ao ENTRAR em chaves: rota chaves() calcula atrasadas (>3 dias uteis) e chaves.html mostra
+      banner + popup, com link p/ Situacao de chaves.
+[49] Cadastro de chaves: filtro MULTI-SELECAO (dropdown Quadro/Status, data-bs-auto-close) + CHECKBOX por
+     linha (marcado por padrao) + "marcar todos" + botao "QR (selecionados)" -> chaves_qr?ids=. Rota chaves()
+     le _args_list(quadro/status). Busca continua contem-sem-acento.
+[50] QR da chave: chaves_qr.html reescrito -> A4 com etiqueta 44x44mm dobravel (2 metades 44x22; a de baixo
+     girada 180) e QR gerado no NAVEGADOR (qrcode-generator). Codifica "CHAVE:<uid>".
+[43] Enviar Cotacao: "Texto pronto" e "WhatsApp" agora respeitam os itens MARCADOS. Novo endpoint
+     admin.enviar_lote_texto(forn, ids) devolve JSON {texto, wa} via _corpo_cotacao dos ids marcados;
+     botoes religados (copiarTextoForn/abrirWhatsForn). E-mail ja usava idsMarcados.
+Testado: alerta+popup; filtro status; QR 44x44 dobravel; texto/wa so dos marcados; telas 200.
+FILA zerada.

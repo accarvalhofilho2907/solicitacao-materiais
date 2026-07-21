@@ -5,18 +5,43 @@
   <h4 class="mb-0">Chaves</h4>
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('almox.quadros_chave') }}">Quadros</a>
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('almox.chaves_qr') }}" target="_blank">Imprimir QR</a>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="abrirQRChaves()">🖨️ QR (selecionados)</button>
     {% if perm.chave_desativar %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('almox.chaves', inativos='' if inativos else '1') }}">{{ 'Ver ativas' if inativos else 'Ver desativadas' }}{% if n_inativas and not inativos %} ({{ n_inativas }}){% endif %}</a>{% endif %}
     <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#novaModal">＋ Nova chave</button>
   </div>
 </div>
 <div class="alert alert-secondary small py-2">A retirada e devolução de chave (bipe) é feita no <b>Coletor</b>. Aqui você gerencia: cadastrar, editar, ver o histórico e imprimir QR.</div>
 
+{% if atrasadas %}
+<div class="alert alert-danger py-2" id="alertaChaves">
+  <b>⚠️ {{ atrasadas|length }} chave(s) há mais de 3 dias úteis com colaborador:</b>
+  {% for l in atrasadas %}<div class="small">• {{ l.chave.descricao }} — <b>{{ l.com_quem }}</b> ({{ l.dias }} dias úteis)</div>{% endfor %}
+  <a class="small" href="{{ url_for('almox.relatorio_chaves_situacao') }}">Ver situação completa →</a>
+</div>
+{% endif %}
+
+<form class="row g-2 mb-2" method="get" id="formFiltroChave">
+  <div class="col-6 col-md-3">
+    <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Quadro{% if quadros_sel %} ({{ quadros_sel|length }}){% endif %}</button>
+      <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
+        {% for qd in quadros %}<li><label class="dropdown-item d-flex gap-2"><input type="checkbox" name="quadro" value="{{ qd.nome }}" {{ 'checked' if qd.nome in quadros_sel }} onchange="document.getElementById('formFiltroChave').submit()"> {{ qd.nome }}</label></li>{% endfor %}
+      </ul></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Status{% if status_sel %} ({{ status_sel|length }}){% endif %}</button>
+      <ul class="dropdown-menu p-2">
+        {% for st in ['Disponível','Em uso'] %}<li><label class="dropdown-item d-flex gap-2"><input type="checkbox" name="status" value="{{ st }}" {{ 'checked' if st in status_sel }} onchange="document.getElementById('formFiltroChave').submit()"> {{ st }}</label></li>{% endfor %}
+      </ul></div>
+  </div>
+  <div class="col-6 col-md-2"><a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
+</form>
+
 <input id="filtroChave" class="form-control form-control-sm mb-2" style="max-width:420px" placeholder="Buscar chave (descrição, quadro, status, com quem)..." autocomplete="off">
 <div class="card"><div class="table-responsive"><table class="table mb-0 align-middle" id="tabelaChave">
-  <thead class="table-light"><tr><th>Descrição</th><th>Quadro de chaves</th><th>Status</th><th>Com quem</th><th></th></tr></thead>
+  <thead class="table-light"><tr><th style="width:34px"><input type="checkbox" id="ckAllChave" checked onclick="marcarTodasChaves(this)"></th><th>Descrição</th><th>Quadro de chaves</th><th>Status</th><th>Com quem</th><th></th></tr></thead>
   <tbody>{% for c in itens %}
     <tr>
+      <td><input type="checkbox" class="ckChave" value="{{ c.id }}" checked></td>
       <td><b>{{ c.descricao }}</b></td>
       <td class="small">{{ c.quadro_nome or '—' }}</td>
       <td>{% if c.status == 'Disponível' %}<span class="badge bg-success">Disponível</span>{% else %}<span class="badge bg-warning text-dark">Em uso</span>{% endif %}</td>
@@ -82,5 +107,16 @@
     });
   });
 })();
+function marcarTodasChaves(x){ document.querySelectorAll('.ckChave').forEach(function(c){ c.checked = x.checked; }); }
+function abrirQRChaves(){
+  var ids=[].slice.call(document.querySelectorAll('.ckChave:checked')).map(function(c){return c.value;});
+  if(!ids.length){ alert('Marque ao menos uma chave.'); return; }
+  window.open("{{ url_for('almox.chaves_qr') }}?ids="+ids.join(","), "_blank");
+}
+{% if atrasadas %}
+window.addEventListener('DOMContentLoaded', function(){
+  alert("⚠️ {{ atrasadas|length }} chave(s) há mais de 3 dias úteis com colaborador. Veja o aviso no topo.");
+});
+{% endif %}
 </script>
 {% endblock %}

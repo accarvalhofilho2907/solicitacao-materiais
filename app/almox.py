@@ -311,14 +311,25 @@ def em_construcao(slug):
 def chaves():
     q = (request.args.get("q") or "").strip()
     inativos = request.args.get("inativos") == "1"
-    consulta = Chave.query.filter_by(ativo=not inativos) if not inativos else Chave.query.filter_by(ativo=False)
-    itens = [c for c in consulta.order_by(Chave.descricao).all()
-             if not q or contem_busca(" ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]), q)]
+    quadros_sel = _args_list("quadro")
+    status_sel = _args_list("status")
+    base = Chave.query.filter_by(ativo=False) if inativos else Chave.query.filter_by(ativo=True)
+    itens = []
+    for c in base.order_by(Chave.descricao).all():
+        if q and not contem_busca(" ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]), q):
+            continue
+        if quadros_sel and (c.quadro_nome or "") not in quadros_sel:
+            continue
+        if status_sel and (c.status or "") not in status_sel:
+            continue
+        itens.append(c)
     quadros = QuadroChave.query.filter_by(ativo=True).order_by(QuadroChave.nome).all()
     colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     n_inativas = Chave.query.filter_by(ativo=False).count()
+    atrasadas = [l for l in _chaves_situacao() if l["atrasada"]]   # 48b: alerta ao entrar em chaves
     return render_template("almox/chaves.html", itens=itens, q=q, quadros=quadros, colabs=colabs,
-                           inativos=inativos, n_inativas=n_inativas)
+                           inativos=inativos, n_inativas=n_inativas,
+                           quadros_sel=quadros_sel, status_sel=status_sel, atrasadas=atrasadas)
 
 
 def _resolver_quadro(form):
@@ -729,6 +740,63 @@ def _redir_ficha(e):
         return redirect(url_for("almox.extintor_ficha", eid=e.id))
     return redirect(url_for("almox.extintor_campo", qr_uid=e.qr_uid))
 
+
+
+def _dias_uteis(inicio, fim):
+    """Conta dias UTEIS (seg-sex) entre inicio e fim."""
+    from datetime import timedelta
+    if not inicio:
+        return 0
+    d = inicio.date() if hasattr(inicio, "date") else inicio
+    f = fim.date() if hasattr(fim, "date") else fim
+    dias = 0
+    while d < f:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            dias += 1
+    return dias
+
+
+LIMITE_DIAS_CHAVE = 3   # alerta quando colaborador esta com a chave ha mais de X dias uteis
+
+
+def _chaves_situacao():
+    """Situacao atual de cada chave ativa: no quadro ou com colaborador (desde quando, dias uteis)."""
+    linhas = []
+    agora = datetime.utcnow()
+    for c in Chave.query.filter_by(ativo=True).order_by(Chave.descricao).all():
+        em_uso = (c.status or "").strip().lower() == "em uso"
+        desde = None
+        dias = 0
+        if em_uso:
+            mv = (MovimentacaoChave.query.filter_by(chave_id=c.id, acao="retirada")
+                  .order_by(MovimentacaoChave.criado_em.desc()).first())
+            desde = mv.criado_em if mv else None
+            dias = _dias_uteis(desde, agora) if desde else 0
+        linhas.append({"chave": c, "em_uso": em_uso, "com_quem": c.com_quem or "—",
+                       "quadro_nome": _quadro_nome_chave(c),
+                       "desde": desde, "dias": dias,
+                       "atrasada": bool(em_uso and dias > LIMITE_DIAS_CHAVE)})
+    return linhas
+
+
+def _quadro_nome_chave(c):
+    try:
+        q = getattr(c, "quadro", None) or getattr(c, "quadro_chave", None)
+        if q is not None and getattr(q, "nome", None):
+            return q.nome
+    except Exception:
+        pass
+    return c.local or "—"
+
+
+@almox_bp.route("/chaves/situacao")
+@_guard("pode_chaves")
+def relatorio_chaves_situacao():
+    linhas = _chaves_situacao()
+    atrasadas = [l for l in linhas if l["atrasada"]]
+    return render_template("almox/chaves_situacao.html", linhas=linhas,
+                           atrasadas=atrasadas, limite=LIMITE_DIAS_CHAVE)
 
 
 @almox_bp.route("/extintores")

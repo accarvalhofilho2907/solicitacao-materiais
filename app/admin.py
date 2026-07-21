@@ -442,6 +442,20 @@ def enviar_lote():
                            todos_fornecedores=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all())
 
 
+@admin_bp.route("/enviar-lote/texto")
+@admin_required
+def enviar_lote_texto():
+    """Devolve o texto da cotacao (e link WhatsApp) SOMENTE dos itens marcados (item 43)."""
+    fid = request.args.get("forn", type=int)
+    ids = [int(x) for x in (request.args.get("ids") or "").split(",") if x.strip().isdigit()]
+    f = db.session.get(Fornecedor, fid) if fid else None
+    if not f:
+        return jsonify({"ok": False, "texto": "", "wa": None})
+    itens = [s for s in (db.session.get(Solicitacao, i) for i in ids) if s]
+    texto = _corpo_cotacao(f, itens, incluir_spe=False) if itens else ""
+    return jsonify({"ok": True, "texto": texto, "wa": (_wa_link(f, texto) if texto else None)})
+
+
 @admin_bp.route("/enviar-lote/email", methods=["POST"])
 @admin_required
 def enviar_lote_email():

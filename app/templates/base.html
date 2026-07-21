@@ -154,6 +154,7 @@
       {{ item('admin.cidades','tag','Cidades') }}
       {{ item('admin.transportadoras','truck','Transportadoras') }}
       {{ item('admin.atividades','tag','Atividades') }}
+      {{ item('almox.chaves','key','Chaves') }}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
       {{ item('solicitante.index','doc','Solicitações') }}
@@ -165,7 +166,7 @@
       {{ item('admin.comparativo','scale','Comparativo (menor custo)') }}
       {{ item('admin.precos','money','Histórico de preços') }}
       {{ item('notinhas.index','doc','Notinhas') }}
-      {{ item('almox.chaves','key','Chaves') }}
+      {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
       {{ item('almox.extintores','ext','Extintores') }}
       {{ item('almox.inventario_pendentes','check','Baixas de inventário') }}
       {{ item('almox.localizadores_gerar','cog','Gerar localizadores') }}

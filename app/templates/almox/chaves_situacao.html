@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Situação de chaves{% endblock %}
+{% block content %}
+<a href="{{ url_for('almox.relatorios_central') }}" class="btn btn-sm btn-outline-secondary mb-3">← Central de relatórios</a>
+<h4 class="mb-1">🔑 Situação de chaves</h4>
+<p class="text-muted small">Estado atual de cada chave: no quadro ou com um colaborador (e desde quando). Alerta para chaves há mais de {{ limite }} dias úteis com o colaborador.</p>
+
+{% if atrasadas %}
+<div class="alert alert-danger" id="alertaAtraso">
+  <b>⚠️ {{ atrasadas|length }} chave(s) há mais de {{ limite }} dias úteis com colaborador:</b>
+  <ul class="mb-0 mt-1">
+    {% for l in atrasadas %}
+    <li>{{ l.chave.descricao }} — <b>{{ l.com_quem }}</b> ({{ l.dias }} dias úteis, desde {{ l.desde.strftime('%d/%m/%Y') if l.desde else '—' }})</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Chave</th><th>Quadro</th><th>Situação</th><th>Com quem</th><th>Desde</th><th>Dias úteis</th></tr></thead>
+  <tbody>
+    {% for l in linhas %}
+    <tr class="{{ 'table-danger' if l.atrasada }}">
+      <td><b>{{ l.chave.descricao }}</b></td>
+      <td class="small">{{ l.quadro_nome }}</td>
+      <td>{% if l.em_uso %}<span class="badge bg-warning text-dark">Em uso</span>{% else %}<span class="badge bg-success">No quadro</span>{% endif %}</td>
+      <td class="small">{{ l.com_quem if l.em_uso else '—' }}</td>
+      <td class="small">{{ l.desde.strftime('%d/%m/%Y %H:%M') if l.desde else '—' }}</td>
+      <td class="small">{{ l.dias if l.em_uso else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted text-center py-3">Nenhuma chave cadastrada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+{% if atrasadas %}
+<script>
+window.addEventListener('DOMContentLoaded', function(){
+  var msg = "⚠️ Atenção: {{ atrasadas|length }} chave(s) há mais de {{ limite }} dias úteis com colaborador.\n\n"
+    + {{ atrasadas|map(attribute='chave')|map(attribute='descricao')|list|tojson }}
+      .map(function(d,i){ return "• " + d; }).join("\n");
+  alert(msg);
+});
+</script>
+{% endif %}
+{% endblock %}

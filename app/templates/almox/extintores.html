@@ -1,5 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Extintores — Almoxarifado{% endblock %}
+{% block title %}Extintores — Almoxarifado<style>
+.sit-chip{border:1px solid #ccc;border-radius:20px;padding:.15rem .7rem;font-size:.8rem;cursor:pointer;background:#fff;user-select:none}
+.sit-chip.on{background:#FF5246;color:#fff;border-color:#FF5246}
+</style>
+<script>
+function marcarTodos(x){document.querySelectorAll('.ckExt').forEach(function(c){c.checked=x.checked;});}
+function abrirSelec(tipo){
+  var ids=[].slice.call(document.querySelectorAll('.ckExt:checked')).map(function(c){return c.value;});
+  if(!ids.length){alert('Marque ao menos um extintor.');return;}
+  var base = tipo==='pdf' ? "{{ url_for('almox.extintores_etiquetas_pdf') }}" : "{{ url_for('almox.extintores_qr') }}";
+  window.open(base + "?ids=" + ids.join(","), "_blank");
+}
+</script>
+{% endblock %}
 {% block content %}
 <a href="{{ url_for('almox.home') }}" class="btn btn-sm btn-outline-secondary mb-3">← Almoxarifado</a>
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
@@ -9,8 +22,10 @@
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <a href="{{ url_for('almox.pendencias_etiqueta') }}" class="btn btn-sm btn-outline-warning">🏷 Pendências{% if n_pend %} <span class="badge bg-danger">{{ n_pend }}</span>{% endif %}</a>
-    <a href="{{ url_for('almox.extintores_pdf', predio=predio, local=local, tipo=tipo, situacao=situacao) }}" class="btn btn-sm btn-outline-danger" target="_blank">⬇ PDF</a>
-    <a href="{{ url_for('almox.extintores_qr', predio=predio, local=local, tipo=tipo, situacao=situacao) }}" class="btn btn-sm btn-outline-secondary" target="_blank">🖨️ QR</a>
+    <a href="{{ url_for('almox.extintores_pdf', predio=predio, local=local, tipo=tipo, situacao=situacoes) }}" class="btn btn-sm btn-outline-danger" target="_blank">⬇ PDF (filtro)</a>
+    <a href="{{ url_for('almox.extintores_qr', predio=predio, local=local, tipo=tipo, situacao=situacoes) }}" class="btn btn-sm btn-outline-secondary" target="_blank">🖨️ QR (filtro)</a>
+    <button type="button" class="btn btn-sm btn-secondary" onclick="abrirSelec('qr')">🖨️ QR selec.</button>
+    <button type="button" class="btn btn-sm btn-danger" onclick="abrirSelec('pdf')">📄 PDF selec.</button>
     {% if perm.ext_cadastrar %}<a href="{{ url_for('almox.extintor_cadastro') }}" class="btn btn-sm btn-primary">＋ Novo extintor</a>{% endif %}
   </div>
 </div>
@@ -24,10 +39,11 @@
     <option value="">Todos tipos/carga</option>
     {% for t in tipos %}<option value="{{ t }}" {{ 'selected' if tipo==t }}>{{ t }}</option>{% endfor %}
   </select></div>
-  <div class="col-6 col-md-3"><select name="situacao" class="form-select form-select-sm" onchange="this.form.submit()">
-    <option value="">Todas situações</option>
-    {% for k, lbl in situacao_opcoes %}<option value="{{ k }}" {{ 'selected' if situacao==k }}>{{ lbl }}</option>{% endfor %}
-  </select></div>
+  <div class="col-12 col-md-4"><div class="d-flex flex-wrap gap-1">
+    {% for k, lbl in situacao_opcoes %}
+    <label class="sit-chip {{ 'on' if k in situacoes }}"><input type="checkbox" name="situacao" value="{{ k }}" {{ 'checked' if k in situacoes }} onchange="this.form.submit()" hidden>{{ lbl }}</label>
+    {% endfor %}
+  </div></div>
   <div class="col-6 col-md-2"><select name="local" class="form-select form-select-sm" onchange="this.form.submit()">
     <option value="">Local (todos)</option>
     {% for lo in locais %}<option value="{{ lo }}" {{ 'selected' if local==lo }}>{{ lo }}</option>{% endfor %}
@@ -40,10 +56,11 @@
 
 <div class="card"><div class="table-responsive">
 <table class="table table-sm table-hover mb-0 align-middle" id="tabelaExt">
-  <thead class="table-light"><tr><th>Código</th><th>Prédio</th><th>Local</th><th>Tipo/Carga</th><th>Validade</th><th>TH</th><th>Situação</th></tr></thead>
+  <thead class="table-light"><tr><th style="width:34px"><input type="checkbox" id="ckAll" onclick="marcarTodos(this)"></th><th>Código</th><th>Prédio</th><th>Local</th><th>Tipo/Carga</th><th>Validade</th><th>TH</th><th>Situação</th></tr></thead>
   <tbody>
     {% for e, k, lbl, cls in linhas %}
     <tr style="cursor:pointer" onclick="location.href='{{ url_for('almox.extintor_ficha', eid=e.id) }}'">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="ckExt" value="{{ e.id }}"></td>
       <td><b>{{ e.codigo or '—' }}</b></td>
       <td class="small">{{ predio_label.get(e.predio, e.predio) }}</td>
       <td class="small">{{ e.local or '—' }}</td>
@@ -53,7 +70,7 @@
       <td><span class="badge bg-{{ cls }}">{{ lbl }}</span></td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="text-muted text-center py-3">Nenhum extintor no filtro.</td></tr>
+    <tr><td colspan="8" class="text-muted text-center py-3">Nenhum extintor no filtro.</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -69,5 +86,18 @@
     linhas.forEach(function(tr){tr.style.display=norm(tr.textContent).indexOf(t)>=0?'':'none';});
   });
 })();
+</script>
+<style>
+.sit-chip{border:1px solid #ccc;border-radius:20px;padding:.15rem .7rem;font-size:.8rem;cursor:pointer;background:#fff;user-select:none}
+.sit-chip.on{background:#FF5246;color:#fff;border-color:#FF5246}
+</style>
+<script>
+function marcarTodos(x){document.querySelectorAll('.ckExt').forEach(function(c){c.checked=x.checked;});}
+function abrirSelec(tipo){
+  var ids=[].slice.call(document.querySelectorAll('.ckExt:checked')).map(function(c){return c.value;});
+  if(!ids.length){alert('Marque ao menos um extintor.');return;}
+  var base = tipo==='pdf' ? "{{ url_for('almox.extintores_etiquetas_pdf') }}" : "{{ url_for('almox.extintores_qr') }}";
+  window.open(base + "?ids=" + ids.join(","), "_blank");
+}
 </script>
 {% endblock %}

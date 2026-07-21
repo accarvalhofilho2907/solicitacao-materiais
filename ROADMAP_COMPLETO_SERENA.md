@@ -1490,3 +1490,41 @@ Causa: _ficha_campo passava hist como objetos crus (InspecaoExtintor), mas o tem
 {"h":<registro>, "itens":<dict>} como a ficha do admin monta. Corrigido: _ficha_campo agora monta o hist
 embrulhado (parseia itens_json) e passa tambem check_retorno (usado no estado Em recarga). Testado com CSRF:
 colaborador loga pelo QR e ve a ficha com historico (200, sem 500).
+
+### 38. REQUISITOS (Antonio) — selecao por checkbox + Pendencias sintetica/completa — REGISTRADO (aguarda "pode executar")
+(1) CHECKBOX de selecao na lista de extintores: caixa por linha (+ "marcar todos") para escolher
+    exatamente os extintores desejados; botoes "QR dos selecionados" e "PDF dos selecionados" que passam
+    ?ids=... (as rotas de QR/PDF ja aceitam ids). Motivo: so pelo filtro pega mais do que se quer.
+(2) Home > Pendencias "nao consta todos os extintores pendentes": hoje conta so IRREGULAR/VENCIDO e
+    PROX_VENC. Faltam estados ATENCAO, EM_RECARGA, PRONTO_REPO (tambem sao pendencias). Incluir todos os
+    estados != NO_PRAZO na contagem/lista de pendencias.
+(3) Home: RETIRAR a lista itemizada de extintores pendentes (35b) e deixar SINTETICO (so contadores
+    clicaveis, sem detalhar item a item). Cada contador leva a lista completa filtrada (onde aparecem
+    TODOS). Isso tambem resolve o (2), pois o link mostra todos.
+DUVIDA p/ Antonio: "pendente" deve incluir quais estados? Sugestao: irregular/vencido + proximo do
+vencimento + em recarga + pronto p/ reposicao + atencao(etiqueta) + pendencia de etiqueta. Confirmar.
+
+### 38.1 (esclarecimento Antonio) + 39 multi-selecao — REGISTRADO (aguarda "pode executar")
+(2/3 esclarecidos) A pagina "Pendencias" (hoje pendencias_etiqueta, so etiqueta) deve virar a pagina de
+TODAS as pendencias de extintores: listar por estado (irregular/vencido, proximo do vencimento, em recarga,
+pronto p/ reposicao, atencao, + pendencia de etiqueta), com botao EXPORTAR PDF ali (ao lado). O botao
+"Pendencias" na barra de extintores ja leva a essa pagina. HOME: so contadores sinteticos (remover a lista
+itemizada 35b), cada contador linkando para a lista completa. Assim "consta todos".
+### 39. Filtro MULTI-SELECAO (Antonio) — ainda nao disponivel — REGISTRADO (aguarda "pode executar")
+Filtros (situacao e provavelmente predio/tipo/local) devem permitir marcar VARIAS opcoes que se somam
+(clicar numa, marca; clicar em outra, soma). Implementar como chips/botoes toggle (ou multi-select) que
+acumulam; a rota passa a aceitar multiplos valores por filtro (getlist) e casa com QUALQUER um (OR dentro
+do mesmo filtro; AND entre filtros diferentes). Definir com Antonio: aplicar so em "situacao" ou em todos.
+
+### 38 + 38.1 + 39 — EXECUTADOS (20/07) ✓
+1. Checkbox de selecao na lista de extintores (coluna + "marcar todos") + botoes "QR selec." e "PDF selec."
+   que abrem as rotas com ?ids= dos marcados. Mantidos tambem "QR (filtro)" e "PDF (filtro)".
+2. Pagina de Pendencias (pendencias_etiqueta) agora lista TODOS os extintores pendentes agrupados por estado
+   (irregular/vencido, proximo, em recarga, pronto p/ reposicao, atencao) + secao de etiqueta, com botao
+   EXPORTAR PDF (nova rota /extintores/pendencias.pdf, tabela por grupo).
+3. Home > Pendencias voltou a ser SINTETICA: so contadores clicaveis (irregular/vencido, proximo,
+   em recarga/reposicao/atencao, etiqueta) — todos linkando para a pagina de Pendencias. Removida a lista
+   itemizada 35b e o CSS morto.
+39. Filtro de SITUACAO virou MULTI-SELECAO (chips que acumulam; getlist + _match_situacoes = OR). QR/PDF/
+   lista/pendencias respeitam multiplas situacoes. Predio/tipo/local seguem unicos por ora.
+Testado: multi (IRREGULAR+PROX_VENC) traz os dois; pendencias lista grupos + PDF; QR/PDF por ids; telas 200.

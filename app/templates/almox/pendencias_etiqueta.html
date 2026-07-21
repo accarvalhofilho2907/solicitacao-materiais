@@ -1,8 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Pendências de etiqueta — Extintores{% endblock %}
+{% block title %}Pendências — Extintores{% endblock %}
 {% block content %}
-<a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary mb-3">← Extintores</a>
-<h4 class="mb-1">🏷 Pendências de etiqueta</h4>
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+  <a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary">← Extintores</a>
+  <a href="{{ url_for('almox.pendencias_pdf') }}" target="_blank" class="btn btn-sm btn-danger">📄 Exportar PDF</a>
+</div>
+<h4 class="mb-1">⚠️ Pendências de extintores</h4>
+<p class="text-muted small">Todos os extintores que precisam de ação (fora do estado "No prazo").</p>
+
+{% for g in grupos %}
+<div class="card mb-3"><div class="card-header fw-bold d-flex justify-content-between">
+  <span>{{ g.titulo }}</span><span class="badge bg-secondary">{{ g.itens|length }}</span></div>
+<div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle">
+  <thead class="table-light"><tr><th>Código</th><th>Prédio · Local</th><th></th></tr></thead>
+  <tbody>
+    {% for e in g.itens %}
+    <tr>
+      <td><b>{{ e.codigo or '—' }}</b></td>
+      <td class="small">{{ e.predio or '' }}{% if e.local %} · {{ e.local }}{% endif %}</td>
+      <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('almox.extintor_ficha', eid=e.id) }}">abrir</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% else %}
+<p class="text-success">Nenhuma pendência de extintor no momento. 🎉</p>
+{% endfor %}
+
+<h5 class="mt-4 mb-1">🏷 Pendências de etiqueta</h5>
 <p class="text-muted small">Extintores cujo QR ainda precisa ser colado (marcado "Não" na conferência/reposição).</p>
 
 <div class="card mb-4"><div class="card-header fw-bold">Abertas ({{ abertas|length }})</div><div class="table-responsive">

@@ -1528,3 +1528,21 @@ do mesmo filtro; AND entre filtros diferentes). Definir com Antonio: aplicar so 
 39. Filtro de SITUACAO virou MULTI-SELECAO (chips que acumulam; getlist + _match_situacoes = OR). QR/PDF/
    lista/pendencias respeitam multiplas situacoes. Predio/tipo/local seguem unicos por ora.
 Testado: multi (IRREGULAR+PROX_VENC) traz os dois; pendencias lista grupos + PDF; QR/PDF por ids; telas 200.
+
+### 40 — REFACTOR do filtro (Antonio: "ficou ruim") + Pendencias melhor + classe na coluna ✓ (21/07)
+- Filtro voltou a ser DROPDOWN (lista suspensa) porem MULTI-SELECAO em TODOS (predio, tipo/carga, situacao,
+  local): dropdown Bootstrap com checkboxes (data-bs-auto-close=outside); ao marcar, aplica na hora
+  (submit). Rota le getlist em todos (_args_list) e casa por pertinencia (predio/tipo/local exatos, situacao
+  via _match_situacoes). Locais seguem dependentes dos demais filtros.
+- PDFs: removidos os botoes duplicados; ficaram so "📄 PDF" e "🖨️ QR", que SEMPRE usam os checkboxes.
+  Checkbox de cada linha (e o "marcar todos") vem MARCADO por padrao -> por padrao pega todos; desmarca p/ excluir.
+- Coluna "Tipo/Carga · Classe" na lista principal (tipo + ABC/BC juntos). Idem no PDF da lista e nas pendencias.
+- Pendencias: grupos RECOLHIVEIS (collapse) e com colunas completas (codigo, predio, local, tipo/carga·classe,
+  validade, TH). PDF de pendencias tambem com tipo/classe.
+Testado: multi predio/tipo; checkbox default marcado; classe na coluna; pendencias recolhivel + colunas; telas 200.
+
+### 40.1 — Botao PDF = relatorio (nao QR) + somatorio por tipo/classe no relatorio ✓ (21/07)
+- Bug: botao "PDF" (selec.) abria o PDF de etiquetas (QR). Corrigido: abrirSelec('pdf') -> extintores_pdf
+  (relatorio/lista) com ?ids= dos marcados. QR labels continuam pelo botao "QR" -> pagina QR -> "PDF exato".
+- extintores_pdf: adicionado RESUMO por tipo/carga + classe ANTES do relatorio completo (ex.: PQS-06KG ABC 10;
+  PQS-06KG BC 02) com linha TOTAL. Ajuda o prestador a organizar a reposicao/recarga.

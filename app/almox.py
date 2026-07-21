@@ -603,6 +603,11 @@ def _match_situacao(sel, k):
     return k == sel
 
 
+def _args_list(nome):
+    """Valores marcados de um filtro multi-selecao (getlist), sem vazios."""
+    return [x for x in request.args.getlist(nome) if x]
+
+
 def _situacoes_sel():
     """Lista de situacoes marcadas (multi-selecao). Vazia = todas."""
     return [x for x in request.args.getlist("situacao") if x]
@@ -730,37 +735,35 @@ def _redir_ficha(e):
 @_guard("pode_extintores")
 def extintores():
     from .seed_extintores import PREDIO_LABEL
-    predio = request.args.get("predio") or ""
-    local = (request.args.get("local") or "").strip()
-    tipo = (request.args.get("tipo") or "").strip()
+    predios_sel = _args_list("predio")
+    locais_sel = _args_list("local")
+    tipos_sel = _args_list("tipo")
     situacoes = _situacoes_sel()
-    consulta = Extintor.query.filter_by(ativo=True)
-    if predio:
-        consulta = consulta.filter_by(predio=predio)
     linhas = []
-    todos = consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
+    todos = Extintor.query.filter_by(ativo=True).order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
     for e in todos:
-        if local and not contem_busca(e.local, local):
+        if predios_sel and e.predio not in predios_sel:
             continue
-        if tipo and not contem_busca(e.tipo, tipo):
+        if tipos_sel and e.tipo not in tipos_sel:
+            continue
+        if locais_sel and e.local not in locais_sel:
             continue
         k, lbl, cls = _situacao_extintor(e)
         if not _match_situacoes(situacoes, k):
             continue
         linhas.append((e, k, lbl, cls))
-    predios = sorted({e.predio for e in Extintor.query.filter_by(ativo=True).all() if e.predio})
-    tipos = sorted({e.tipo for e in Extintor.query.filter_by(ativo=True).all() if e.tipo})
-    # Locais disponiveis conforme os OUTROS filtros (predio/tipo/situacao) — lista suspensa dependente
-    base_loc = Extintor.query.filter_by(ativo=True)
-    if predio:
-        base_loc = base_loc.filter_by(predio=predio)
-    locais = sorted({e.local for e in base_loc.all()
+    predios = sorted({e.predio for e in todos if e.predio})
+    tipos = sorted({e.tipo for e in todos if e.tipo})
+    # Locais disponiveis conforme os OUTROS filtros (predio/tipo/situacao) — dependente
+    locais = sorted({e.local for e in todos
                      if e.local
-                     and (not tipo or contem_busca(e.tipo, tipo))
+                     and (not predios_sel or e.predio in predios_sel)
+                     and (not tipos_sel or e.tipo in tipos_sel)
                      and _match_situacoes(situacoes, _situacao_extintor(e)[0])})
     n_pend = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
-    return render_template("almox/extintores.html", linhas=linhas, predio=predio, local=local,
-                           tipo=tipo, situacoes=situacoes, predios=predios, tipos=tipos, locais=locais,
+    return render_template("almox/extintores.html", linhas=linhas,
+                           predios_sel=predios_sel, locais_sel=locais_sel, tipos_sel=tipos_sel,
+                           situacoes=situacoes, predios=predios, tipos=tipos, locais=locais,
                            predio_label=PREDIO_LABEL, situacao_label=SITUACAO_LABEL,
                            situacao_opcoes=SITUACAO_OPCOES,
                            competencia=_competencia, n_pend=n_pend)
@@ -1186,14 +1189,15 @@ def pendencias_pdf():
     total = 0
     for g in grupos:
         els.append(Paragraph(f"{g['titulo']} ({len(g['itens'])})", st["Heading3"]))
-        dados = [["Código", "Prédio · Local", "Validade", "TH"]]
+        dados = [["Código", "Prédio · Local", "Tipo/Carga · Classe", "Validade", "TH"]]
         for e in g["itens"]:
             total += 1
             loc = " · ".join([x for x in [e.predio, e.local] if x])
             val = _competencia(e.validade) if e.validade else "—"
             th = _th_label(e.teste_hidrostatico) if hasattr(e, "teste_hidrostatico") else "—"
-            dados.append([e.codigo or "—", loc, val, th])
-        t = Table(dados, colWidths=[30 * mm, 95 * mm, 25 * mm, 20 * mm])
+            tc = (e.tipo or "—") + ((" · " + e.classe) if e.classe else "")
+            dados.append([e.codigo or "—", loc, tc, val, th])
+        t = Table(dados, colWidths=[26 * mm, 68 * mm, 46 * mm, 20 * mm, 15 * mm])
         t.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4B4B4B")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -1230,22 +1234,22 @@ def pendencia_baixar(pid):
 
 def _extintores_filtrados():
     """Lista de extintores ativos aplicando os mesmos filtros da tela (predio/local/tipo/situacao/ids)."""
-    predio = request.args.get("predio") or ""
-    local = (request.args.get("local") or "").strip()
-    tipo = (request.args.get("tipo") or "").strip()
+    predios_sel = _args_list("predio")
+    locais_sel = _args_list("local")
+    tipos_sel = _args_list("tipo")
     situacoes = _situacoes_sel()
     ids = request.args.get("ids") or ""
     consulta = Extintor.query.filter_by(ativo=True)
-    if predio:
-        consulta = consulta.filter_by(predio=predio)
     if ids.strip():
         lista_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
         consulta = consulta.filter(Extintor.id.in_(lista_ids))
     out = []
     for e in consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
-        if local and not contem_busca(e.local, local):
+        if predios_sel and e.predio not in predios_sel:
             continue
-        if tipo and not contem_busca(e.tipo, tipo):
+        if tipos_sel and e.tipo not in tipos_sel:
+            continue
+        if locais_sel and e.local not in locais_sel:
             continue
         if not _match_situacoes(situacoes, _situacao_extintor(e)[0]):
             continue
@@ -1255,11 +1259,13 @@ def _extintores_filtrados():
 
 def _filtro_atual():
     """Dict com os filtros ativos, p/ repassar em links (mantem a selecao)."""
-    d = {k: request.args.get(k) for k in ("predio", "local", "tipo", "ids")
-         if request.args.get(k)}
-    sit = _situacoes_sel()
-    if sit:
-        d["situacao"] = sit
+    d = {}
+    for k in ("predio", "local", "tipo", "situacao"):
+        v = _args_list(k)
+        if v:
+            d[k] = v
+    if request.args.get("ids"):
+        d["ids"] = request.args.get("ids")
     return d
 
 
@@ -1390,29 +1396,55 @@ def extintores_pdf():
     from reportlab.lib.styles import getSampleStyleSheet
     import io
     from flask import Response
-    predio = request.args.get("predio") or ""
-    local = (request.args.get("local") or "").strip()
-    tipo = (request.args.get("tipo") or "").strip()
+    predios_sel = _args_list("predio")
+    locais_sel = _args_list("local")
+    tipos_sel = _args_list("tipo")
     situacoes = _situacoes_sel()
+    ids = request.args.get("ids") or ""
     consulta = Extintor.query.filter_by(ativo=True)
-    if predio:
-        consulta = consulta.filter_by(predio=predio)
+    if ids.strip():
+        consulta = consulta.filter(Extintor.id.in_([int(x) for x in ids.split(",") if x.strip().isdigit()]))
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=12 * mm, bottomMargin=12 * mm,
                             leftMargin=10 * mm, rightMargin=10 * mm)
     styles = getSampleStyleSheet()
-    elems = [Paragraph("Extintores — " + (predio or "Todos os prédios"), styles["Title"]), Spacer(1, 6)]
+    elems = [Paragraph("Extintores — " + (", ".join(predios_sel) if predios_sel else "Todos os prédios"), styles["Title"]), Spacer(1, 6)]
     data = [["Código", "Prédio", "Local", "Tipo/Carga", "Classe", "Validade", "TH", "Situação"]]
+    resumo = {}
     for e in consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
-        if local and not contem_busca(e.local, local):
+        if predios_sel and e.predio not in predios_sel:
             continue
-        if tipo and not contem_busca(e.tipo, tipo):
+        if tipos_sel and e.tipo not in tipos_sel:
+            continue
+        if locais_sel and e.local not in locais_sel:
             continue
         k, lbl, _ = _situacao_extintor(e)
         if not _match_situacoes(situacoes, k):
             continue
+        chave = (e.tipo or "—", e.classe or "—")
+        resumo[chave] = resumo.get(chave, 0) + 1
         data.append([e.codigo or "", e.predio or "", e.local or "", e.tipo or "", e.classe or "",
                      _competencia(e.validade), _th_label(e.teste_hidrostatico), lbl])
+    # Somatorio por tipo/carga + classe (antes do relatorio completo) — ajuda o prestador a se organizar
+    total_ext = sum(resumo.values())
+    res_data = [["Tipo/Carga", "Classe", "Qtd"]]
+    for (tp, cl), q in sorted(resumo.items()):
+        res_data.append([tp, cl, str(q)])
+    res_data.append(["", "TOTAL", str(total_ext)])
+    res_tbl = Table(res_data, repeatRows=1, colWidths=[70 * mm, 34 * mm, 22 * mm])
+    res_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4B4B4B")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.grey),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#EDE9E5")),
+    ]))
+    elems.append(Paragraph("Resumo por tipo/carga e classe", styles["Heading3"]))
+    elems.append(res_tbl)
+    elems.append(Spacer(1, 8))
+    elems.append(Paragraph("Relatório completo", styles["Heading3"]))
+    elems.append(Spacer(1, 4))
     if len(data) == 1:
         data.append(["—"] * 8)
     t = Table(data, repeatRows=1,

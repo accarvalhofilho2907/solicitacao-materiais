@@ -157,7 +157,7 @@
       {{ item('almox.chaves','key','Chaves') }}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
-      {{ item('solicitante.index','doc','Solicitações') }}
+      {% if perm.is_admin %}{{ item('admin.dashboard','doc','Solicitações') }}{% else %}{{ item('solicitante.index','doc','Solicitações') }}{% endif %}
       {{ item('admin.aprovacoes','check','Aprovações', n_aprovacoes) }}
       {{ item('almox.index','box','Chegadas') }}
       {{ item('admin.coletas_proprias','truck','Coletas próprias') }}
@@ -349,6 +349,7 @@ function filtraDrop(inp){
   var modal=document.getElementById('modalRoadmap'); if(!modal) return;
   var inp=document.getElementById('roadmapNovo'), lista=document.getElementById('roadmapLista'), st=document.getElementById('roadmapStatus');
   var URL_L="{{ url_for('admin.roadmap_itens') }}";
+  var CSRF="{{ csrf_token() }}";
   var dados=[];
   function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
   function render(){
@@ -367,12 +368,12 @@ function filtraDrop(inp){
   modal.addEventListener('shown.bs.modal', carregar);
   window.addRoadmapItem=function(){
     var t=(inp.value||'').trim(); if(!t){ return; }
-    fetch(URL_L,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:t})})
+    fetch(URL_L,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},body:JSON.stringify({texto:t})})
       .then(function(r){return r.json();}).then(function(){ inp.value=''; st.textContent='Adicionado ✓'; carregar(); })
       .catch(function(){ st.textContent='Falha ao salvar.'; });
   };
-  window.toggleRoadmap=function(id){ fetch(URL_L+'/'+id+'/toggle',{method:'POST'}).then(function(){ carregar(); }); };
-  window.delRoadmap=function(id){ if(!confirm('Excluir este item?'))return; fetch(URL_L+'/'+id+'/del',{method:'POST'}).then(function(){ carregar(); }); };
+  window.toggleRoadmap=function(id){ fetch(URL_L+'/'+id+'/toggle',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(){ carregar(); }); };
+  window.delRoadmap=function(id){ if(!confirm('Excluir este item?'))return; fetch(URL_L+'/'+id+'/del',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(){ carregar(); }); };
   window.copiarRoadmap=function(){
     var txt=dados.map(function(it){ return (it.feito?'[x] ':'[ ] ')+it.texto; }).join('\n');
     navigator.clipboard.writeText(txt).then(function(){ st.textContent='Copiado! Cole no chat.'; });

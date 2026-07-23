@@ -45,6 +45,12 @@
             </div></div>
           <div class="col-md-6"><label class="form-label small mb-0">Fabricante</label>
             <input name="fabricante" class="form-control form-control-sm" value="{{ s.fabricante or '' }}"></div>
+          <div class="col-md-9"><label class="form-label small mb-0">Material (nome)</label>
+            <input name="material" class="form-control form-control-sm" value="{{ s.material or '' }}"></div>
+          <div class="col-md-3"><label class="form-label small mb-0">Unidade</label>
+            <input name="unidade_medida" class="form-control form-control-sm" value="{{ s.unidade_medida or '' }}"></div>
+          <div class="col-12"><label class="form-label small mb-0">Link de similar</label>
+            <input name="link_similar" class="form-control form-control-sm" value="{{ s.link_similar or '' }}"></div>
           <div class="col-12"><label class="form-label small mb-0">Local / frente de serviço</label>
             <input name="local_servico" class="form-control form-control-sm" value="{{ s.local_servico or '' }}"></div>
           <div class="col-12"><button class="btn btn-sm btn-primary">Salvar alterações</button></div>

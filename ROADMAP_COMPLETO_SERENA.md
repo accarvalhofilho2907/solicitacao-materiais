@@ -1724,3 +1724,57 @@ da baixa marcando os itens.
      "aguardando" ate completar, e so pedir.
 Testado: avulsa add/coletado/tela; linha 'novo' cria item + orcamento vinculado; telas 200; login ok.
 FILA (51-55 + 52/53) zerada.
+
+### 52/55 (v2) — ajustes (23/07) ✓
+- Campos "Quem coletara?" e "Coleta avulsa" agora ficam RECOLHIDOS: viraram dois botoes no topo
+  (data-bs-toggle collapse #boxColetor / #boxAvulsa). Nao ficam mais expostos.
+- Coleta avulsa agora SE SOMA ao bloco da cidade correspondente (mescla por cidade + nome do fornecedor):
+  aparece junto dos itens daquela cidade/fornecedor com tag "avulso" e um "x" para excluir. Removida a
+  tabela separada no topo. O texto da cidade ("Copiar texto") tambem inclui as avulsas ("• material [avulso]").
+  Se nao houver fornecedor igual, cria um bloco proprio com o nome do fornecedor da avulsa.
+
+### 56 — FIX ROADMAP "Falha ao salvar" ✓ (23/07)
+Causa: os POSTs do modal (add/toggle/del) nao enviavam token CSRF; em producao (csrf.init_app ligado) o
+Flask-WTF bloqueava (nos testes o CSRF estava desligado). Correcao: enviar header X-CSRFToken com
+{{ csrf_token() }} nas 3 chamadas fetch. Testado com CSRF LIGADO: sem token bloqueia, com token salva.
+
+### FILA (aguarda "pode executar")
+[57] Tela de Solicitacoes: o quadro do topo (contadores — quantas faltam enviar p/ cotacao, atrasadas etc.)
+     nao aparece ao ENTRAR; so aparece depois de editar uma cotacao e sair. Deve aparecer sempre ao entrar.
+     Investigar de onde vem o resumo (provavel que os contadores so sejam calculados/injetados em certo
+     fluxo/rota; garantir que a listagem principal tambem calcule e mostre).
+[58] Lembrar o ULTIMO FILTRO: ao editar uma ficha e voltar para a lista, o filtro e desfeito. Guardar a
+     ultima configuracao de filtro (por lista) e reaplicar ao voltar (querystring salva / localStorage /
+     sessao). Aplicar nas listas com filtro (extintores, chaves, solicitacoes).
+[59] Botao EDITAR (admin.solicitacao / editar-campos) deve editar TODOS os campos: link_similar, material
+     (nome), fabricante, unidade, quantidade, e os demais. Hoje edita so alguns. Ampliar o form de edicao.
+[60] Importar orcamento (corrigir 53): ao marcar uma linha como "novo cadastro", ABRIR o campo ali mesmo
+     para completar os dados ANTES de criar (nome/qtd/unidade/etc.), em vez de criar tudo e obrigar a entrar
+     ficha por ficha depois. Rever mapear_orcamento/confirmar para captura inline dos dados do item novo.
+
+[61] BUG (Antonio) — "Definir e enviar ordem de compra" quebra (500). Log: admin.py:651 definir_fornecedor
+     -> gerar_pdf_pedido(s) -> pdf.py:49 usa s.solicitante.nome, mas s.solicitante (Usuario) e None
+     (solicitacao sem usuario vinculado: colaborador ou item criado pelo import de orcamento).
+     PLANO (quando autorizar): em gerar_pdf_pedido usar o snapshot s.solicitante_nome (ou guardar contra
+     None: s.solicitante.nome if s.solicitante else (s.solicitante_nome or "-")). Mesmo padrao do fix do
+     _mail_solic. NAO EXECUTAR ate "pode executar".
+
+### AUTORIZADO rodar 57-61 (23/07). Em execucao por blocos testados.
+[61] FEITO — gerar_pdf_pedido (pdf.py linhas 49-50 e 106) protegido: usa s.solicitante.nome se houver, senao
+     o snapshot s.solicitante_nome. "Definir e enviar ordem de compra" nao quebra mais com solicitante None.
+[59] FEITO — editar_campos ampliado: alem de tipo/local/fabricante, agora edita material (nome), link_similar
+     e unidade_medida. Form da ficha (solicitacao.html) ganhou os campos. (Quantidade segue no controle proprio.)
+[57] PENDENTE (proximo bloco) — quadro de contadores ao ENTRAR em Solicitacoes.
+[58] PENDENTE (proximo bloco) — lembrar ultimo filtro ao voltar de uma ficha.
+[60] PENDENTE (proximo bloco) — importar orcamento: completar dados na hora do "novo cadastro".
+
+[57] FEITO — menu "Solicitações" do ADMIN agora abre admin.dashboard (que tem o quadro de contadores +
+     filtros), em vez de solicitante.index (que nao tem o quadro). Nao-admin segue no solicitante.index.
+[58] FEITO — memoria do ultimo filtro (localStorage): extintores (KEY filtroExtintores) e dashboard de
+     Solicitacoes (KEY filtroDashboard). Salva a querystring aplicada; ao voltar sem filtro, reaplica.
+     "Limpar" dos extintores apaga a memoria. (chaves pode receber o mesmo padrao depois, se quiser.)
+[60] FEITO — importar orcamento: na tela de mapeamento, cada linha tem campos inline (qtd, unidade,
+     fabricante) usados quando escolhe "Criar novo item"; o nome ja e o desc editavel. No confirmar, o item
+     novo nasce com esses dados preenchidos (nao precisa entrar ficha por ficha depois).
+Testado: menu->dashboard c/ quadro; memoria extintores+dashboard; novo item com qtd/und/fabricante; telas 200.
+FILA (57-61) zerada.

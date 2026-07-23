@@ -75,5 +75,14 @@
     {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nada encontrado.</td></tr>{% endfor %}</tbody>
   </table></div></div>
 </form>
-<script>function marcarTodos(c){ document.querySelectorAll('.cbItem').forEach(function(b){ b.checked=c.checked; }); }</script>
+<script>function marcarTodos(c){ document.querySelectorAll('.cbItem').forEach(function(b){ b.checked=c.checked; }); }
+// [58] lembra o ultimo filtro das Solicitacoes
+(function(){
+  var KEY='filtroDashboard';
+  var qs=location.search;
+  if(qs && qs.length>1){ try{ localStorage.setItem(KEY, qs); }catch(e){} }
+  else { var saved=null; try{ saved=localStorage.getItem(KEY); }catch(e){}
+    if(saved && saved.length>1){ location.replace(location.pathname + saved); } }
+})();
+</script>
 {% endblock %}

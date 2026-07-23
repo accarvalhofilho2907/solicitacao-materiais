@@ -794,6 +794,18 @@ def editar_campos(sid):
     if fab != (s.fabricante or ""):
         mudou.append(f"Fabricante: {s.fabricante or '-'} -> {fab or '-'}")
         s.fabricante = fab
+    material = (request.form.get("material") or "").strip()
+    if material and material != (s.material or ""):
+        mudou.append(f"Material: {s.material or '-'} -> {material}")
+        s.material = material
+    link = (request.form.get("link_similar") or "").strip()
+    if link != (s.link_similar or ""):
+        mudou.append(f"Link: {s.link_similar or '-'} -> {link or '-'}")
+        s.link_similar = link
+    und = (request.form.get("unidade_medida") or "").strip()
+    if und != (s.unidade_medida or ""):
+        mudou.append(f"Unidade: {s.unidade_medida or '-'} -> {und or '-'}")
+        s.unidade_medida = und
     if mudou:
         _log(s, "Edição — " + "; ".join(mudou))
         db.session.commit()
@@ -887,7 +899,13 @@ def confirmar_orcamento_pdf():
         if sid == "novo":
             if not desc:
                 continue
-            nova = Solicitacao(material=desc[:200], quantidade=1,
+            try:
+                q_novo = int(request.form.get(f"qtd_{i}") or 1)
+            except ValueError:
+                q_novo = 1
+            nova = Solicitacao(material=desc[:200], quantidade=max(1, q_novo),
+                               unidade_medida=(request.form.get(f"und_{i}") or "").strip() or None,
+                               fabricante=(request.form.get(f"fab_{i}") or "").strip() or None,
                                status="AGUARDANDO_RECEBIMENTO_COTACAO",
                                solicitante_id=current_user.id,
                                solicitante_nome=current_user.nome)
@@ -1379,46 +1397,60 @@ def coletas_proprias():
              .filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
              .order_by(Solicitacao.cidade_retirada_id, Solicitacao.id).all())
 
-    # estrutura: { cidade: { "fornecedores": { fid: {"fornecedor": f, "itens": [...] } } } }
+    # estrutura: { cidade: { chave: {"fornecedor": f, "nome": nome, "itens": [...], "avulsas": [...]} } }
     grupos = {}
     for s in itens:
         cidade = s.cidade_retirada.rotulo if s.cidade_retirada else "Sem cidade definida"
         f = s.fornecedor_definido
-        chave_f = f.id if f else 0
+        chave_f = ("f%d" % f.id) if f else "semforn"
+        nome = f.nome if f else "Fornecedor não definido"
         cid = grupos.setdefault(cidade, {})
-        bloco = cid.setdefault(chave_f, {"fornecedor": f, "itens": []})
+        bloco = cid.setdefault(chave_f, {"fornecedor": f, "nome": nome, "itens": [], "avulsas": []})
         bloco["itens"].append(s)
+
+    # [52 v2] mescla as coletas avulsas na cidade/fornecedor correspondente
+    avulsas = ColetaAvulsa.query.filter_by(coletado=False).order_by(ColetaAvulsa.criado_em.desc()).all()
+    for a in avulsas:
+        cidade = a.cidade_nome or "Sem cidade definida"
+        nome = a.fornecedor_nome or "Fornecedor não definido"
+        cid = grupos.setdefault(cidade, {})
+        alvo = None
+        for b in cid.values():
+            if (b["nome"] or "").strip().lower() == nome.strip().lower():
+                alvo = b
+                break
+        if alvo is None:
+            alvo = cid.setdefault("av:" + nome.lower(), {"fornecedor": None, "nome": nome, "itens": [], "avulsas": []})
+        alvo["avulsas"].append(a)
 
     # ordena fornecedores por nome dentro de cada cidade
     grupos_ord = {}
     for cidade, fdict in grupos.items():
-        grupos_ord[cidade] = sorted(
-            fdict.values(),
-            key=lambda b: ((b["fornecedor"].nome or "").lower() if b["fornecedor"] else "zzz"))
+        grupos_ord[cidade] = sorted(fdict.values(), key=lambda b: (b["nome"] or "zzz").lower())
 
-    # texto pronto por cidade (agrupado por fornecedor)
+    # texto pronto por cidade (agrupado por fornecedor) — inclui avulsas
     textos = {}
     for cidade, blocos in grupos_ord.items():
         linhas = [f"🚚 Coleta em {cidade}", ""]
         for b in blocos:
             f = b["fornecedor"]
             if f:
-                cab = f.nome
                 contato = " · ".join(x for x in [f.contato_nome, f.telefone, f.email] if x)
-                linhas.append(f"▶ {cab}" + (f"  ({contato})" if contato else ""))
+                linhas.append(f"▶ {b['nome']}" + (f"  ({contato})" if contato else ""))
             else:
-                linhas.append("▶ Fornecedor não definido")
+                linhas.append(f"▶ {b['nome']}")
             for s in b["itens"]:
                 linhas.append(f"   #{s.id} — {s.material} (x{s.quantidade})")
+            for a in b["avulsas"]:
+                linhas.append(f"   • {a.material}" + (f" (x{a.quantidade})" if a.quantidade else "") + " [avulso]")
             linhas.append("")
         textos[cidade] = "\n".join(linhas).strip()
 
     colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
-    avulsas = ColetaAvulsa.query.filter_by(coletado=False).order_by(ColetaAvulsa.criado_em.desc()).all()
     cidades = Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all()
     fornecedores = Fornecedor.query.order_by(Fornecedor.nome).all()
     return render_template("admin/coletas_proprias.html", grupos=grupos_ord, textos=textos, colabs=colabs,
-                           avulsas=avulsas, cidades=cidades, fornecedores=fornecedores)
+                           cidades=cidades, fornecedores=fornecedores)
 
 
 @admin_bp.route("/coletas-proprias/avulsa", methods=["POST"])

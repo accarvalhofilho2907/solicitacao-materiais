@@ -46,7 +46,8 @@ def gerar_pdf_pedido(s):
     dados = [["Material", s.material or "-"], ["Quantidade", str(s.quantidade)],
              ["Fabricante", s.fabricante or "-"], ["Tipo", s.tipo.nome if s.tipo else "-"],
              ["Local / frente de serviço", s.local_servico or "-"],
-             ["Link de similar", s.link_similar or "-"], ["Solicitante", s.solicitante.nome]]
+             ["Link de similar", s.link_similar or "-"],
+             ["Solicitante", (s.solicitante.nome if s.solicitante else (getattr(s, "solicitante_nome", None) or "-"))]]
     t = Table(dados, colWidths=[50 * mm, 115 * mm])
     t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -102,7 +103,7 @@ def gerar_pdf_fichas(solicitacoes):
             ["Tipo de material", s.tipo.nome if s.tipo else "-"],
             ["Local / frente de serviço", s.local_servico or "-"],
             ["Link de similar", s.link_similar or "-"],
-            ["Solicitante", s.solicitante.nome],
+            ["Solicitante", (s.solicitante.nome if s.solicitante else (getattr(s, "solicitante_nome", None) or "-"))],
             ["Criada em", s.criado_em.strftime("%d/%m/%Y %H:%M") if s.criado_em else "-"],
             ["Fornecedor definido", s.fornecedor_definido.nome if s.fornecedor_definido else "-"],
             ["Frete", (s.frete_tipo or "-")],

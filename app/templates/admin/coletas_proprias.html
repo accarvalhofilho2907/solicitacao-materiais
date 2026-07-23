@@ -1,71 +1,59 @@
 {% extends "base.html" %}
 {% block content %}
-<h4 class="mb-1">🚚 Coletas próprias</h4>
-<p class="text-muted small">Solicitações com frete FOB / retirada por colaborador, agrupadas por cidade e por fornecedor. Copie o texto e cole no grupo do motorista.</p>
-
-<div class="card mb-3"><div class="card-body py-2">
-  <div class="row g-2 align-items-end">
-    <div class="col-12 col-md-6">
-      <label class="form-label small mb-1"><b>Quem coletará?</b> (identificação para o fornecedor)</label>
-      <select id="selColetor" class="form-select form-select-sm" onchange="salvarColetor()">
-        <option value="">— selecione o colaborador —</option>
-        {% for co in colabs %}
-        <option value="{{ co.id }}" data-nome="{{ co.nome }}" data-cpf="{{ co.cpf or '' }}" data-empresa="{{ co.empresa or '' }}">{{ co.nome }}{% if co.empresa %} — {{ co.empresa }}{% endif %}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-12 col-md-6">
-      <button type="button" class="btn btn-sm btn-primary" onclick="copiarColetor()">📋 Copiar identificação do coletor</button>
-      <span id="coletorPreview" class="small text-muted ms-2"></span>
-    </div>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+  <div>
+    <h4 class="mb-1">🚚 Coletas próprias</h4>
+    <p class="text-muted small mb-0">Agrupadas por cidade e por fornecedor. Copie o texto e cole no grupo do motorista.</p>
   </div>
-</div></div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#boxColetor">👤 Quem coletará?</button>
+    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#boxAvulsa">➕ Coleta avulsa</button>
+  </div>
+</div>
 
-<div class="card mb-3"><div class="card-body py-2">
-  <h6 class="mb-2">➕ Coleta avulsa <small class="text-muted">(material que não é uma solicitação de compra)</small></h6>
-  <form method="post" action="{{ url_for('admin.coleta_avulsa_add') }}" class="row g-2 align-items-end">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="col-12 col-md-4"><label class="form-label small mb-0">Material</label>
-      <input name="material" class="form-control form-control-sm" required></div>
-    <div class="col-6 col-md-2"><label class="form-label small mb-0">Quantidade</label>
-      <input name="quantidade" class="form-control form-control-sm"></div>
-    <div class="col-6 col-md-2"><label class="form-label small mb-0">Cidade</label>
-      <select name="cidade_nome" class="form-select form-select-sm">
-        <option value="">—</option>
-        {% for cd in cidades %}<option value="{{ cd.rotulo or cd.nome }}">{{ cd.rotulo or cd.nome }}</option>{% endfor %}
-      </select></div>
-    <div class="col-8 col-md-3"><label class="form-label small mb-0">Fornecedor</label>
-      <select name="fornecedor_nome" class="form-select form-select-sm">
-        <option value="">—</option>
-        {% for fo in fornecedores %}<option value="{{ fo.nome }}">{{ fo.nome }}</option>{% endfor %}
-      </select></div>
-    <div class="col-4 col-md-1"><button class="btn btn-sm btn-primary w-100">Adicionar</button></div>
-  </form>
+<div class="collapse" id="boxColetor">
+  <div class="card mb-3"><div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-6">
+        <label class="form-label small mb-1"><b>Quem coletará?</b> (identificação para o fornecedor)</label>
+        <select id="selColetor" class="form-select form-select-sm" onchange="salvarColetor()">
+          <option value="">— selecione o colaborador —</option>
+          {% for co in colabs %}
+          <option value="{{ co.id }}" data-nome="{{ co.nome }}" data-cpf="{{ co.cpf or '' }}" data-empresa="{{ co.empresa or '' }}">{{ co.nome }}{% if co.empresa %} — {{ co.empresa }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-6">
+        <button type="button" class="btn btn-sm btn-primary" onclick="copiarColetor()">📋 Copiar identificação do coletor</button>
+        <span id="coletorPreview" class="small text-muted ms-2"></span>
+      </div>
+    </div>
+  </div></div>
+</div>
 
-  {% if avulsas %}
-  <div class="table-responsive mt-2"><table class="table table-sm align-middle mb-0">
-    <thead class="table-light"><tr><th>Material</th><th>Qtd</th><th>Cidade</th><th>Fornecedor</th><th></th></tr></thead>
-    <tbody>
-      {% for a in avulsas %}
-      <tr>
-        <td><b>{{ a.material }}</b></td><td class="small">{{ a.quantidade or '—' }}</td>
-        <td class="small">{{ a.cidade_nome or '—' }}</td><td class="small">{{ a.fornecedor_nome or '—' }}</td>
-        <td class="text-end">
-          <form method="post" action="{{ url_for('admin.coleta_avulsa_coletado', aid=a.id) }}" class="d-inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-sm btn-outline-success">✓ coletado</button>
-          </form>
-          <form method="post" action="{{ url_for('admin.coleta_avulsa_del', aid=a.id) }}" class="d-inline" onsubmit="return confirm('Excluir esta coleta avulsa?')">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-sm btn-outline-danger">×</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table></div>
-  {% endif %}
-</div></div>
+<div class="collapse" id="boxAvulsa">
+  <div class="card mb-3"><div class="card-body py-2">
+    <h6 class="mb-2">➕ Coleta avulsa <small class="text-muted">(material que não é uma solicitação de compra)</small></h6>
+    <form method="post" action="{{ url_for('admin.coleta_avulsa_add') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-12 col-md-4"><label class="form-label small mb-0">Material</label>
+        <input name="material" class="form-control form-control-sm" required></div>
+      <div class="col-6 col-md-2"><label class="form-label small mb-0">Quantidade</label>
+        <input name="quantidade" class="form-control form-control-sm"></div>
+      <div class="col-6 col-md-2"><label class="form-label small mb-0">Cidade</label>
+        <select name="cidade_nome" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for cd in cidades %}<option value="{{ cd.rotulo or cd.nome }}">{{ cd.rotulo or cd.nome }}</option>{% endfor %}
+        </select></div>
+      <div class="col-8 col-md-3"><label class="form-label small mb-0">Fornecedor</label>
+        <select name="fornecedor_nome" class="form-select form-select-sm">
+          <option value="">—</option>
+          {% for fo in fornecedores %}<option value="{{ fo.nome }}">{{ fo.nome }}</option>{% endfor %}
+        </select></div>
+      <div class="col-4 col-md-1"><button class="btn btn-sm btn-primary w-100">Adicionar</button></div>
+    </form>
+  </div></div>
+</div>
 
 {% if not grupos %}
   <div class="alert alert-info">Nenhuma coleta própria pendente no momento.</div>
@@ -74,7 +62,7 @@
   <div class="card mb-3"><div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h6 class="mb-0">📍 {{ cidade }}
-        <span class="badge bg-secondary">{{ blocos|map(attribute='itens')|map('length')|sum }} item(ns)</span></h6>
+        <span class="badge bg-secondary">{{ (blocos|map(attribute='itens')|map('length')|sum) + (blocos|map(attribute='avulsas')|map('length')|sum) }} item(ns)</span></h6>
       <button type="button" class="btn btn-sm btn-outline-primary" onclick="copiarTexto('txtCidade{{ loop.index }}')">Copiar texto</button>
     </div>
 
@@ -82,7 +70,7 @@
     <div class="border rounded p-2 mb-2">
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
         <div>
-          <strong>{{ b.fornecedor.nome if b.fornecedor else 'Fornecedor não definido' }}</strong>
+          <strong>{{ b.nome }}</strong>
           {% if b.fornecedor %}
           <div class="small text-muted">
             {% if b.fornecedor.contato_nome %}👤 {{ b.fornecedor.contato_nome }}{% endif %}
@@ -94,13 +82,23 @@
           </div>
           {% endif %}
         </div>
-        <span class="badge bg-light text-dark">{{ b.itens|length }} item(ns)</span>
+        <span class="badge bg-light text-dark">{{ b.itens|length + b.avulsas|length }} item(ns)</span>
       </div>
       <ul class="small mb-0 mt-1">
         {% for s in b.itens %}
         <li>Nº {{ s.id }} — {{ s.material }}{% if s.unidade_medida %} ({{ s.unidade_medida }}){% endif %} (x{{ s.quantidade }})
           <span class="text-muted">[{{ s.status_label }}]</span>
           <a href="{{ url_for('admin.solicitacao', sid=s.id) }}">abrir</a></li>
+        {% endfor %}
+        {% for a in b.avulsas %}
+        <li>
+          {{ a.material }}{% if a.quantidade %} (x{{ a.quantidade }}){% endif %}
+          <span class="badge bg-warning text-dark">avulso</span>
+          <form method="post" action="{{ url_for('admin.coleta_avulsa_del', aid=a.id) }}" class="d-inline" onsubmit="return confirm('Excluir esta coleta avulsa?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-link text-danger p-0 align-baseline" title="Excluir coleta avulsa">×</button>
+          </form>
+        </li>
         {% endfor %}
       </ul>
     </div>

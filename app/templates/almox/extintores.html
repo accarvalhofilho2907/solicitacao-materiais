@@ -77,7 +77,7 @@
       </ul>
     </div>
   </div>
-  <div class="col-6 col-md-1"><a href="{{ url_for('almox.extintores') }}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
+  <div class="col-6 col-md-1"><a href="{{ url_for('almox.extintores') }}" onclick="try{localStorage.removeItem('filtroExtintores')}catch(e){}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
 </form>
 
 <input id="filtroExt" class="form-control form-control-sm my-2" style="max-width:420px" placeholder="🔎 Filtrar na lista (código, local, tipo)..." autocomplete="off">
@@ -123,6 +123,14 @@ function abrirSelec(tipo){
     var t=norm(inp.value);
     linhas.forEach(function(tr){tr.style.display=norm(tr.textContent).indexOf(t)>=0?'':'none';});
   });
+})();
+// [58] lembra o ultimo filtro: salva a querystring; se voltar sem filtro, reaplica
+(function(){
+  var KEY='filtroExtintores';
+  var qs=location.search;
+  if(qs && qs.length>1){ try{ localStorage.setItem(KEY, qs); }catch(e){} }
+  else { var saved=null; try{ saved=localStorage.getItem(KEY); }catch(e){}
+    if(saved && saved.length>1){ location.replace(location.pathname + saved); } }
 })();
 </script>
 {% endblock %}

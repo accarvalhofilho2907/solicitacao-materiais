@@ -21,6 +21,12 @@ Para cada linha, escolha a solicitação correspondente (ou deixe "ignorar"). O 
         <tr>
           <td><input type="text" name="desc_{{ loop.index0 }}" value="{{ it.descricao }}" class="form-control form-control-sm">
             {% if it.codigo %}<span class="text-muted small">cód. {{ it.codigo }}{% if it.unidade %} · {{ it.unidade }}{% endif %}</span>{% endif %}
+            <div class="input-group input-group-sm mt-1" title="Usado se você escolher 'Criar novo item'">
+              <span class="input-group-text">novo →</span>
+              <input type="number" min="1" name="qtd_{{ loop.index0 }}" value="{{ (it.quantidade|round|int) if it.quantidade else 1 }}" class="form-control" style="max-width:72px" placeholder="qtd">
+              <input type="text" name="und_{{ loop.index0 }}" value="{{ it.unidade or '' }}" class="form-control" style="max-width:90px" placeholder="unid.">
+              <input type="text" name="fab_{{ loop.index0 }}" class="form-control" placeholder="fabricante">
+            </div>
           </td>
           <td>
             <select name="sol_{{ loop.index0 }}" class="form-select form-select-sm">

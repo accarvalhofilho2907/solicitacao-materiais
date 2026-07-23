@@ -232,6 +232,9 @@
         <div class="crumb">Almoxarifado / <b>{% block crumb %}{{ self.title() }}{% endblock %}</b></div>
       </div>
       <div class="right">
+        {% if current_user.is_authenticated and (perm.is_admin or current_user.is_master) %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalRoadmap" title="Anotar melhorias/roadmap">🗺️ ROADMAP</button>
+        {% endif %}
         {% if perm.is_admin %}
         <div class="dropdown bell-wrap">
           <a href="#" data-bs-toggle="dropdown" title="Notificações" style="color:var(--texto)"><svg width="20" height="20" style="color:var(--texto-2)"><use href="#ic-list"></use></svg>{% set n_total = (n_aprovacoes or 0) + (n_cotacao or 0) + (n_cadastros_incompletos or 0) + (n_pend_extintor or 0) + (n_notif_almox or 0) %}{% if n_total %}<span class="bolha">{{ n_total }}</span>{% endif %}</a>
@@ -296,6 +299,12 @@ document.querySelectorAll('#sbNav .sb-sec').forEach(function(sec){
     while(n&&!n.classList.contains('sb-sec')){ if(n.classList.contains('sb-item')) n.style.display=sec.classList.contains('collapsed')?'none':''; n=n.nextElementSibling; }
   });
 });
+// 51: abrir o sistema com TODAS as secoes do menu recolhidas
+document.querySelectorAll('#sbNav .sb-sec').forEach(function(sec){
+  sec.classList.add('collapsed');
+  var n=sec.nextElementSibling;
+  while(n&&!n.classList.contains('sb-sec')){ if(n.classList.contains('sb-item')) n.style.display='none'; n=n.nextElementSibling; }
+});
 function cadastrarRapido(entidade, selectId, comUF){
   var nome=prompt('Novo(a) '+entidade+':'); if(!nome) return;
   var body={nome:nome}; if(comUF){ var uf=prompt('UF (2 letras), opcional:'); if(uf) body.uf=uf; }
@@ -311,5 +320,66 @@ function filtraDrop(inp){
 }
 </script>
 {% block extra_scripts %}{% endblock %}
+{% if current_user.is_authenticated and (perm.is_admin or current_user.is_master) %}
+<div class="modal fade" id="modalRoadmap" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🗺️ ROADMAP — anotações</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Digite uma melhoria e tecle <b>Enter</b> — ela vira um item salvo na lista. Marque o check quando estiver implementada. Clique em "Copiar tudo" e cole no chat.</p>
+        <div class="input-group input-group-sm mb-2">
+          <input id="roadmapNovo" class="form-control" placeholder="Ex.: Na tela X, incluir campo Y..." autocomplete="off">
+          <button class="btn btn-primary" type="button" onclick="addRoadmapItem()">Adicionar</button>
+        </div>
+        <ul id="roadmapLista" class="list-group"></ul>
+        <div id="roadmapStatus" class="small text-muted mt-1"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" onclick="copiarRoadmap()">📋 Copiar tudo</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var modal=document.getElementById('modalRoadmap'); if(!modal) return;
+  var inp=document.getElementById('roadmapNovo'), lista=document.getElementById('roadmapLista'), st=document.getElementById('roadmapStatus');
+  var URL_L="{{ url_for('admin.roadmap_itens') }}";
+  var dados=[];
+  function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+  function render(){
+    lista.innerHTML='';
+    if(!dados.length){ lista.innerHTML='<li class="list-group-item text-muted small">Nenhum item ainda.</li>'; return; }
+    dados.forEach(function(it){
+      var li=document.createElement('li');
+      li.className='list-group-item d-flex align-items-center gap-2'+(it.feito?' list-group-item-success':'');
+      li.innerHTML='<input type="checkbox" class="form-check-input mt-0" '+(it.feito?'checked':'')+' onchange="toggleRoadmap('+it.id+')">'
+        +'<span style="flex:1;'+(it.feito?'text-decoration:line-through;opacity:.7':'')+'">'+esc(it.texto)+'</span>'
+        +'<button class="btn btn-sm btn-outline-danger py-0" onclick="delRoadmap('+it.id+')">×</button>';
+      lista.appendChild(li);
+    });
+  }
+  function carregar(){ fetch(URL_L).then(function(r){return r.json();}).then(function(d){ dados=d.itens||[]; render(); }).catch(function(){}); }
+  modal.addEventListener('shown.bs.modal', carregar);
+  window.addRoadmapItem=function(){
+    var t=(inp.value||'').trim(); if(!t){ return; }
+    fetch(URL_L,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:t})})
+      .then(function(r){return r.json();}).then(function(){ inp.value=''; st.textContent='Adicionado ✓'; carregar(); })
+      .catch(function(){ st.textContent='Falha ao salvar.'; });
+  };
+  window.toggleRoadmap=function(id){ fetch(URL_L+'/'+id+'/toggle',{method:'POST'}).then(function(){ carregar(); }); };
+  window.delRoadmap=function(id){ if(!confirm('Excluir este item?'))return; fetch(URL_L+'/'+id+'/del',{method:'POST'}).then(function(){ carregar(); }); };
+  window.copiarRoadmap=function(){
+    var txt=dados.map(function(it){ return (it.feito?'[x] ':'[ ] ')+it.texto; }).join('\n');
+    navigator.clipboard.writeText(txt).then(function(){ st.textContent='Copiado! Cole no chat.'; });
+  };
+  inp && inp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addRoadmapItem(); } });
+})();
+</script>
+{% endif %}
 </body>
 </html>

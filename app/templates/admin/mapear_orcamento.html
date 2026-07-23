@@ -25,6 +25,7 @@ Para cada linha, escolha a solicitação correspondente (ou deixe "ignorar"). O 
           <td>
             <select name="sol_{{ loop.index0 }}" class="form-select form-select-sm">
               <option value="">&mdash; ignorar &mdash;</option>
+              <option value="novo">➕ Criar novo item (usar o nome desta linha)</option>
               {% for s in abertas %}
                 <option value="{{ s.id }}">Nº {{ s.id }} · {{ s.material }} (x{{ s.quantidade }})</option>
               {% endfor %}

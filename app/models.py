@@ -1102,3 +1102,29 @@ def _forn_preenche_nome(mapper, connection, target):
 
 event.listen(Fornecedor, "before_insert", _forn_preenche_nome)
 event.listen(Fornecedor, "before_update", _forn_preenche_nome)
+
+
+class RoadmapNota(db.Model):
+    __tablename__ = "roadmap_nota"
+    id = db.Column(db.Integer, primary_key=True)
+    texto = db.Column(db.Text, default="")
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RoadmapItem(db.Model):
+    __tablename__ = "roadmap_item"
+    id = db.Column(db.Integer, primary_key=True)
+    texto = db.Column(db.Text, nullable=False)
+    feito = db.Column(db.Boolean, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ColetaAvulsa(db.Model):
+    __tablename__ = "coleta_avulsa"
+    id = db.Column(db.Integer, primary_key=True)
+    material = db.Column(db.String(200), nullable=False)
+    quantidade = db.Column(db.String(40))
+    cidade_nome = db.Column(db.String(160))
+    fornecedor_nome = db.Column(db.String(160))
+    coletado = db.Column(db.Boolean, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)

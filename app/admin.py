@@ -11,7 +11,7 @@ from .extensions import db, csrf
 from .models import (
     Usuario, TipoMaterial, Fornecedor, Solicitacao, Comentario, PedidoCompra, Orcamento,
     Cidade, Transportadora, Empresa, Sugestao, Atividade, Notinha, LogSolicitacao,
-    HistoricoPapel, Colaborador,
+    HistoricoPapel, Colaborador, RoadmapNota, RoadmapItem, ColetaAvulsa,
     STATUS, STATUS_PADRAO,
 )
 from .storage import salvar_imagem
@@ -442,6 +442,62 @@ def enviar_lote():
                            todos_fornecedores=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all())
 
 
+@admin_bp.route("/roadmap-itens", methods=["GET", "POST"])
+@admin_required
+def roadmap_itens():
+    """Lista de itens do ROADMAP (item 54, versao lista). GET lista; POST adiciona um item."""
+    if request.method == "POST":
+        t = ((request.json or {}).get("texto") if request.is_json else request.form.get("texto")) or ""
+        t = t.strip()
+        if t:
+            db.session.add(RoadmapItem(texto=t))
+            db.session.commit()
+        return jsonify({"ok": True})
+    itens = RoadmapItem.query.order_by(RoadmapItem.feito, RoadmapItem.criado_em).all()
+    return jsonify({"ok": True, "itens": [{"id": i.id, "texto": i.texto, "feito": bool(i.feito)} for i in itens]})
+
+
+@admin_bp.route("/roadmap-itens/<int:iid>/toggle", methods=["POST"])
+@admin_required
+def roadmap_item_toggle(iid):
+    i = db.session.get(RoadmapItem, iid)
+    if i:
+        i.feito = not i.feito
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+@admin_bp.route("/roadmap-itens/<int:iid>/del", methods=["POST"])
+@admin_required
+def roadmap_item_del(iid):
+    i = db.session.get(RoadmapItem, iid)
+    if i:
+        db.session.delete(i)
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+@admin_bp.route("/roadmap-nota", methods=["GET", "POST"])
+@admin_required
+def roadmap_nota():
+    """Bloco de notas do ROADMAP (nota unica compartilhada entre admins). Item 54."""
+    n = RoadmapNota.query.first()
+    if not n:
+        n = RoadmapNota(texto="")
+        db.session.add(n)
+        db.session.commit()
+    if request.method == "POST":
+        texto = ""
+        if request.is_json:
+            texto = (request.json or {}).get("texto", "")
+        else:
+            texto = request.form.get("texto", "")
+        n.texto = texto or ""
+        db.session.commit()
+        return jsonify({"ok": True})
+    return jsonify({"ok": True, "texto": n.texto or ""})
+
+
 @admin_bp.route("/enviar-lote/texto")
 @admin_required
 def enviar_lote_texto():
@@ -817,6 +873,7 @@ def confirmar_orcamento_pdf():
     fid = int(request.form["fornecedor_id"])
     n = int(request.form.get("n", 0))
     criados = 0
+    novos = 0
     for i in range(n):
         sid = request.form.get(f"sol_{i}")
         val = request.form.get(f"val_{i}")
@@ -826,6 +883,19 @@ def confirmar_orcamento_pdf():
         if valor is None:
             continue
         desc = (request.form.get(f"desc_{i}", "") or "").strip()
+        # [53] linha nao localizada: criar 1 item novo com o nome da linha, ja aguardando cotacao
+        if sid == "novo":
+            if not desc:
+                continue
+            nova = Solicitacao(material=desc[:200], quantidade=1,
+                               status="AGUARDANDO_RECEBIMENTO_COTACAO",
+                               solicitante_id=current_user.id,
+                               solicitante_nome=current_user.nome)
+            db.session.add(nova)
+            db.session.flush()   # garante nova.id
+            _log(nova, "Item criado a partir de linha do orçamento importado (aguardando cotação)")
+            sid = nova.id
+            novos += 1
         db.session.add(Orcamento(solicitacao_id=int(sid), fornecedor_id=fid, valor_total=valor,
             item_fornecedor=desc[:300], observacoes=desc[:200], registrado_por=current_user.id))
         s = db.session.get(Solicitacao, int(sid))
@@ -833,7 +903,10 @@ def confirmar_orcamento_pdf():
             _apos_orcamento(s)
         criados += 1
     db.session.commit()
-    flash(f"{criados} orçamento(s) importado(s) do PDF.", "success")
+    msg = f"{criados} orçamento(s) importado(s) do PDF."
+    if novos:
+        msg += f" {novos} item(ns) novo(s) criado(s) a partir de linhas não localizadas."
+    flash(msg, "success")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -1340,7 +1413,49 @@ def coletas_proprias():
             linhas.append("")
         textos[cidade] = "\n".join(linhas).strip()
 
-    return render_template("admin/coletas_proprias.html", grupos=grupos_ord, textos=textos)
+    colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+    avulsas = ColetaAvulsa.query.filter_by(coletado=False).order_by(ColetaAvulsa.criado_em.desc()).all()
+    cidades = Cidade.query.filter_by(ativo=True).order_by(Cidade.nome).all()
+    fornecedores = Fornecedor.query.order_by(Fornecedor.nome).all()
+    return render_template("admin/coletas_proprias.html", grupos=grupos_ord, textos=textos, colabs=colabs,
+                           avulsas=avulsas, cidades=cidades, fornecedores=fornecedores)
+
+
+@admin_bp.route("/coletas-proprias/avulsa", methods=["POST"])
+@admin_required
+def coleta_avulsa_add():
+    material = (request.form.get("material") or "").strip()
+    if material:
+        db.session.add(ColetaAvulsa(
+            material=material,
+            quantidade=(request.form.get("quantidade") or "").strip(),
+            cidade_nome=(request.form.get("cidade_nome") or "").strip(),
+            fornecedor_nome=(request.form.get("fornecedor_nome") or "").strip()))
+        db.session.commit()
+        flash("Coleta avulsa adicionada.", "success")
+    else:
+        flash("Informe ao menos o material.", "warning")
+    return redirect(url_for("admin.coletas_proprias"))
+
+
+@admin_bp.route("/coletas-proprias/avulsa/<int:aid>/coletado", methods=["POST"])
+@admin_required
+def coleta_avulsa_coletado(aid):
+    a = db.session.get(ColetaAvulsa, aid)
+    if a:
+        a.coletado = True
+        db.session.commit()
+    return redirect(url_for("admin.coletas_proprias"))
+
+
+@admin_bp.route("/coletas-proprias/avulsa/<int:aid>/del", methods=["POST"])
+@admin_required
+def coleta_avulsa_del(aid):
+    a = db.session.get(ColetaAvulsa, aid)
+    if a:
+        db.session.delete(a)
+        db.session.commit()
+    return redirect(url_for("admin.coletas_proprias"))
 
 
 @admin_bp.route("/sugestoes")

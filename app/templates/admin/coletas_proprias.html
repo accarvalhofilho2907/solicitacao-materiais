@@ -3,6 +3,70 @@
 <h4 class="mb-1">🚚 Coletas próprias</h4>
 <p class="text-muted small">Solicitações com frete FOB / retirada por colaborador, agrupadas por cidade e por fornecedor. Copie o texto e cole no grupo do motorista.</p>
 
+<div class="card mb-3"><div class="card-body py-2">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label small mb-1"><b>Quem coletará?</b> (identificação para o fornecedor)</label>
+      <select id="selColetor" class="form-select form-select-sm" onchange="salvarColetor()">
+        <option value="">— selecione o colaborador —</option>
+        {% for co in colabs %}
+        <option value="{{ co.id }}" data-nome="{{ co.nome }}" data-cpf="{{ co.cpf or '' }}" data-empresa="{{ co.empresa or '' }}">{{ co.nome }}{% if co.empresa %} — {{ co.empresa }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-6">
+      <button type="button" class="btn btn-sm btn-primary" onclick="copiarColetor()">📋 Copiar identificação do coletor</button>
+      <span id="coletorPreview" class="small text-muted ms-2"></span>
+    </div>
+  </div>
+</div></div>
+
+<div class="card mb-3"><div class="card-body py-2">
+  <h6 class="mb-2">➕ Coleta avulsa <small class="text-muted">(material que não é uma solicitação de compra)</small></h6>
+  <form method="post" action="{{ url_for('admin.coleta_avulsa_add') }}" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-12 col-md-4"><label class="form-label small mb-0">Material</label>
+      <input name="material" class="form-control form-control-sm" required></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Quantidade</label>
+      <input name="quantidade" class="form-control form-control-sm"></div>
+    <div class="col-6 col-md-2"><label class="form-label small mb-0">Cidade</label>
+      <select name="cidade_nome" class="form-select form-select-sm">
+        <option value="">—</option>
+        {% for cd in cidades %}<option value="{{ cd.rotulo or cd.nome }}">{{ cd.rotulo or cd.nome }}</option>{% endfor %}
+      </select></div>
+    <div class="col-8 col-md-3"><label class="form-label small mb-0">Fornecedor</label>
+      <select name="fornecedor_nome" class="form-select form-select-sm">
+        <option value="">—</option>
+        {% for fo in fornecedores %}<option value="{{ fo.nome }}">{{ fo.nome }}</option>{% endfor %}
+      </select></div>
+    <div class="col-4 col-md-1"><button class="btn btn-sm btn-primary w-100">Adicionar</button></div>
+  </form>
+
+  {% if avulsas %}
+  <div class="table-responsive mt-2"><table class="table table-sm align-middle mb-0">
+    <thead class="table-light"><tr><th>Material</th><th>Qtd</th><th>Cidade</th><th>Fornecedor</th><th></th></tr></thead>
+    <tbody>
+      {% for a in avulsas %}
+      <tr>
+        <td><b>{{ a.material }}</b></td><td class="small">{{ a.quantidade or '—' }}</td>
+        <td class="small">{{ a.cidade_nome or '—' }}</td><td class="small">{{ a.fornecedor_nome or '—' }}</td>
+        <td class="text-end">
+          <form method="post" action="{{ url_for('admin.coleta_avulsa_coletado', aid=a.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-success">✓ coletado</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.coleta_avulsa_del', aid=a.id) }}" class="d-inline" onsubmit="return confirm('Excluir esta coleta avulsa?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger">×</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</div></div>
+
 {% if not grupos %}
   <div class="alert alert-info">Nenhuma coleta própria pendente no momento.</div>
 {% else %}
@@ -46,4 +110,25 @@
   </div></div>
   {% endfor %}
 {% endif %}
+<script>
+function _coletorTxt(){
+  var sel=document.getElementById('selColetor'); if(!sel) return '';
+  var o=sel.options[sel.selectedIndex];
+  if(!o || !o.value) return '';
+  var partes=(o.dataset.nome||'').trim().split(/\s+/);
+  var nome=partes.slice(0,2).join(' ');
+  return [nome, o.dataset.cpf||'', o.dataset.empresa||''].filter(Boolean).join(' · ');
+}
+function atualizaPreview(){ var p=document.getElementById('coletorPreview'); if(p) p.textContent=_coletorTxt(); }
+function salvarColetor(){ var v=document.getElementById('selColetor').value; if(v) localStorage.setItem('ultimoColetor', v); atualizaPreview(); }
+function copiarColetor(){
+  var t=_coletorTxt(); if(!t){ alert('Selecione quem coletará.'); return; }
+  navigator.clipboard.writeText(t).then(function(){ alert('Identificação copiada:\n'+t); });
+}
+(function(){
+  var last=localStorage.getItem('ultimoColetor'); var sel=document.getElementById('selColetor');
+  if(last && sel && sel.querySelector('option[value="'+last+'"]')){ sel.value=last; }
+  atualizaPreview();
+})();
+</script>
 {% endblock %}

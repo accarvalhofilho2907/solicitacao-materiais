@@ -1641,3 +1641,86 @@ de chaves listando as atrasadas).
      botoes religados (copiarTextoForn/abrirWhatsForn). E-mail ja usava idsMarcados.
 Testado: alerta+popup; filtro status; QR 44x44 dobravel; texto/wa so dos marcados; telas 200.
 FILA zerada.
+
+### MELHORIAS (Antonio 21/07) — na FILA (aguarda "pode executar")
+[51] Menu inicia TOTALMENTE RECOLHIDO ao abrir o sistema (as secoes sb-sec comecam fechadas; usuario
+     expande a que quiser). Hoje fica muito extenso. Verificar o JS/estado do sidebar (base.html) — provavel
+     que as secoes venham abertas por padrao; mudar default p/ fechado (e opcional lembrar a ultima escolha).
+[52] Coletas proprias: incluir COLETA DE MATERIAL AVULSO (nao vinculado a uma solicitacao de compra).
+     Antonio lembra de ja ter pedido; conferir se existe algo parcial em admin.coletas_proprias. Provavel
+     criar um form "coleta avulsa" (descricao/qtd/local/fornecedor livre) que gera o registro de coleta sem
+     precisar de Solicitacao.
+[53] Importar orcamento: para cada LINHA do orcamento NAO localizada nas solicitacoes, opcao de CRIAR 1 item
+     (Solicitacao) ja com o NOME preenchido; usuario completa o resto; ao fechar, o item ja fica "setado"
+     (vinculado aquela linha/cotacao), adiantando o fluxo. Ver admin.importar_orcamento (matching atual) e
+     onde adicionar o "criar item a partir da linha".
+DUVIDAS: [51] recolher tudo sempre, ou lembrar a ultima secao aberta? [52] a coleta avulsa entra no mesmo
+relatorio/PDF das coletas proprias? [53] o item criado nasce em qual status (ex.: "AGUARDANDO_APROVACAO" ou
+ja "AGUARDANDO_RECEBIMENTO_COTACAO" por ja ter cotacao)?
+
+### MELHORIAS — respostas de Antonio + item 54 (FILA; aguarda "pode executar")
+[51] CONFIRMADO: recolher TUDO sempre ao abrir (todas as secoes fechadas).
+[52] CONFIRMADO: form de "Coleta avulsa" (material, quantidade, cidade, fornecedor) que ADICIONA nas
+     Coletas proprias (entra na mesma lista/relatorio). Sem vinculo a Solicitacao.
+[53] CONFIRMADO: item criado a partir da linha do orcamento nasce em status
+     "AGUARDANDO_RECEBIMENTO_COTACAO" (ja veio de orcamento).
+[54] Botao "ROADMAP" no topo do sistema: abre um bloco de notas (textarea) onde Antonio vai anotando o que
+     quer, enquanto usa o sistema. Persistente (salvar no servidor p/ nao perder ao recarregar/trocar
+     device). Depois ele copia todo o texto e cola aqui no chat. Provavel: campo de texto por usuario (ou
+     nota unica do admin) + botao no topbar que abre um modal com o texto e um "Copiar tudo".
+DUVIDA [54]: a nota e por usuario (cada um a sua) ou uma nota unica compartilhada entre admins? E aparece
+so p/ admin/almox, certo?
+
+[54] CONFIRMADO: botao "ROADMAP" visivel APENAS para ADMIN e ADMIN MASTER (perm.is_admin / is_master).
+     Decisao: nota UNICA compartilhada entre os admins (uma so caixa de texto persistida no servidor),
+     com botao "Copiar tudo". (Se preferir por usuario depois, ajustamos.)
+
+[55] Coletas proprias: campo "Quem coletara?" = selecionar um colaborador cadastrado; ao setar, copia um
+     texto com NOME + 1o SOBRENOME + CPF + EMPRESA do colaborador (p/ enviar ao fornecedor identificando quem
+     retira). Default = ULTIMO colaborador setado (geralmente o mesmo). 
+--- AUTORIZADO rodar 51-55 (21/07). Executando em blocos testados. ---
+
+### MELHORIAS 51-55 — parcialmente EXECUTADO (21/07)
+[51] FEITO — menu abre com TODAS as secoes recolhidas (base.html: init add .collapsed em todas as sb-sec).
+[54] FEITO — botao "🗺️ ROADMAP" na topbar (admin/master) abre modal com textarea (nota unica compartilhada,
+     salva no servidor em RoadmapNota; auto-save + "Copiar tudo"). Rota admin.roadmap_nota (GET/POST).
+     Modelo RoadmapNota criado (create_all no boot cria a tabela).
+[55] FEITO — Coletas proprias: seletor "Quem coletara?" (colaboradores ativos); botao "Copiar identificacao"
+     copia NOME+1o SOBRENOME + CPF + EMPRESA; lembra o ultimo colaborador (localStorage) e pre-seleciona.
+[52] PENDENTE (proxima rodada) — Coleta AVULSA em Coletas proprias. Nota: coletas_proprias e uma VIEW de
+     Solicitacao (frete FOB/COLABORADOR). Plano: form avulso (material/qtd/cidade/fornecedor) que cria uma
+     Solicitacao marcada como avulsa (FOB/COLABORADOR) p/ aparecer na lista, ou um modelo ColetaAvulsa
+     exibido junto. Definir com Antonio como nao poluir o fluxo de solicitacoes.
+[53] PENDENTE (proxima rodada) — Importar orcamento: criar 1 item (Solicitacao, status
+     AGUARDANDO_RECEBIMENTO_COTACAO) por linha nao localizada, ja com o nome; usuario completa o resto.
+     Requer mexer no matching de admin.importar_orcamento. Item grande — fazer com calma.
+
+### FIX (21/07) — 'perm' is undefined ao iniciar (login) ✓
+Causa: o bloco do modal ROADMAP (item 54) e o botao na topbar usavam {% if perm.is_admin or
+current_user.is_master %}, mas o modal ficava FORA da protecao de login (antes de </body>). Na tela de
+login o 'perm' nao e injetado -> UndefinedError -> app nao iniciava.
+Correcao: guardar com {% if current_user.is_authenticated and (perm.is_admin or current_user.is_master) %}
+(curto-circuito nao avalia perm quando nao autenticado). Testado: / e /login rendem 200 sem erro.
+
+### 54 (v2) — ROADMAP como LISTA de itens ✓ (23/07)
+Antonio: digitar melhoria + Enter -> vira item salvo na lista; marcar check quando implementado (dar baixa);
+copiar tudo no fim. Implementado: modelo RoadmapItem (texto, feito, criado_em; create_all cria tabela).
+Rotas: GET/POST /admin/roadmap-itens (listar/add), POST .../<id>/toggle, POST .../<id>/del. Modal refeito:
+input com Enter para adicionar, lista com checkbox (feito, riscado) e botao excluir, "Copiar tudo" gera
+texto com [ ]/[x]. Testado: add/toggle/del/listar; login ok. (roadmap_nota antigo mantido, sem uso.)
+FLUXO: Antonio anota itens -> copia -> cola no chat -> Claude implementa e diz o que fez/nao fez -> Antonio
+da baixa marcando os itens.
+
+### 52 e 53 — EXECUTADOS (23/07) ✓
+[52] Coleta avulsa: modelo ColetaAvulsa (material, quantidade, cidade_nome, fornecedor_nome, coletado).
+     Na tela Coletas proprias, card com form (material/qtd/cidade[select]/fornecedor[select]) + lista das
+     avulsas pendentes com "coletado" e excluir. Rotas coleta_avulsa_add/coletado/del. E um REGISTRO PROPRIO
+     (nao vira Solicitacao), aparece na mesma tela.
+[53] Importar orcamento: no mapear_orcamento, cada linha tem a opcao "Criar novo item (usar o nome desta
+     linha)". No confirmar, sol_i='novo' cria Solicitacao(material=desc, qtd=1,
+     status AGUARDANDO_RECEBIMENTO_COTACAO, solicitante=usuario) e vincula o Orcamento; segue o fluxo normal
+     (_apos_orcamento) por ja ter cotacao. Mensagem informa quantos itens novos foram criados.
+     OBS: item avanca de status ao receber o orcamento (esperado). Se Antonio quiser que fique parado em
+     "aguardando" ate completar, e so pedir.
+Testado: avulsa add/coletado/tela; linha 'novo' cria item + orcamento vinculado; telas 200; login ok.
+FILA (51-55 + 52/53) zerada.

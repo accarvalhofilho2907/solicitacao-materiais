@@ -45,7 +45,7 @@
           <option value="">—</option>
           {% for cd in cidades %}<option value="{{ cd.rotulo or cd.nome }}">{{ cd.rotulo or cd.nome }}</option>{% endfor %}
         </select></div>
-      <div class="col-8 col-md-3"><label class="form-label small mb-0">Fornecedor</label>
+      <div class="col-8 col-md-3"><label class="form-label small mb-0">Fornecedor <a href="{{ url_for('admin.fornecedores') }}" target="_blank" class="small ms-1" title="Não achou? Cadastrar fornecedor">➕ cadastrar</a></label>
         <select name="fornecedor_nome" class="form-select form-select-sm">
           <option value="">—</option>
           {% for fo in fornecedores %}<option value="{{ fo.nome }}">{{ fo.nome }}</option>{% endfor %}

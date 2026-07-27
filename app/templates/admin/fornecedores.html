@@ -59,7 +59,8 @@
     </form>
     {% if so_incompletos %}<div class="alert alert-warning py-1 small mb-2">Mostrando só cadastros <b>sem CNPJ</b> — complete-os para sair da lista de pendências do sininho.</div>{% endif %}
     </div><div class="table-responsive">
-    <table class="table mb-0 align-middle"><thead class="table-light"><tr><th>Cadastro</th><th>Papel</th><th>CNPJ</th><th>Cidade</th><th></th></tr></thead>
+    <input id="filtroForn" class="form-control form-control-sm mb-2" style="max-width:320px" placeholder="🔎 Filtrar (nome, CNPJ, cidade)..." autocomplete="off" oninput="filtrarForn(this.value)">
+    <table id="tabForn" class="table mb-0 align-middle"><thead class="table-light"><tr><th>Cadastro</th><th>Papel</th><th>CNPJ</th><th>Cidade</th><th></th></tr></thead>
     <tbody>{% for f in lista %}<tr>
       <td>{{ f.nome }}{% if not f.ativo %} <span class="badge bg-secondary">inativo</span>{% endif %}
         <div class="small text-muted">{{ f.email or '-' }}{% if f.telefone %} · 📞 {{ f.telefone }}{% endif %}</div></td>
@@ -82,6 +83,13 @@
 </div>
 
 <script>
+function filtrarForn(v){
+  function norm(s){ return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+  var t=norm(v);
+  document.querySelectorAll('#tabForn tbody tr').forEach(function(tr){
+    tr.style.display = norm(tr.textContent).indexOf(t)>=0 ? '' : 'none';
+  });
+}
 function filtrarChk(q, boxId){ q=q.toLowerCase(); document.querySelectorAll('#'+boxId+' .chk').forEach(function(d){ d.style.display = d.dataset.nome.indexOf(q)>=0?'':'none'; }); }
 
 function soDig(s){ return (s||'').replace(/\D/g,''); }

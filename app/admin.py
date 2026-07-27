@@ -200,7 +200,7 @@ def dashboard():
     f_atrasadas = request.args.get("atrasadas")
     aplicou = bool(request.args)
     if not f_status and not aplicou:
-        f_status = STATUS_PADRAO[:]  # padrão: tudo menos Concluído/Cancelada
+        f_status = [s for s in STATUS_PADRAO if s != "AGUARDANDO_CHEGADA"]  # [63] default s/ chegada
     if f_vencidos:
         q = q.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
                      Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today())
@@ -242,6 +242,7 @@ def dashboard():
         pendentes=Solicitacao.query.filter_by(status="AGUARDANDO_APROVACAO").count(),
         n_envio=Solicitacao.query.filter_by(status="AGUARDANDO_ENVIO_COTACAO").count(),
         n_chegada=Solicitacao.query.filter_by(status="AGUARDANDO_CHEGADA").count(),
+        n_receb=Solicitacao.query.filter_by(status="AGUARDANDO_RECEBIMENTO_COTACAO").count(),
         n_vencidos=Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_RECEBIMENTO_COTACAO",
             Solicitacao.prazo_cotacao.isnot(None), Solicitacao.prazo_cotacao < date.today()).count(),
         n_atrasadas=Solicitacao.query.filter(Solicitacao.status == "AGUARDANDO_CHEGADA",
@@ -411,13 +412,34 @@ def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
         itens = [s for s in itens if _bate(s)]
 
     excluir_fornecedores = excluir_fornecedores or set()
+    # [66] pares (solicitacao, fornecedor) que JA tiveram cotacao enviada -> nao reaparecem para aquele fornecedor
+    ids_itens = [s.id for s in itens]
+    enviados = set()
+    if ids_itens:
+        for pc in PedidoCompra.query.filter(PedidoCompra.solicitacao_id.in_(ids_itens)).all():
+            enviados.add((pc.solicitacao_id, pc.destinatarios))
     grupos = {}
     for s in itens:
         excluidos = {f.id for f in s.fornecedores_excluidos} | excluir_fornecedores
         for f in s.tipo.fornecedores:
             if f.ativo and f.aprovado and f.id not in excluidos:
+                if (s.id, (f.email or f.nome)) in enviados:
+                    continue  # [66] ja enviei a cotacao deste item para este fornecedor
                 grupos.setdefault(f.id, {"fornecedor": f, "itens": []})["itens"].append(s)
     return itens, grupos
+
+
+@admin_bp.route("/enviar-lote/excluir-forn/<int:sid>/<int:fid>", methods=["POST"])
+@admin_required
+def enviar_lote_excluir_forn(sid, fid):
+    """[65] Remove a empresa (fornecedor) da cotacao daquele item — ela nao tem o produto."""
+    s = db.session.get(Solicitacao, sid)
+    f = db.session.get(Fornecedor, fid)
+    if s and f and f not in s.fornecedores_excluidos:
+        s.fornecedores_excluidos.append(f)
+        _log(s, f"Fornecedor removido da cotação deste item: {f.nome}")
+        db.session.commit()
+    return redirect(request.referrer or url_for("admin.enviar_lote"))
 
 
 @admin_bp.route("/enviar-lote")
@@ -431,14 +453,25 @@ def enviar_lote():
                              excluir_fornecedores=excluir_fornecedores)
     base = _proximo_num_cotacao()
     lista = []
+    com_forn = set()
     for i, g in enumerate(grupos.values()):
         f = g["fornecedor"]
         seq = _seq_str(base + i)
         texto = _corpo_cotacao(f, g["itens"], incluir_spe=False)   # WhatsApp/Texto sem o quadro de CNPJs (item 91)
         lista.append({"fornecedor": f, "itens": g["itens"], "seq": seq, "wa": _wa_link(f, texto),
                       "assunto": _assunto_cotacao(f, seq), "texto": texto})
+        for s in g["itens"]:
+            com_forn.add(s.id)
+    # [69] itens cujo tipo NAO tem nenhum fornecedor elegivel (nao confundir com os ja enviados - item 66)
+    sem_forn = []
+    for s in itens:
+        excl = {f.id for f in s.fornecedores_excluidos}
+        tem_forn = any(f.ativo and f.aprovado and f.id not in excl
+                       for f in (s.tipo.fornecedores if s.tipo else []))
+        if not tem_forn:
+            sem_forn.append(s)
     return render_template("admin/enviar_lote.html", itens=itens, grupos=lista, expandir=expandir,
-                           busca=busca, spes=SPES_COTACAO, excluir_fornecedores=excl_raw,
+                           busca=busca, spes=SPES_COTACAO, excluir_fornecedores=excl_raw, sem_forn=sem_forn,
                            todos_fornecedores=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all())
 
 
@@ -1420,7 +1453,11 @@ def coletas_proprias():
                 alvo = b
                 break
         if alvo is None:
-            alvo = cid.setdefault("av:" + nome.lower(), {"fornecedor": None, "nome": nome, "itens": [], "avulsas": []})
+            # [76] tenta vincular ao Fornecedor cadastrado (pelo nome) para exibir os dados de contato
+            forn = None
+            if a.fornecedor_nome:
+                forn = Fornecedor.query.filter(db.func.lower(Fornecedor.nome) == a.fornecedor_nome.strip().lower()).first()
+            alvo = cid.setdefault("av:" + nome.lower(), {"fornecedor": forn, "nome": (forn.nome if forn else nome), "itens": [], "avulsas": []})
         alvo["avulsas"].append(a)
 
     # ordena fornecedores por nome dentro de cada cidade

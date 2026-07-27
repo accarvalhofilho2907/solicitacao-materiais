@@ -38,8 +38,8 @@
 
 <form class="card card-body mb-3" method="get"><div class="row g-2 align-items-end">
   <div class="col-12 mb-1"><span class="fw-bold small">Filtros</span></div>
-  <div class="col-md-2"><label class="form-label small mb-0">De</label><input type="date" name="de" value="{{ f_de or '' }}" class="form-control form-control-sm"></div>
-  <div class="col-md-2"><label class="form-label small mb-0">Até</label><input type="date" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
+  <div class="col-md-2"><label class="form-label small mb-0">De</label><input type="date" id="fltDe" name="de" value="{{ f_de or '' }}" class="form-control form-control-sm" onchange="autoAte()"></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Até</label><input type="date" id="fltAte" name="ate" value="{{ f_ate or '' }}" class="form-control form-control-sm"></div>
   <div class="col-md-3"><label class="form-label small mb-0">Fornecedor</label><select name="fornecedor" class="form-select form-select-sm"><option value="">Todos</option>{% for f in fornecedores %}<option value="{{ f.id }}" {{ 'selected' if f_forn==f.id|string }}>{{ f.nome }}</option>{% endfor %}</select></div>
   <div class="col-md-3"><label class="form-label small mb-0">Atividade</label>
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
@@ -68,23 +68,31 @@
 
 <div class="card"><div class="card-body">
   <h6 class="mb-2">Notinhas lançadas</h6>
-  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-    <thead class="table-light"><tr><th>Data</th><th>Comp.</th><th>Fornecedor</th><th>Atividade</th><th class="text-end">Valor</th><th></th></tr></thead>
+  <div class="table-responsive">{% set filtrou = f_de or f_ate or f_forn or f_ativ %}<table class="table table-sm align-middle mb-0">
+    <thead class="table-light"><tr>{% if filtrou %}<th title="Conferir">✓</th>{% endif %}<th>Data</th><th>Comp.</th><th>Fornecedor</th><th>Atividade</th><th class="text-end">Valor</th><th></th></tr></thead>
     <tbody>{% for n in notas %}
-      <tr><td>{{ n.data.strftime('%d/%m/%Y') }}</td><td class="small">{{ n.competencia or '-' }}</td><td>{{ n.fornecedor.nome }}</td><td class="small">{{ n.atividade.nome if n.atividade else '-' }}</td><td class="text-end">R$ {{ '%.2f'|format(n.valor) }}</td>
+      <tr>{% if filtrou %}<td><input type="checkbox" class="ckConf" onchange="this.closest('tr').style.opacity=this.checked?'0.5':''; this.closest('tr').style.textDecoration=this.checked?'line-through':''"></td>{% endif %}<td>{{ n.data.strftime('%d/%m/%Y') }}</td><td class="small">{{ n.competencia or '-' }}</td><td>{{ n.fornecedor.nome }}</td><td class="small">{{ n.atividade.nome if n.atividade else '-' }}</td><td class="text-end">R$ {{ '%.2f'|format(n.valor) }}</td>
         <td class="text-nowrap"><button class="btn btn-sm btn-outline-primary py-0" type="button" data-bs-toggle="collapse" data-bs-target="#n{{ n.id }}">Editar</button>
           <form method="post" action="{{ url_for('notinhas.excluir', nid=n.id) }}" class="d-inline" onsubmit="return confirm('Excluir esta notinha?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger py-0">Excluir</button></form></td></tr>
-      <tr class="collapse" id="n{{ n.id }}"><td colspan="6"><form method="post" action="{{ url_for('notinhas.editar', nid=n.id) }}" class="row g-2">
+      <tr class="collapse" id="n{{ n.id }}"><td colspan="{{ 7 if filtrou else 6 }}"><form method="post" action="{{ url_for('notinhas.editar', nid=n.id) }}" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="col-md-3"><input type="date" name="data" value="{{ n.data.isoformat() }}" class="form-control form-control-sm"></div>
         <div class="col-md-3"><select name="fornecedor_id" class="form-select form-select-sm">{% for f in fornecedores %}<option value="{{ f.id }}" {{ 'selected' if n.fornecedor_id==f.id }}>{{ f.nome }}</option>{% endfor %}</select></div>
         <div class="col-md-3"><select name="atividade_id" class="form-select form-select-sm selAtividade">{% for a in atividades %}<option value="{{ a.id }}" {{ 'selected' if n.atividade_id==a.id }}>{{ a.nome }}</option>{% endfor %}</select></div>
         <div class="col-md-2"><input name="valor" class="form-control form-control-sm valorBR" value="{{ '%.2f'|format(n.valor)|replace('.', ',') }}"></div>
         <div class="col-md-1 text-end"><button class="btn btn-sm btn-primary">Salvar</button></div></form></td></tr>
-    {% else %}<tr><td colspan="6" class="text-center text-muted py-3">Nenhuma notinha.</td></tr>{% endfor %}</tbody>
+    {% else %}<tr><td colspan="{{ 7 if filtrou else 6 }}" class="text-center text-muted py-3">Nenhuma notinha.</td></tr>{% endfor %}</tbody>
   </table></div>
 </div></div>
 <script>
+// [74] ao preencher "De", preenche "Ate" com o ultimo dia do mes da 1a data
+function autoAte(){
+  var de=document.getElementById('fltDe'), ate=document.getElementById('fltAte');
+  if(!de || !de.value) return;
+  var p=de.value.split('-'); var y=+p[0], m=+p[1];
+  var ultimo=new Date(y, m, 0).getDate();
+  ate.value = p[0]+'-'+p[1]+'-'+String(ultimo).padStart(2,'0');
+}
 document.querySelectorAll('.valorBR').forEach(function(i){ i.addEventListener('input', function(){ this.value = this.value.replace(/[^0-9,]/g,''); }); });
 function addAtividade(selId){
   var nome=prompt('Nova atividade:'); if(!nome) return;

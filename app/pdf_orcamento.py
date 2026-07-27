@@ -289,6 +289,25 @@ def _parse_iluminar(linhas):
     return itens
 
 
+# CASA DAS MANGUEIRAS (SysPro/TriLink): QTDE UNID CODIGO REFERENCIA DESCRICAO [ENDERECO] PRECO TOTAL
+_CM_ITEM = re.compile(
+    r"^\s*(\d+,\d+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(.+?)\s+(\d[\d.]*,\d{2})\s+(\d[\d.]*,\d{2})\s*$")
+
+
+def _parse_casa_mangueiras(linhas):
+    itens = []
+    for ln in linhas:
+        m = _CM_ITEM.match(ln)
+        if not m:
+            continue
+        qtde, unid, cod, ref, desc, preco, total = m.groups()
+        unid = re.sub(r"\d+$", "", unid) or unid   # "UNID0" -> "UNID"
+        itens.append({"descricao": desc.strip(), "unidade": unid,
+                      "quantidade": _val_br(qtde), "valor": _val_br(preco),
+                      "subtotal": _val_br(total), "codigo": cod})
+    return itens
+
+
 # CNPJ (só dígitos) -> parser
 _FORNECEDORES = [
     ("17281973000815", _parse_cofermeta),
@@ -298,6 +317,7 @@ _FORNECEDORES = [
     ("13421123000148", _parse_mundial),
     ("06913480001563", _parse_dimensional),
     ("03534081000106", _parse_iluminar),
+    ("54418540000119", _parse_casa_mangueiras),
 ]
 
 

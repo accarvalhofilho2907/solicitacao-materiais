@@ -1778,3 +1778,81 @@ Flask-WTF bloqueava (nos testes o CSRF estava desligado). Correcao: enviar heade
      novo nasce com esses dados preenchidos (nao precisa entrar ficha por ficha depois).
 Testado: menu->dashboard c/ quadro; memoria extintores+dashboard; novo item com qtd/und/fabricante; telas 200.
 FILA (57-61) zerada.
+
+### LISTA do ROADMAP in-app (Antonio 23/07) — FILA, aguarda "pode executar"
+[62] Menu do topo de Solicitacoes ainda nao funciona / ao clicar em Solicitacoes o quadro do topo nao
+     aparece (parece estar em link diferente). O quadro so aparece com a URL completa de status
+     (/admin/?status=AGUARDANDO_APROVACAO&status=...&tipo=&q=&de=&ate=). CONSERTAR: clicar em "Solicitacoes"
+     deve cair na tela COM o quadro (revisar o link do menu admin -> admin.dashboard e o estado inicial;
+     o item 57 nao resolveu de fato).  [engloba os 3 primeiros itens da lista + o do link]
+[63] Filtro nao esta sendo lembrado de fato ao editar ficha e sair (58 nao ficou como esperado). ALEM DISSO:
+     trocar o checkbox ao lado do filtro -> selecao EM CIMA DO PROPRIO ITEM (quadros do topo, ver 71),
+     sempre todos selecionados; DEFAULT = todos selec. EXCETO "Cancelados" e "Aguardando chegada".
+[64] Enviar cotacao: filtro por empresa/produto deve filtrar AO DIGITAR (sem clicar FILTRAR).
+[65] Enviar cotacao: opcao de EXCLUIR UMA EMPRESA de uma cotacao (x ao lado do item), pois ha empresas que
+     nao terao aquele produto.
+[66] Enviar cotacao: ao clicar "cotacao enviada" e indicar enviar para mais alguem, RETIRAR o fornecedor ja
+     enviado da lista; manter so se enviei PARTE dos itens dele (reaparece com os itens restantes).
+     Ex.: Fornecedor A itens 1,2,3,4; enviei 1,2,3 -> reaparece so com o item 4.
+[67] Retirar o botao "EXCLUIR EMPRESAS DESTA TELA" (a funcionalidade certa e a do 65).
+[68] BUG: enviei todas as cotacoes, mas o SININHO mostra 2 ainda sem enviar (contador errado).
+[69] Itens a enviar cotacao cujo TIPO DE MATERIAL nao tem fornecedor cadastrado: manter na tela ENVIAR
+     COTACAO mostrando "nenhum fornecedor cadastrado" (hoje somem).
+[70] Solicitacoes: nao ha como LIMPAR o filtro. Ao clicar nos quadros do topo (Aprovar, Chegada atrasada,
+     etc.) o clique fica VISIVEL (marcado); clicar de novo limpa. Permitir +1 quadro marcado por vez.
+[71] No topo (quadros) falta a opcao "AGUARDANDO RECEBIMENTO DE COTACAO".
+[72] Incluir o MODELO DE ORCAMENTO da CASA DAS MANGUEIRAS. (PEND: Antonio precisa ENVIAR o arquivo/modelo;
+     me cobrar para enviar.)
+[73] Coletas proprias: se digitar o fornecedor e nao aparecer, oferecer atalho para a tela de CADASTRO DE
+     FORNECEDOR.
+[74] Notinhas: check ao lado de cada notinha para ir conferindo (pode sumir depois); o check so aparece
+     quando filtrar; e ao preencher a 1a data do filtro, auto-preencher a 2a com o ULTIMO DIA DO MES
+     (mes/ano da 1a data).
+[75] Fornecedores/empresas: filtro ao vivo (digita e filtra), igual enviar cotacao. (Antonio marcou [x] na
+     lista, mas AINDA NAO foi implementado -> deve ficar [ ] ate eu fazer.)
+
+[76] Coleta avulsa: ao incluir, trazer tambem os DADOS DA EMPRESA (contato/telefone/email) igual nas coletas
+     normais. Hoje a avulsa guarda so o nome do fornecedor (texto). Ajustar para vincular o Fornecedor
+     (id) e exibir o contato no bloco/texto da cidade.
+[72] Modelo CASA DAS MANGUEIRAS recebido (14550.pdf): cabecalho "CASA DAS MANGUEIRAS DELIVERY"; itens em
+     "ITENS DO ORCAMENTO" com colunas QTDE | UNID | CODIGO | REFERENCIA | DESCRICAO | ENDERECO | PRECO |
+     TOTAL. Ex.: 50,00 UNID0 012856 227371 "BUCHA DE REDUCAO GALVANIZADO 1 X 1/2" 12,85 642,50. Numeros
+     PT-BR (virgula decimal). Ensinar o extrair_itens a ler esse layout.
+--- AUTORIZADO rodar 62-76 (nova versao no ar). Executando em blocos testados. ---
+
+### BLOCO 1 — tela de Solicitacoes (62,63,70,71) ✓ (23/07)
+[62] Removido o auto-redirect (localStorage) que criava aquele "link diferente"; o dashboard agora so SALVA
+     o filtro (nao redireciona). Menu admin ja aponta p/ admin.dashboard (57). Quadro aparece direto em /admin/.
+[63] Default do filtro = todos EXCETO Cancelados e "Aguardando chegada". "Voltar ao painel" da ficha usa o
+     filtro salvo (localStorage filtroDashboard) — assim volta com o filtro que estava.
+[70] Quadros do topo agora sao CLICAVEIS: clicar marca/desmarca aquele status (multi-selecao) e aplica;
+     selecao fica VISIVEL (borda coral .qcard.sel). Botao "Limpar" (era "Ver todos") limpa filtro+memoria.
+[71] Novo quadro "Recebimento cotação" (AGUARDANDO_RECEBIMENTO_COTACAO) no topo.
+RESTANTE DA FILA (proximos blocos): 64,65,66,67,68,69,72,73,74,75,76.
+
+### BLOCO 2 — Enviar Cotacao (64,65,67,69 + 68 explicado) ✓ (27/07)
+[64] FEITO — busca da tela de Enviar Cotacao filtra AO DIGITAR (JS filtrarCotacaoLive sobre .forn-card,
+     sem acento). Botao "Filtrar" mantido para a busca server-side (tipo/fornecedores).
+[65] FEITO — "x" ao lado de cada item remove aquela EMPRESA da cotacao daquele item
+     (rota enviar_lote_excluir_forn -> s.fornecedores_excluidos). Confirmacao antes.
+[67] FEITO — removido o botao "Excluir empresas desta tela".
+[69] FEITO — itens aguardando envio cujo tipo NAO tem fornecedor aparecem numa secao "Sem fornecedor
+     cadastrado" (com link p/ abrir), em vez de sumirem.
+[68] EXPLICADO — os "2 sem enviar" do sininho eram exatamente esses itens sem fornecedor (nao apareciam).
+     Com [69] eles ficam visiveis; o contador continua correto (eles realmente precisam de acao: cadastrar
+     fornecedor). Se Antonio preferir que o sininho NAO conte itens sem fornecedor, e so pedir.
+[66] PENDENTE (proximo bloco) — retirar fornecedor ja enviado (manter parcial). Mais complexo/arriscado.
+RESTANTE: 66, 72, 73, 74, 75, 76.
+
+### BLOCO 3 — 66,72,73,74,75,76 ✓ (27/07)
+[66] FEITO — _agrupar pula pares (item,fornecedor) que ja tiveram cotacao enviada (via PedidoCompra por
+     solicitacao+destinatario). Enviar parcial (1,2,3) -> fornecedor reaparece so com o 4; enviar tudo -> some.
+[72] FEITO — parser CASA DAS MANGUEIRAS (CNPJ 54418540000119) em pdf_orcamento.py. Layout QTDE UNID CODIGO
+     REFERENCIA DESCRICAO PRECO TOTAL (BR). Testado com 14550.pdf: 1 item lido certo (BUCHA... 50 x 12,85 = 642,50).
+[73] FEITO — coleta avulsa: link "+ cadastrar" (fornecedores) ao lado do select de fornecedor.
+[74] FEITO — notinhas: checkbox de conferencia por linha SO quando ha filtro aplicado (marca risca/opacidade,
+     efemero); ao preencher "De", auto-preenche "Ate" com o ultimo dia do mes da 1a data.
+[75] FEITO — lista de fornecedores/empresas com filtro AO VIVO (digita e filtra).
+[76] FEITO — coleta avulsa resolve o Fornecedor cadastrado pelo nome -> mostra contato no bloco/texto da cidade.
+FILA ZERADA (62-76 concluidos; 68 explicado). Tabelas novas ja criadas em levas anteriores (coleta_avulsa,
+roadmap_item/nota). Esta leva NAO cria tabela nova.

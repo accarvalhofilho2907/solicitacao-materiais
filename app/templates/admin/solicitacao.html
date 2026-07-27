@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<a href="{{ voltar_url or url_for('admin.dashboard') }}" class="small">&larr; Voltar ao painel</a>
+<a href="{{ voltar_url or url_for('admin.dashboard') }}" onclick="try{var s=localStorage.getItem('filtroDashboard'); if(s&&s.length>1){this.href='{{ url_for('admin.dashboard') }}'+s;}}catch(e){}" class="small">&larr; Voltar ao painel</a>
 {% if s.cotacao_vencida %}<div class="alert alert-danger py-2 mt-2 mb-0 small">Prazo de cotação vencido{% if s.prazo_cotacao %} (limite: {{ s.prazo_cotacao.strftime('%d/%m/%Y') }}){% endif %}. Você já pode fechar o processo e definir o fornecedor com o que chegou.</div>{% endif %}
 {% if s.chegada_atrasada %}<div class="alert alert-danger py-2 mt-2 mb-0 small">Chegada atrasada{% if s.prazo_recebimento %} (prazo era {{ s.prazo_recebimento.strftime('%d/%m/%Y') }}){% endif %}.</div>{% endif %}
 <div class="d-flex justify-content-between align-items-center mt-2 mb-3">

@@ -20,17 +20,17 @@
 </div>
 {% endif %}
 
-<form class="row g-2 mb-2" method="get" id="formFiltroChave">
+<form class="row g-2 mb-2 filtro-chips" method="get" id="formFiltroChave">
   <div class="col-6 col-md-3">
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Quadro{% if quadros_sel %} ({{ quadros_sel|length }}){% endif %}</button>
       <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
-        {% for qd in quadros %}<li><label class="dropdown-item d-flex gap-2"><input type="checkbox" name="quadro" value="{{ qd.nome }}" {{ 'checked' if qd.nome in quadros_sel }} onchange="document.getElementById('formFiltroChave').submit()"> {{ qd.nome }}</label></li>{% endfor %}
+        {% for qd in quadros %}<li><label class="dropdown-item d-flex gap-2"><input type="checkbox" name="quadro" value="{{ qd.nome }}" {{ 'checked' if qd.nome in quadros_sel }}> {{ qd.nome }}</label></li>{% endfor %}
       </ul></div>
   </div>
   <div class="col-6 col-md-3">
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Status{% if status_sel %} ({{ status_sel|length }}){% endif %}</button>
       <ul class="dropdown-menu p-2">
-        {% for st in ['Disponível','Em uso'] %}<li><label class="dropdown-item d-flex gap-2"><input type="checkbox" name="status" value="{{ st }}" {{ 'checked' if st in status_sel }} onchange="document.getElementById('formFiltroChave').submit()"> {{ st }}</label></li>{% endfor %}
+        {% for st in ['Disponível','Em uso'] %}<li><label class="dropdown-item d-flex gap-2"><input type="checkbox" name="status" value="{{ st }}" {{ 'checked' if st in status_sel }}> {{ st }}</label></li>{% endfor %}
       </ul></div>
   </div>
   <div class="col-6 col-md-2"><a href="{{ url_for('almox.chaves') }}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>

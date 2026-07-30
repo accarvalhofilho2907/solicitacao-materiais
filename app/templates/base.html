@@ -394,5 +394,27 @@ function filtraDrop(inp){
   }catch(e){}
 })();
 </script>
+<style>
+/* [83] Filtros em "chips coral": marca varias, so aplica ao fechar (clicar fora) */
+form.filtro-chips .dropdown-menu{max-height:300px;overflow:auto}
+form.filtro-chips .dropdown-item{border-radius:8px;margin:1px 0;cursor:pointer}
+form.filtro-chips .dropdown-menu .dropdown-item:has(input:checked){background:#FF5246;color:#fff}
+form.filtro-chips .dropdown-toggle.tem-sel{background:#FF5246;color:#fff;border-color:#FF5246}
+</style>
+<script>
+// [83] Aplica o filtro so quando o painel fecha (clicar fora); permite marcar varias sem recarregar.
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('form.filtro-chips .dropdown').forEach(function(dd){
+    var form = dd.closest('form');
+    var btn  = dd.querySelector('.dropdown-toggle');
+    var mudou = false;
+    if(btn && dd.querySelector('input[type=checkbox]:checked')) btn.classList.add('tem-sel');
+    dd.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+      cb.addEventListener('change', function(){ mudou = true; });
+    });
+    dd.addEventListener('hidden.bs.dropdown', function(){ if(mudou && form){ form.submit(); } });
+  });
+});
+</script>
 </body>
 </html>

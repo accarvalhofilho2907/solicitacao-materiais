@@ -4,7 +4,7 @@
   <h4 class="mb-0">Solicitações</h4>
   {% if pode_criar %}<a class="btn btn-primary" href="{{ url_for('solicitante.nova') }}">+ Nova solicitação</a>{% endif %}
 </div>
-<form class="card card-body mb-3" method="get"><div class="row g-2 align-items-end">
+<form class="card card-body mb-3 filtro-chips" method="get"><div class="row g-2 align-items-end">
   <div class="col-md-3"><label class="form-label small mb-0">Status</label>
     <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">Status</button>
       <div class="dropdown-menu p-2" style="max-height:280px;overflow:auto"><input class="form-control form-control-sm mb-2" placeholder="Buscar..." oninput="filtraDrop(this)" onclick="event.stopPropagation()">{% for code in STATUS %}<div class="form-check"><input class="form-check-input" type="checkbox" name="status" value="{{ code }}" id="st{{ loop.index }}" {{ 'checked' if code in f_status }}><label class="form-check-label small" for="st{{ loop.index }}">{{ STATUS_LABEL[code] }}</label></div>{% endfor %}</div></div></div>

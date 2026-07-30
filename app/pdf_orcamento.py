@@ -63,7 +63,30 @@ def _parse_valor(s):
         return None
 
 
+def _ocr_imagem(file_storage):
+    """[80] Le texto de uma FOTO/imagem via OCR (pytesseract). Requer o binario tesseract-ocr no servidor."""
+    try:
+        import pytesseract
+        from PIL import Image
+    except Exception:
+        raise RuntimeError("OCR indisponível (pytesseract/tesseract não instalado).")
+    try:
+        file_storage.stream.seek(0)
+        img = Image.open(file_storage.stream)
+    except Exception:
+        img = Image.open(file_storage)
+    try:
+        texto = pytesseract.image_to_string(img, lang="por")
+    except Exception:
+        texto = pytesseract.image_to_string(img)   # sem pacote de idioma pt
+    return [l.rstrip() for l in (texto or "").split("\n")]
+
+
 def _linhas(file_storage):
+    nome = (getattr(file_storage, "filename", "") or "").lower()
+    ctype = (getattr(file_storage, "mimetype", "") or "").lower()
+    if nome.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")) or ctype.startswith("image/"):
+        return _ocr_imagem(file_storage)
     import pdfplumber
     linhas = []
     with pdfplumber.open(file_storage) as pdf:

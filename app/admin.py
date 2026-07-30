@@ -895,14 +895,14 @@ def importar_orcamento():
         fid = request.form.get("fornecedor_id")
         arq = request.files.get("pdf")
         if not fid or not arq or not arq.filename:
-            flash("Selecione o fornecedor e o arquivo PDF.", "warning")
+            flash("Selecione o fornecedor e o arquivo (PDF ou foto).", "warning")
             return render_template("admin/importar_orcamento.html", fornecedores=fornecedores)
         try:
             itens = extrair_itens(arq)
         except Exception:
             itens = []
         if not itens:
-            flash("Não consegui ler itens com valores nesse PDF.", "warning")
+            flash("Não consegui ler itens com valores nesse arquivo. Dica: PDF é mais confiável que foto. Se enviou foto, tente uma imagem nítida e reta, ou envie o PDF.", "warning")
             return render_template("admin/importar_orcamento.html", fornecedores=fornecedores)
         abertas = (Solicitacao.query.filter(Solicitacao.status.in_(
             ["AGUARDANDO_RECEBIMENTO_COTACAO", "AGUARDANDO_DEFINICAO_FORNECEDOR", "AGUARDANDO_ENVIO_COTACAO"]))

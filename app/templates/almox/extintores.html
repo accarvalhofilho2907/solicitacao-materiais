@@ -15,7 +15,7 @@
   </div>
 </div>
 
-<form class="row g-2 my-2" method="get" id="formFiltro">
+<form class="row g-2 my-2 filtro-chips" method="get" id="formFiltro">
   <div class="col-6 col-md-3">
     <div class="dropdown">
       <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
@@ -24,7 +24,7 @@
       <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
         {% for p in predios %}
         <li><label class="dropdown-item d-flex gap-2 align-items-center">
-          <input type="checkbox" name="predio" value="{{ p }}" {{ 'checked' if p in predios_sel }} onchange="document.getElementById('formFiltro').submit()"> {{ predio_label.get(p, p) }}
+          <input type="checkbox" name="predio" value="{{ p }}" {{ 'checked' if p in predios_sel }}> {{ predio_label.get(p, p) }}
         </label></li>
         {% endfor %}
       </ul>
@@ -38,7 +38,7 @@
       <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
         {% for t in tipos %}
         <li><label class="dropdown-item d-flex gap-2 align-items-center">
-          <input type="checkbox" name="tipo" value="{{ t }}" {{ 'checked' if t in tipos_sel }} onchange="document.getElementById('formFiltro').submit()"> {{ t }}
+          <input type="checkbox" name="tipo" value="{{ t }}" {{ 'checked' if t in tipos_sel }}> {{ t }}
         </label></li>
         {% endfor %}
       </ul>
@@ -52,7 +52,7 @@
       <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
         {% for k, lbl in situacao_opcoes %}
         <li><label class="dropdown-item d-flex gap-2 align-items-center">
-          <input type="checkbox" name="situacao" value="{{ k }}" {{ 'checked' if k in situacoes }} onchange="document.getElementById('formFiltro').submit()"> {{ lbl }}
+          <input type="checkbox" name="situacao" value="{{ k }}" {{ 'checked' if k in situacoes }}> {{ lbl }}
         </label></li>
         {% endfor %}
       </ul>
@@ -66,12 +66,12 @@
       <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
         {% for lo in locais %}
         <li><label class="dropdown-item d-flex gap-2 align-items-center">
-          <input type="checkbox" name="local" value="{{ lo }}" {{ 'checked' if lo in locais_sel }} onchange="document.getElementById('formFiltro').submit()"> {{ lo }}
+          <input type="checkbox" name="local" value="{{ lo }}" {{ 'checked' if lo in locais_sel }}> {{ lo }}
         </label></li>
         {% endfor %}
         {% for lo in locais_sel if lo not in locais %}
         <li><label class="dropdown-item d-flex gap-2 align-items-center">
-          <input type="checkbox" name="local" value="{{ lo }}" checked onchange="document.getElementById('formFiltro').submit()"> {{ lo }}
+          <input type="checkbox" name="local" value="{{ lo }}" checked> {{ lo }}
         </label></li>
         {% endfor %}
       </ul>

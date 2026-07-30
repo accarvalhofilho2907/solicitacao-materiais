@@ -58,9 +58,9 @@ def relatorios_required(f):
 @relatorios_bp.route("/etiquetas", methods=["GET"])
 @relatorios_required
 def etiquetas():
+    # [106] inclui tambem os pre-cadastrados (aprovacao 'pendente'), para aparecerem no destinatario
     fornecedores = (Fornecedor.query.filter_by(ativo=True)
-                    .filter((Fornecedor.aprovacao == "aprovado") | (Fornecedor.aprovacao.is_(None)))
-                    .order_by(Fornecedor.razao_social).all())
+                    .order_by(Fornecedor.nome).all())
     return render_template("relatorios/etiquetas.html", deltas=SPES_COTACAO,
                            fornecedores=fornecedores, remetente_fixo=REMETENTE_FIXO,
                            selos=SELOS_CARGA, grids=GRIDS_VALIDOS)

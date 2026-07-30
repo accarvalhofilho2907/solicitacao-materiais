@@ -416,5 +416,17 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 </script>
+<script>
+// [108] iOS "app na tela inicial" (standalone) bloqueia abrir nova aba (_blank) -> gerar na MESMA aba
+(function(){
+  var standalone = (window.navigator.standalone === true) ||
+                   (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if(standalone){
+    document.addEventListener('DOMContentLoaded', function(){
+      document.querySelectorAll('form[target="_blank"]').forEach(function(f){ f.setAttribute('target','_self'); });
+    });
+  }
+})();
+</script>
 </body>
 </html>

@@ -1365,7 +1365,10 @@ def fornecedores():
     # Lista unificada (fornecedores + empresas internas). Filtros: busca e incompletos.
     busca = (request.args.get("q") or "").strip()
     so_incompletos = request.args.get("incompletos") == "1"
+    so_pendentes = request.args.get("pendentes") == "1"   # [107] pre-cadastrados no recebimento/envio
     lista = Fornecedor.query.order_by(Fornecedor.nome_fantasia, Fornecedor.razao_social).all()
+    if so_pendentes:
+        lista = [f for f in lista if (f.aprovacao or "") == "pendente" and f.ativo]
     if so_incompletos:
         lista = [f for f in lista if f.cadastro_incompleto and f.ativo]
     if busca:
@@ -1390,8 +1393,10 @@ def fornecedores():
             return contem_busca(campos, busca)
 
         lista = [f for f in lista if _bate(f)]
+    n_pendentes = Fornecedor.query.filter_by(ativo=True, aprovacao="pendente").count()
     return render_template("admin/fornecedores.html", lista=lista, tipos=tipos,
-                           busca=busca, so_incompletos=so_incompletos)
+                           busca=busca, so_incompletos=so_incompletos,
+                           so_pendentes=so_pendentes, n_pendentes=n_pendentes)
 
 
 @admin_bp.route("/fornecedores/<int:fid>/editar", methods=["GET", "POST"])

@@ -382,5 +382,17 @@ function filtraDrop(inp){
 })();
 </script>
 {% endif %}
+<script>
+// [82] a memoria do filtro de extintores vale só na área de extintores (lista + ficha).
+// Ao navegar para outra área (Cadastro, Relatório, etc.), reseta.
+(function(){
+  try{
+    if(!location.pathname.indexOf) return;
+    if(location.pathname.indexOf('/almoxarifado/extintores')!==0){
+      localStorage.removeItem('filtroExtintores');
+    }
+  }catch(e){}
+})();
+</script>
 </body>
 </html>

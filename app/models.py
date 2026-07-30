@@ -745,7 +745,7 @@ CHECK_EXTINTOR = [
     "Validade da carga vigente",
     "Teste hidrostático dentro do prazo",
 ]
-ITEM_ETIQUETA_EXTINTOR = "Etiqueta grudada e em bom estado?"
+ITEM_ETIQUETA_EXTINTOR = "QR Code de inspeção grudado e em bom estado?"
 
 
 # Tarefas que um Papel de colaborador de campo pode ter (a "caixinha").

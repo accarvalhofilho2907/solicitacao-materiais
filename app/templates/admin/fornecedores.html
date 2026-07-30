@@ -52,11 +52,9 @@
   </div></div></div>
 
   <div class="col-md-7"><div class="card"><div class="card-body pb-2">
-    <form method="get" class="d-flex gap-2 align-items-center mb-2">
-      <input name="q" class="form-control form-control-sm" placeholder="Buscar (nome, CNPJ, cidade, ou 'empresa'/'fornecedor')..." value="{{ busca }}">
-      <button class="btn btn-sm btn-outline-primary">Buscar</button>
+    <div class="d-flex gap-2 align-items-center mb-2">
       {% if so_incompletos %}<a href="{{ url_for('admin.fornecedores') }}" class="btn btn-sm btn-warning">Ver todos</a>{% else %}<a href="{{ url_for('admin.fornecedores', incompletos='1') }}" class="btn btn-sm btn-outline-warning" title="Cadastros sem CNPJ">Sem CNPJ</a>{% endif %}
-    </form>
+    </div>
     {% if so_incompletos %}<div class="alert alert-warning py-1 small mb-2">Mostrando só cadastros <b>sem CNPJ</b> — complete-os para sair da lista de pendências do sininho.</div>{% endif %}
     </div><div class="table-responsive">
     <input id="filtroForn" class="form-control form-control-sm mb-2" style="max-width:320px" placeholder="🔎 Filtrar (nome, CNPJ, cidade)..." autocomplete="off" oninput="filtrarForn(this.value)">

@@ -614,6 +614,20 @@ def _match_situacao(sel, k):
     return k == sel
 
 
+def _parse_date_arg(v):
+    """Converte 'AAAA-MM-DD' ou 'AAAA-MM' em date. None se vazio/invalido."""
+    from datetime import datetime as _dt
+    v = (v or "").strip()
+    if not v:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m"):
+        try:
+            return _dt.strptime(v, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _args_list(nome):
     """Valores marcados de um filtro multi-selecao (getlist), sem vazios."""
     return [x for x in request.args.getlist(nome) if x]
@@ -807,6 +821,8 @@ def extintores():
     locais_sel = _args_list("local")
     tipos_sel = _args_list("tipo")
     situacoes = _situacoes_sel()
+    venc_de = _parse_date_arg(request.args.get("venc_de"))
+    venc_ate = _parse_date_arg(request.args.get("venc_ate"))
     linhas = []
     todos = Extintor.query.filter_by(ativo=True).order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
     for e in todos:
@@ -815,6 +831,10 @@ def extintores():
         if tipos_sel and e.tipo not in tipos_sel:
             continue
         if locais_sel and e.local not in locais_sel:
+            continue
+        if venc_de and (not e.validade or e.validade < venc_de):
+            continue
+        if venc_ate and (not e.validade or e.validade > venc_ate):
             continue
         k, lbl, cls = _situacao_extintor(e)
         if not _match_situacoes(situacoes, k):
@@ -834,7 +854,8 @@ def extintores():
                            situacoes=situacoes, predios=predios, tipos=tipos, locais=locais,
                            predio_label=PREDIO_LABEL, situacao_label=SITUACAO_LABEL,
                            situacao_opcoes=SITUACAO_OPCOES,
-                           competencia=_competencia, n_pend=n_pend)
+                           competencia=_competencia, n_pend=n_pend,
+                           venc_de=request.args.get('venc_de',''), venc_ate=request.args.get('venc_ate',''))
 
 
 @almox_bp.route("/extintores/<int:eid>")
@@ -854,7 +875,7 @@ def extintor_ficha(eid):
         hist.append({"h": h, "itens": itens})
     colab = _colab_sessao() if not current_user.is_authenticated else None
     # itens do checklist de retorno (almox) = sem "Acesso e sinalização"
-    check_retorno = [c for c in CHECK_EXTINTOR if not c.lower().startswith("acesso")]
+    check_retorno = [c for c in CHECK_EXTINTOR if not (c.lower().startswith("acesso") or c.lower().startswith("suporte"))]
     return render_template("almox/extintor_ficha.html", e=e, sit_k=k, sit_lbl=lbl, sit_cls=cls,
                            check=CHECK_EXTINTOR, check_retorno=check_retorno,
                            item_etiqueta=ITEM_ETIQUETA_EXTINTOR,
@@ -1147,7 +1168,7 @@ def _ficha_campo(e, pode_gerir, colab):
         except Exception:
             itens = {}
         hist.append({"h": h, "itens": itens})
-    check_retorno = [c for c in CHECK_EXTINTOR if not c.lower().startswith("acesso")]
+    check_retorno = [c for c in CHECK_EXTINTOR if not (c.lower().startswith("acesso") or c.lower().startswith("suporte"))]
     return render_template("almox/extintor_ficha.html", e=e, sit_k=k, sit_lbl=lbl, sit_cls=cls,
                            check=CHECK_EXTINTOR, item_etiqueta=ITEM_ETIQUETA_EXTINTOR,
                            check_retorno=check_retorno,

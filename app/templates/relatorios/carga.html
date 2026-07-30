@@ -152,7 +152,7 @@
   <div class="card mb-3"><div class="card-body">
     <h6>6. Outras fotos da carga</h6>
     <p class="text-muted small mb-2">As fotos da Nota Fiscal e do CT-e aparecem ao preencher os números acima. Aqui você anexa as demais fotos da carga (uma a uma ou várias de uma vez da galeria). Todas entram no PDF, uma por página. Marque "Avariado?" se a foto mostrar problema — gera aviso no cabeçalho e exige observação.</p>
-    <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" name="fotos" id="inputFotos" onchange="previewFotos(this)">
+    <input type="file" accept="image/*" multiple class="form-control form-control-sm mb-2" name="fotos" id="inputFotos" onchange="addFotos(this)">
     <span id="avisoMuitasFotos" class="d-none"></span>
     <div id="listaFotos" class="row g-2"></div>
   </div></div>
@@ -321,40 +321,46 @@ function toggleOutro(sel, campoId){
   c.classList.toggle('d-none', sel.value !== '__OUTRO__');
 }
 
-var _fc = 0;
-function previewFotos(input){
+var FOTOS = [];   // [{file, avaria, obs}] — fonte da verdade; ids por posicao (foto_1..N)
+function _syncInputFotos(){
+  var dt = new DataTransfer();
+  FOTOS.forEach(function(f){ dt.items.add(f.file); });
+  document.getElementById('inputFotos').files = dt.files;
+}
+function addFotos(input){
+  Array.from(input.files).forEach(function(file){ FOTOS.push({file:file, avaria:false, obs:''}); });
+  _syncInputFotos();
+  renderFotos();
+}
+function removerFoto(i){
+  FOTOS.splice(i,1);
+  _syncInputFotos();
+  renderFotos();
+}
+function renderFotos(){
   var lista = document.getElementById('listaFotos');
-  Array.from(input.files).forEach(function(file){
-    _fc++;
-    var id = 'foto_' + _fc;
-    var reader = new FileReader();
-    reader.onload = function(e){
-      var col = document.createElement('div');
-      col.className = 'col-md-3'; col.id = 'col_'+id;
-      col.innerHTML =
-        '<div class="border rounded p-2">' +
-          '<img src="'+e.target.result+'" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
-          '<div class="form-check"><input class="form-check-input chkAvaria" type="checkbox" name="foto_avariada" value="'+id+'" id="chk_'+id+'" onchange="toggleObs(this,\''+id+'\')">' +
-          '<label class="form-check-label small text-danger" for="chk_'+id+'">Avariado?</label></div>' +
-          '<textarea class="form-control form-control-sm mt-1 d-none obsAvaria" name="obs_'+id+'" id="obs_'+id+'" placeholder="Descreva a avaria (obrigatório)"></textarea>' +
-        '</div>';
-      lista.appendChild(col);
-    };
-    reader.readAsDataURL(file);
+  lista.innerHTML = '';
+  FOTOS.forEach(function(f, i){
+    var id = 'foto_' + (i+1);   // posicao = igual ao servidor
+    var col = document.createElement('div');
+    col.className = 'col-md-3';
+    col.innerHTML =
+      '<div class="border rounded p-2 position-relative">' +
+        '<button type="button" class="btn btn-sm btn-danger py-0 px-2" style="position:absolute;top:6px;right:6px;line-height:1.2" title="Excluir foto" onclick="removerFoto('+i+')">×</button>' +
+        '<img src="'+URL.createObjectURL(f.file)+'" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
+        '<div class="form-check"><input class="form-check-input chkAvaria" type="checkbox" name="foto_avariada" value="'+id+'" id="chk_'+id+'" '+(f.avaria?'checked':'')+' onchange="FOTOS['+i+'].avaria=this.checked; toggleObs(this,\''+id+'\')">' +
+        '<label class="form-check-label small text-danger" for="chk_'+id+'">Avariado?</label></div>' +
+        '<textarea class="form-control form-control-sm mt-1 '+(f.avaria?'':'d-none')+' obsAvaria" name="obs_'+id+'" id="obs_'+id+'" placeholder="Descreva a avaria (obrigatório)" oninput="FOTOS['+i+'].obs=this.value">'+(f.obs||'')+'</textarea>' +
+      '</div>';
+    lista.appendChild(col);
   });
-  // Aviso: muitas fotos de alta resolução podem pesar. Sugere dividir para não travar.
   var aviso = document.getElementById('avisoMuitasFotos');
-  var total = document.getElementById('inputFotos').files.length;
   if(aviso){
-    if(total > 20){
-      aviso.textContent = '⚠ Você selecionou ' + total + ' fotos em alta qualidade. Para não sobrecarregar, considere gerar mais de um relatório (ex.: até 20 fotos por vez).';
+    if(FOTOS.length > 20){
+      aviso.textContent = '⚠ Você selecionou ' + FOTOS.length + ' fotos em alta qualidade. Para não sobrecarregar, considere gerar mais de um relatório (ex.: até 20 fotos por vez).';
       aviso.className = 'small text-warning d-block mb-2';
-    } else {
-      aviso.textContent = '';
-      aviso.className = 'd-none';
-    }
+    } else { aviso.textContent=''; aviso.className='d-none'; }
   }
-  // Nota: as imagens vão no envio via o próprio input (multiple). A ordem foto_N segue a ordem de leitura.
 }
 function toggleObs(chk, id){
   var o = document.getElementById('obs_'+id);

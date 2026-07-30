@@ -2082,3 +2082,29 @@ RESTANTE (proximo bloco): 92 (parser ILUMINAR - foto recebida), 94 (autocomplete
 [105] FEITO — carga: REMETENTE e DESTINATARIO com endereco completo OBRIGATORIO (cep, logradouro, numero,
       bairro, cidade, UF) exceto complemento (via required no campos_endereco(..., true)). TRANSPORTADORA:
       endereco so obrigatorio se uma transportadora for informada (validarTransp no envio). Ajusta o 96.
+
+### REDIAGNOSTICO 104 (30/07) — NAO e RAM do servidor
+FATO NOVO: pelo COMPUTADOR gera; so pelo CELULAR quebra. Mesmo endpoint/mesmo Render -> nao e RAM do servidor.
+O que muda e o UPLOAD: as fotos sao comprimidas no NAVEGADOR antes de enviar. No PC comprime e manda leve; no
+CELULAR a compressao (canvas/_comprimirImagem em gerarComFotosMenores) provavelmente NAO roda/roda parcial ->
+o celular envia as fotos ORIGINAIS gigantes -> o servidor estoura ao montar o PDF. Por isso ajustes de ASCII85
+e de memoria do canvas nao resolveram (a compressao nem aconteceu no mobile).
+INVESTIGAR/CORRIGIR (quando autorizar):
+ (1) confirmar se o botao "Gerar" no mobile realmente chama gerarComFotosMenores()/_comprimirInput antes do submit
+     (pode estar submetendo o form direto no celular, sem passar pela compressao);
+ (2) garantir que a compressao rode no mobile (canvas.toBlob tem suporte; iOS Safari as vezes precisa de
+     ajustes; ou usar createImageBitmap); e BLOQUEAR o envio ate a compressao terminar (await) com feedback;
+ (3) defesa no SERVIDOR: reduzir/normalizar a imagem no backend ANTES de montar o PDF, independente do que o
+     cliente mandar (o _normalizar_imagem ja faz 2400px q90 por foto — checar se esta sendo aplicado no fluxo
+     do carga_gerar ANTES do doc.build, e nao so no PDF). Assim, mesmo foto crua do celular entra controlada.
+ (4) medir: logar tamanho recebido de cada foto p/ confirmar que o mobile manda maior que o PC.
+
+### BLOCO I (30/07) ✓ — 104 (correcao definitiva: decode do JPEG grande)
+[104] FEITO — causa real: celular envia fotos ORIGINAIS gigantes (12-48MP). O servidor reduzia p/ 2400px, mas
+      o PIL DECODIFICAVA o bitmap inteiro primeiro (100+ MB por foto) -> pico de RAM derrubava o worker (so no
+      mobile; no PC as fotos ja vinham comprimidas pelo navegador). CORRECAO em _normalizar_imagem (pdf_carga):
+      im.draft("RGB",(2400,2400)) faz o decodificador JPEG entregar a imagem JA reduzida, sem alocar o full-res.
+      + ImageFile.LOAD_TRUNCATED_IMAGES=True (uploads parciais de celular). Botao "Gerar" ja passa pela
+      compressao do navegador (type=button -> gerarComFotosMenores). Testado: foto 12MP -> 2400px; PDF com 6
+      fotos grandes gera ok; pico RAM ~177MB. Qualidade final mantida (2400px q90).
+      OBS: draft() vale p/ JPEG (fotos de celular sao JPEG). Se ainda houver caso extremo, resta lotear/subir RAM.

@@ -35,7 +35,8 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, Tab
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 try:
-    from PIL import Image as PILImage, ImageOps
+    from PIL import Image as PILImage, ImageOps, ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True   # [104] uploads de celular as vezes vem truncados
     _TEM_PIL = True
 except Exception:
     _TEM_PIL = False
@@ -50,6 +51,12 @@ def _normalizar_imagem(raw, max_lado=2400, quality=90):
     try:
         fonte = BytesIO(raw) if isinstance(raw, (bytes, bytearray)) else raw
         im = PILImage.open(fonte)
+        # [104] fotos de celular (12–48MP) alocam um bitmap gigante ao decodificar e estouram a RAM do worker.
+        # draft() manda o decodificador JPEG ja entregar a imagem reduzida (>= max_lado), sem alocar o full-res.
+        try:
+            im.draft("RGB", (max_lado, max_lado))
+        except Exception:
+            pass
         im = ImageOps.exif_transpose(im)   # corrige rotação vinda do celular
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")

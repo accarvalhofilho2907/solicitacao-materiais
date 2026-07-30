@@ -52,9 +52,11 @@
   </div></div></div>
 
   <div class="col-md-7"><div class="card"><div class="card-body pb-2">
-    <div class="d-flex gap-2 align-items-center mb-2">
+    <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
       {% if so_incompletos %}<a href="{{ url_for('admin.fornecedores') }}" class="btn btn-sm btn-warning">Ver todos</a>{% else %}<a href="{{ url_for('admin.fornecedores', incompletos='1') }}" class="btn btn-sm btn-outline-warning" title="Cadastros sem CNPJ">Sem CNPJ</a>{% endif %}
+      {% if so_pendentes %}<a href="{{ url_for('admin.fornecedores') }}" class="btn btn-sm btn-info">Ver todos</a>{% else %}<a href="{{ url_for('admin.fornecedores', pendentes='1') }}" class="btn btn-sm btn-outline-info" title="Empresas pré-cadastradas no recebimento/envio — finalizar cadastro">Pendentes de completar{% if n_pendentes %} ({{ n_pendentes }}){% endif %}</a>{% endif %}
     </div>
+    {% if so_pendentes %}<div class="alert alert-info py-1 small mb-2">Empresas <b>pré-cadastradas</b> na hora do recebimento/envio. Abra cada uma em <b>Editar</b> e complete os dados para finalizar o cadastro.</div>{% endif %}
     {% if so_incompletos %}<div class="alert alert-warning py-1 small mb-2">Mostrando só cadastros <b>sem CNPJ</b> — complete-os para sair da lista de pendências do sininho.</div>{% endif %}
     </div><div class="table-responsive">
     <input id="filtroForn" class="form-control form-control-sm mb-2" style="max-width:320px" placeholder="🔎 Filtrar (nome, CNPJ, cidade)..." autocomplete="off" oninput="filtrarForn(this.value)">

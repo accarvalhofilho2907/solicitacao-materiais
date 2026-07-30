@@ -2108,3 +2108,54 @@ INVESTIGAR/CORRIGIR (quando autorizar):
       compressao do navegador (type=button -> gerarComFotosMenores). Testado: foto 12MP -> 2400px; PDF com 6
       fotos grandes gera ok; pico RAM ~177MB. Qualidade final mantida (2400px q90).
       OBS: draft() vale p/ JPEG (fotos de celular sao JPEG). Se ainda houver caso extremo, resta lotear/subir RAM.
+
+### LISTA (Antonio 30/07 noite) — FILA, aguarda "pode executar"
+[104-REGRESSAO] IMPORTANTE: Antonio diz que ANTES rodava com 12 fotos e AGORA nem com 12 roda. Ou seja, algo
+     que subiu PIOROU (regressao) — nao e so o celular. Suspeitos das ultimas mudancas no pdf_carga:
+     (a) rl_config.useA85=0 (bloco H) e/ou (b) im.draft() (bloco I). Hipoteses:
+       - draft() pode ter interagido mal com exif_transpose/thumbnail em algum formato -> imagem ruim/erro;
+       - useA85=0 (stream binario) pode ter aumentado o uso em vez de diminuir nesse ambiente, ou causado erro.
+     ACAO (quando executar): PEDIR o TRACEBACK ATUAL (linha antes de [SQL/Erro]); e provavelmente REVERTER
+     useA85=0 e/ou draft() para voltar ao patamar "12 fotos rodava", e so entao otimizar com cuidado e medindo.
+     NAO empilhar mais suposicao sem o log atual.
+[106] Etiquetas (relatorios/etiquetas): os campos Remetente e Destinatario NAO puxam de Empresas/Fornecedores.
+     Deveriam usar a mesma base (ex.: MGM foi cadastrada e nao aparece). Aplicar o mesmo autocomplete/base do
+     relatorio de carga (101/94) na tela de etiquetas.
+[107] Empresas/Fornecedores: as empresas PRE-CADASTRADAS no recebimento/envio (via "+ nova empresa" / CNPJ novo,
+     que hoje entram como pendentes) precisam aparecer em algum lugar/campo no cadastro de Empresas e
+     Fornecedores para Antonio FINALIZAR o cadastro (lista de "pendentes de completar" com link para editar).
+
+### Atualizacao 104/108 (30/07 noite)
+[104] RESOLVIDO no ANDROID — draft() corrigiu o OOM: 20 e 25 fotos geraram OK no Android. Retirar a suspeita
+      de regressao; o draft()+useA85 ficam. 
+[108] NOVO — iPhone (salvo como APP / PWA standalone): ao clicar "Gerar PDF" ele comeca a gerar e VOLTA ao
+      botao normal sem gerar/baixar. Comportamento tipico de iOS standalone:
+        (a) target="_blank" e bloqueado no modo standalone do iOS -> "gera" mas nao abre a nova aba;
+        (b) e/ou canvas.toBlob no iOS retorna vazio com muitas fotos (limite de memoria de canvas do iOS),
+            abortando gerarComFotosMenores antes do submit.
+      ACAO (quando executar): 
+        - no iOS standalone, NAO usar _blank: submeter na mesma aba (ou baixar via download) — detectar
+          navigator.standalone / display-mode: standalone e ajustar o target do form;
+        - tornar a compressao resiliente no iOS (se toBlob falhar, cair para o arquivo original / try-catch
+          com feedback) e nao abortar silenciosamente;
+        - dar feedback de erro visivel no lugar de so voltar o botao.
+      PEDIR a Antonio: com quantas fotos falha no iPhone? (1 foto tambem falha, ou so muitas?) e se, ao gerar
+      pelo Safari NORMAL (nao o app da tela inicial), funciona.
+
+### Confirmacao 108 (30/07)
+[108] CONFIRMADO: falha com QUALQUER quantidade no iPhone-app (PWA standalone) -> NAO e memoria/canvas. E o
+      target="_blank" do form (id=formCarga action=/relatorios/carga/gerar target="_blank"): no iOS standalone
+      abrir nova aba e bloqueado -> gera mas nao abre, botao volta.
+      CORRECAO (quando executar): detectar iOS standalone (navigator.standalone===true ou
+      matchMedia('(display-mode: standalone)')) e, nesse caso, submeter o form na MESMA aba (target="_self")
+      — ou forcar download. No desktop/Android manter _blank (abre o PDF em nova aba, como hoje).
+      Aplicar tambem na tela de etiquetas se ela usar _blank.
+
+### BLOCO J (30/07) ✓ — 106,107,108
+[106] FEITO — etiquetas: consulta de fornecedores agora inclui os PENDENTES (pre-cadastrados) e ordena por
+      nome (era filtrada por aprovado/None, excluindo a MGM). Agora a MGM e demais aparecem no destinatario.
+[107] FEITO — Empresas/Fornecedores: botao "Pendentes de completar (N)" (filtro pendentes=1) lista os
+      pre-cadastrados (aprovacao 'pendente') com aviso para abrir em Editar e finalizar o cadastro.
+[108] FEITO — base.html: no modo APP do iOS (standalone), todo form target=_blank passa a _self (gera na
+      mesma aba). Resolve o "gerar PDF volta ao botao sem gerar" no iPhone salvo como app. Desktop/Android
+      seguem abrindo em nova aba.

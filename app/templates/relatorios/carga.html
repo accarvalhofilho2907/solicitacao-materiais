@@ -1,22 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Relatório de Carga — Almoxarifado{% endblock %}
-{% macro campos_endereco(prefixo) %}
+{% macro campos_endereco(prefixo, obrig=false) %}
 <div class="row g-2 mt-1">
-  <div class="col-md-3"><label class="form-label small mb-0">CEP</label>
-    <input name="{{ prefixo }}_cep" id="{{ prefixo }}_cep" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números" onblur="buscaCepCarga('{{ prefixo }}')"></div>
-  <div class="col-md-7"><label class="form-label small mb-0">Logradouro</label>
-    <input name="{{ prefixo }}_logradouro" id="{{ prefixo }}_logradouro" class="form-control form-control-sm"></div>
-  <div class="col-md-2"><label class="form-label small mb-0">Nº *</label>
-    <input name="{{ prefixo }}_numero" id="{{ prefixo }}_numero" class="form-control form-control-sm" required></div>
-  <div class="col-md-4"><label class="form-label small mb-0">Bairro</label>
-    <input name="{{ prefixo }}_bairro" id="{{ prefixo }}_bairro" class="form-control form-control-sm"></div>
+  <div class="col-md-3"><label class="form-label small mb-0">CEP {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_cep" id="{{ prefixo }}_cep" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números" {% if obrig %}required{% endif %} onblur="buscaCepCarga('{{ prefixo }}')"></div>
+  <div class="col-md-7"><label class="form-label small mb-0">Logradouro {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_logradouro" id="{{ prefixo }}_logradouro" class="form-control form-control-sm" {% if obrig %}required{% endif %}></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Nº {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_numero" id="{{ prefixo }}_numero" class="form-control form-control-sm" {% if obrig %}required{% endif %}></div>
+  <div class="col-md-4"><label class="form-label small mb-0">Bairro {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_bairro" id="{{ prefixo }}_bairro" class="form-control form-control-sm" {% if obrig %}required{% endif %}></div>
   <div class="col-md-4"><label class="form-label small mb-0">Complemento</label>
     <input name="{{ prefixo }}_complemento" id="{{ prefixo }}_complemento" class="form-control form-control-sm"></div>
-  <div class="col-md-3"><label class="form-label small mb-0">Cidade</label>
-    <input name="{{ prefixo }}_cidade" id="{{ prefixo }}_cidade" class="form-control form-control-sm"></div>
-  <div class="col-md-1"><label class="form-label small mb-0">UF</label>
-    <input name="{{ prefixo }}_estado" id="{{ prefixo }}_estado" class="form-control form-control-sm" maxlength="2"></div>
+  <div class="col-md-3"><label class="form-label small mb-0">Cidade {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_cidade" id="{{ prefixo }}_cidade" class="form-control form-control-sm" {% if obrig %}required{% endif %}></div>
+  <div class="col-md-1"><label class="form-label small mb-0">UF {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_estado" id="{{ prefixo }}_estado" class="form-control form-control-sm" maxlength="2" {% if obrig %}required{% endif %}></div>
   <span class="small text-muted" id="{{ prefixo }}_cepmsg"></span>
+</div>
+{% endmacro %}
+
+{# [101/102/103] Empresa: um unico campo "Razao Social — CNPJ" com autocomplete filtravel + "+ nova empresa" #}
+{% macro bloco_empresa(prefixo, tipo, obrig, mostra_ie) %}
+<div class="row g-2">
+  <div class="col-md-9 position-relative">
+    <label class="form-label small mb-0">Razão Social — CNPJ {% if obrig %}*{% endif %}</label>
+    <input name="{{ prefixo }}_nome" id="{{ prefixo }}_nome" class="form-control form-control-sm" autocomplete="off"
+           {% if obrig %}required{% endif %} placeholder="Digite nome ou CNPJ para buscar"
+           oninput="acFiltra('{{ prefixo }}','{{ tipo }}')" onfocus="acFiltra('{{ prefixo }}','{{ tipo }}')" onblur="acBlur('{{ prefixo }}')">
+    <input type="hidden" name="{{ prefixo }}_cnpj" id="{{ prefixo }}_cnpj">
+    <ul id="{{ prefixo }}_sug" class="list-group position-absolute w-100 shadow" style="z-index:30;max-height:230px;overflow:auto;display:none"></ul>
+    <div class="form-text">
+      <a href="javascript:void(0)" onclick="acNova('{{ prefixo }}')">＋ nova empresa (informar CNPJ)</a>
+      <span id="{{ prefixo }}_novabox" style="display:none"> · CNPJ:
+        <input id="{{ prefixo }}_cnpj_novo" class="form-control form-control-sm d-inline-block" style="max-width:200px"
+               inputmode="numeric" placeholder="Só números" onblur="acCnpjNovo('{{ prefixo }}')"></span>
+    </div>
+  </div>
+  {% if mostra_ie %}
+  <div class="col-md-3"><label class="form-label small mb-0">Inscrição Estadual</label>
+    <input name="{{ prefixo }}_ie" id="{{ prefixo }}_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
+  {% endif %}
 </div>
 {% endmacro %}
 {% block content %}
@@ -53,48 +77,23 @@
   <!-- 2. REMETENTE -->
   <div class="card mb-3"><div class="card-body">
     <h6>2. Remetente</h6>
-    <div class="row g-2">
-      <div class="col-md-4"><label class="form-label small mb-0">CNPJ</label>
-        <input name="rem_cnpj" id="rem_cnpj" class="form-control form-control-sm" inputmode="numeric"
-               placeholder="Só números" onblur="tratarCnpj('rem','fornecedor')"></div>
-      <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome *</label>
-        <input name="rem_nome" id="rem_nome" class="form-control form-control-sm" required list="dlEmpresas"
-               placeholder="Digite nome ou CNPJ para buscar" oninput="autoEmpresa('rem','fornecedor'); atualizarTomador()"></div>
-      <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
-        <input name="rem_ie" id="rem_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
-    </div>
-    {{ campos_endereco('rem') }}
+    {{ bloco_empresa('rem','fornecedor',true,true) }}
+    {{ campos_endereco('rem', true) }}
   </div></div>
 
   <!-- 3. DESTINATÁRIO -->
   <div class="card mb-3"><div class="card-body">
     <h6>3. Destinatário</h6>
-    <div class="row g-2">
-      <div class="col-md-4"><label class="form-label small mb-0">CNPJ</label>
-        <input name="dest_cnpj" id="dest_cnpj" class="form-control form-control-sm" inputmode="numeric"
-               placeholder="Só números" onblur="tratarCnpj('dest','fornecedor')"></div>
-      <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome *</label>
-        <input name="dest_nome" id="dest_nome" class="form-control form-control-sm" required list="dlEmpresas"
-               placeholder="Digite nome ou CNPJ para buscar" oninput="autoEmpresa('dest','fornecedor'); atualizarTomador()"></div>
-      <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
-        <input name="dest_ie" id="dest_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
-    </div>
-    {{ campos_endereco('dest') }}
+    {{ bloco_empresa('dest','fornecedor',true,true) }}
+    {{ campos_endereco('dest', true) }}
   </div></div>
 
   <!-- 4. TRANSPORTADORA (sem IE) -->
   <div class="card mb-3"><div class="card-body">
     <h6>4. Transportadora</h6>
     <p class="text-muted small mb-2">Essas informações costumam vir no próprio CT-e.</p>
-    <div class="row g-2">
-      <div class="col-md-4"><label class="form-label small mb-0">CNPJ</label>
-        <input name="transp_cnpj" id="transp_cnpj" class="form-control form-control-sm" inputmode="numeric"
-               placeholder="Só números" onblur="tratarCnpj('transp','transportadora')"></div>
-      <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome</label>
-        <input name="transp_nome" id="transp_nome" class="form-control form-control-sm" list="dlTransp"
-               placeholder="Digite nome ou CNPJ para buscar" oninput="autoEmpresa('transp','transportadora')"></div>
-    </div>
-    {{ campos_endereco('transp') }}
+    {{ bloco_empresa('transp','transportadora',false,false) }}
+    {{ campos_endereco('transp', false) }}
   </div></div>
 
   <!-- 5. DADOS DA CARGA -->
@@ -170,34 +169,68 @@
 </form>
 
 <script>
-// [94] autocomplete "Razao Social — CNPJ" a partir da base cadastrada
+// [101/102/103] autocomplete proprio "Razao Social — CNPJ": filtra ao digitar, ordem alfabetica, + nova empresa
 var AUTO_FORN = {{ mapa_fornecedores|tojson }};
 var AUTO_TRANSP = {{ mapa_transportadoras|tojson }};
-function _montarDatalist(id, mapa){
-  var dl=document.getElementById(id); if(!dl) return;
-  dl.innerHTML='';
-  Object.keys(mapa).forEach(function(d){
-    var o=document.createElement('option');
-    o.value=(mapa[d].nome||'')+' — '+(typeof formatarCnpj==='function'?formatarCnpj(d):d);
-    dl.appendChild(o);
+var AC_FORN = [], AC_TRANSP = [];
+function _acBuild(mapa){
+  return Object.keys(mapa).map(function(d){
+    var o=mapa[d];
+    return {d:d, nome:o.nome||'', ie:o.ie||'', cep:o.cep||'', logradouro:o.logradouro||'', numero:o.numero||'',
+            bairro:o.bairro||'', complemento:o.complemento||'', cidade:o.cidade||'', estado:o.estado||''};
+  }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||'', 'pt', {sensitivity:'base'}); });  // [103] alfabetica
+}
+function _acNorm(s){ return (s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function acFiltra(prefixo, tipo){
+  var inp=document.getElementById(prefixo+'_nome'), ul=document.getElementById(prefixo+'_sug');
+  if(!inp||!ul) return;
+  var arr=(tipo==='transportadora')?AC_TRANSP:AC_FORN;
+  var q=_acNorm(inp.value), qd=(inp.value||'').replace(/\D/g,'');
+  var res=arr.filter(function(x){ return _acNorm(x.nome).indexOf(q)>=0 || (qd.length>=3 && x.d.indexOf(qd)>=0); }).slice(0,60);
+  ul.innerHTML='';
+  if(!res.length){ ul.style.display='none'; return; }
+  res.forEach(function(x){
+    var li=document.createElement('li');
+    li.className='list-group-item list-group-item-action py-1 small'; li.style.cursor='pointer';
+    li.textContent=x.nome+' — '+(typeof formatarCnpj==='function'?formatarCnpj(x.d):x.d);
+    li.onmousedown=function(e){ e.preventDefault(); acEscolhe(prefixo, tipo, x); };
+    ul.appendChild(li);
   });
+  ul.style.display='';
 }
-function autoEmpresa(prefixo, tipo){
-  var campo=document.getElementById(prefixo+'_nome'); if(!campo) return;
-  var v=campo.value; var i=v.lastIndexOf(' — '); if(i<0) return;   // so age quando escolhe "Nome — CNPJ"
-  var d=(v.slice(i+3)||'').replace(/\D/g,'');
-  var mapa=(tipo==='transportadora')?AUTO_TRANSP:AUTO_FORN;
-  if(mapa[d]){
-    campo.value=mapa[d].nome||'';
-    var cnpjEl=document.getElementById(prefixo+'_cnpj'); if(cnpjEl){ cnpjEl.value=(typeof formatarCnpj==='function'?formatarCnpj(d):d); }
-    var ieEl=document.getElementById(prefixo+'_ie'); if(ieEl && tipo!=='transportadora') ieEl.value=mapa[d].ie||'';
-    ['cep','logradouro','numero','bairro','complemento','cidade','estado'].forEach(function(cp){
-      var el=document.getElementById(prefixo+'_'+cp); if(el) el.value=mapa[d][cp]||'';
-    });
-    if(typeof atualizarTomador==='function') atualizarTomador();
-  }
+function acEscolhe(prefixo, tipo, x){
+  document.getElementById(prefixo+'_nome').value=x.nome;
+  var cnpjEl=document.getElementById(prefixo+'_cnpj'); if(cnpjEl) cnpjEl.value=x.d;
+  var ieEl=document.getElementById(prefixo+'_ie'); if(ieEl && tipo!=='transportadora') ieEl.value=x.ie||'';
+  ['cep','logradouro','numero','bairro','complemento','cidade','estado'].forEach(function(cp){
+    var el=document.getElementById(prefixo+'_'+cp); if(el) el.value=x[cp]||'';
+  });
+  var ul=document.getElementById(prefixo+'_sug'); if(ul) ul.style.display='none';
+  if(typeof atualizarTomador==='function') atualizarTomador();
 }
-document.addEventListener('DOMContentLoaded', function(){ _montarDatalist('dlEmpresas',AUTO_FORN); _montarDatalist('dlTransp',AUTO_TRANSP); });
+function acBlur(prefixo){ setTimeout(function(){ var ul=document.getElementById(prefixo+'_sug'); if(ul) ul.style.display='none'; }, 150); }
+function acNova(prefixo){ var b=document.getElementById(prefixo+'_novabox'); if(b) b.style.display=(b.style.display==='none'?'':'none'); }
+function acCnpjNovo(prefixo){
+  var el=document.getElementById(prefixo+'_cnpj_novo'); if(!el) return;
+  var raw=(el.value||'').replace(/\D/g,'');
+  if(!raw){ el.classList.remove('is-invalid'); return; }
+  if(typeof cnpjValido==='function' && !cnpjValido(raw)){ el.classList.add('is-invalid'); alert('O CNPJ informado é inválido. Confira os números.'); return; }
+  el.classList.remove('is-invalid');
+  var h=document.getElementById(prefixo+'_cnpj'); if(h) h.value=raw;   // vai para o hidden -> servidor grava/cadastra pendente
+}
+// [105] transportadora: endereco so obrigatorio se uma transportadora foi informada
+function validarTransp(){
+  var nome=(document.getElementById('transp_nome')||{}).value||'';
+  var cnpj=(document.getElementById('transp_cnpj')||{}).value||'';
+  if(!nome.trim() && !cnpj.trim()) return true;   // sem transportadora: nada obrigatorio
+  var faltando=[];
+  [['cep','CEP'],['logradouro','Logradouro'],['numero','Nº'],['bairro','Bairro'],['cidade','Cidade'],['estado','UF']].forEach(function(c){
+    var el=document.getElementById('transp_'+c[0]); if(el && !el.value.trim()) faltando.push(c[1]);
+  });
+  if(faltando.length){ alert('Transportadora selecionada: preencha o endereço dela ('+faltando.join(', ')+').'); return false; }
+  return true;
+}
+document.addEventListener('DOMContentLoaded', function(){ AC_FORN=_acBuild(AUTO_FORN); AC_TRANSP=_acBuild(AUTO_TRANSP); });
 </script>
 <script>
 // Isso reduz o tamanho do upload e o uso de memória do servidor ao montar o PDF
@@ -246,6 +279,7 @@ async function _comprimirInput(input, maxLado, qualidade){
 
 async function gerarComFotosMenores(){
   if(!validarAvarias()) return;
+  if(!validarTransp()) return;
   var btn = document.getElementById('btnGerar');
   var msg = document.getElementById('msgCompressao');
   btn.disabled = true;

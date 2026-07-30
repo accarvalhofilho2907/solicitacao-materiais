@@ -13,6 +13,19 @@ from io import BytesIO
 import os
 import tempfile
 
+# [104] Streams de imagem em BINARIO (nao ASCII85): reduz memoria e CPU ao embutir muitas fotos
+# (o base85 inflava ~25% e era onde o worker estourava a RAM no Render). Nao afeta a qualidade.
+try:
+    from reportlab import rl_config as _rl_config
+    _rl_config.useA85 = 0
+except Exception:
+    pass
+
+# [104] Imagens em stream BINARIO (nao ASCII85): reduz memoria/CPU ao montar o PDF com muitas fotos
+# (evita o asciiBase85Encode que estourava a RAM no Render). Nao afeta a qualidade da imagem.
+from reportlab import rl_config as _rl_config
+_rl_config.useA85 = 0
+
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors

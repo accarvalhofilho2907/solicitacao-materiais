@@ -1994,3 +1994,91 @@ RESTANTE (proximo bloco): 92 (parser ILUMINAR - foto recebida), 94 (autocomplete
 [94] FEITO — relatorio de carga: campos Razao Social dos 3 (remetente/destinatario/transportador) com
      AUTOCOMPLETE "Nome — CNPJ" a partir da base (datalist dlEmpresas/dlTransp alimentados por
      mapa_fornecedores/mapa_transportadoras). Ao escolher, preenche CNPJ, IE e endereco. Digita nome OU cnpj.
+
+[99] BUG PROD (30/07) — 500 ao INSPECIONAR extintor (POST /almoxarifado/extintores/64/inspecionar).
+     INSERT em almox_insp_extintor falhou. Log cortou a mensagem antes do [SQL:]. INSERT parece valido
+     (colaborador_id None e ok; operador_id=10). HIPOTESE MAIS PROVAVEL: desvio de schema no Neon — alguma
+     coluna do modelo InspecaoExtintor (ex.: etiqueta_ok, extintor_cod, colaborador_nome, operador_id) NAO
+     existe na tabela almox_insp_extintor em producao (create_all cria TABELA nova, mas nao adiciona COLUNA
+     em tabela existente). Outra hipotese: FK operador_id=10 sem usuario correspondente.
+     ACAO (quando executar): (1) pedir a Antonio a LINHA do erro (antes de "[SQL:") — ela diz exatamente:
+     'column ... does not exist' (schema) OU 'violates foreign key' (FK) OU 'null value ... not-null'.
+     (2) se for coluna faltando: ALTER TABLE almox_insp_extintor ADD COLUMN <col> ... (rodar 1x no Neon;
+     backup antes). (3) alternativa: rota de manutencao que roda o ALTER com IF NOT EXISTS.
+
+### Diagnostico com log completo (30/07)
+[99] CAUSA REAL = ForeignKeyViolation: operador_id=10 NAO existe em "usuarios". A inspecao grava
+     operador_id=current_user.id, mas o usuario logado (id 10) nao esta na tabela usuarios do Neon
+     (provavel login via outra entidade — colaborador — cujo id nao casa com usuarios.id). NAO e schema faltando.
+     PLANO (quando executar): so setar operador_id se o current_user for realmente um Usuario existente;
+     senao gravar operador_id=None e usar colaborador_id/colaborador_nome. Ou seja, tornar operador_id
+     tolerante (checar tipo/existencia antes de atribuir). Aplicar nas rotas que gravam InspecaoExtintor
+     (inspecionar, conferir, repor, reposicao, _ficha_campo). Ver como o user_loader distingue U:/C:.
+[100] BUG PROD = gerar carga com muitas fotos: [CRITICAL] WORKER TIMEOUT em /relatorios/carga/gerar ->
+     pdf_carga.doc.build(). Estoura TAMBEM no servidor (nao so no celular): tempo de montagem do PDF passa do
+     timeout do gunicorn no Render. O ajuste do 98 foi no NAVEGADOR (memoria); falta o lado SERVIDOR:
+     - aumentar timeout do gunicorn (ex.: --timeout 120) no start do Render;
+     - e/ou otimizar pdf_carga (imagens ja em lazy=2; revisar _normalizar_imagem p/ ser mais rapida);
+     - e/ou processar/limitar. Restricao do Antonio: NAO perder qualidade. Requer ajuste de deploy (timeout).
+
+### Nota (30/07)
+[99] Confirmado: JOBENY (e outros) sao cadastrados em COLABORADORES (correto p/ inspecao de campo). O cadastro
+     esta certo — nao mexer nele. Bug e so tecnico: operador_id (FK usuarios) recebe id de colaborador.
+     Correcao: preencher operador_id SOMENTE se current_user for Usuario (get_id "U:"); se Colaborador ("C:"),
+     operador_id=None (o colaborador ja fica em colaborador_id/colaborador_nome). Aplicar em: extintor_inspecionar,
+     extintor_conferir, extintor_repor, extintor_reposicao e _ficha_campo (todos que gravam InspecaoExtintor.operador_id).
+[100] EM OBSERVACAO — Antonio diz que ja esta em fase de correcao nesta ultima versao. Nao mexer; aguardar retorno.
+
+### BLOCO G (30/07) - 99 FEITO; 100 REMOVIDO DA FILA
+[99] FEITO - as 6 gravacoes de InspecaoExtintor (inspecionar/conferir/repor/reposicao/ficha de campo)
+     passaram a usar _op_id() em vez de getattr(current_user,'id'). Assim operador_id so recebe id de
+     USUARIO (login U:); se for COLABORADOR (login C:), grava None (colaborador segue em colaborador_id/nome).
+     Corrige o 500 (ForeignKeyViolation operador_id) ao inspecionar logado como colaborador (ex.: JOBENY).
+     Testado: Colaborador->None, Usuario->id.
+[100] REMOVIDO DA FILA a pedido do Antonio (sera tratado pela nova versao do app).
+
+### LISTA (Antonio 30/07) — FILA, aguarda "pode executar"
+[101] Relatorio de carga: o autocomplete "Razao Social — CNPJ" (94) precisa FILTRAR AO DIGITAR de verdade
+      (o datalist nativo nao filtra por substring como o usuario espera — digitou "CYMI" e veio a lista toda).
+      Trocar por um autocomplete proprio (input + lista suspensa filtravel por nome OU digitos do CNPJ,
+      igual filtro ao vivo), destacando/mostrando so o que casa.
+[102] Relatorio de carga: REMOVER o campo CNPJ separado dos 3 blocos (remetente/destinatario/transportador).
+      Deixar SOMENTE o campo "Razao Social — CNPJ" (que ja traz os dois). O CNPJ para gravar/validar sai do
+      item escolhido. (rever tratarCnpj/validacao que dependia do campo _cnpj; e o servidor que le _cnpj.)
+[103] A lista de sugestoes deve vir sempre em ORDEM ALFABETICA (por razao social/nome).
+
+### Decisao (30/07)
+[102] Opcao B escolhida: remover o campo CNPJ da tela normal; o "Razao Social — CNPJ" filtra e escolhe da base.
+      Para EMPRESA NOVA (nao cadastrada), oferecer um "+ nova empresa" que abre o campo CNPJ SO nesse caso
+      (para informar/validar/cadastrar como pendente). No fluxo normal, o CNPJ sai do item escolhido.
+
+### LISTA (Antonio 30/07 - tarde) — FILA, aguarda "pode executar"
+[104] BUG PROD (reabre o 100) — gerar carga com fotos: worker recebe SIGKILL "Perhaps out of memory?"
+      quebrando em asciiBase85Encode/drawImage (pdf_carga doc.build). Ou seja e MEMORIA (OOM), nao timeout
+      (timeout ja e 120s; workers=1 threads=4). Fotos normalizadas 2400px q90. Com 20+ fotos o ReportLab
+      acumula os streams de imagem (base85 ~+25%) ate salvar -> estoura a RAM do plano Render.
+      MITIGACOES (sem perder qualidade visivel):
+        (a) desligar ASCII85 -> streams binarios: reportlab.rl_config.useA85=0 (remove a expansao base85 e o
+            loop pesado que aparece no traceback). Ganho real de memoria/CPU sem mexer na imagem.
+        (b) revisar se 2400px e necessario (A4 ~178mm ≈ 2100px @300dpi) — mas Antonio pediu NAO perder qualidade,
+            entao manter 2400 e so aplicar (a).
+        (c) se ainda estourar com muitas fotos: dividir em +1 PDF OU subir a RAM do Render (infra).
+      Depende em parte de deploy/infra (RAM). Testar (a) primeiro.
+[105] Relatorio de carga — OBRIGATORIEDADE de endereco (ajusta o 96):
+      - REMETENTE e DESTINATARIO: endereco completo OBRIGATORIO (cep, logradouro, numero, bairro, cidade, UF)
+        EXCETO complemento.
+      - TRANSPORTADORA: endereco so OBRIGATORIO se o usuario SELECIONAR/informar uma transportadora; se deixar
+        em branco, nada obrigatorio nela.
+
+### BLOCO H (30/07) ✓ — 101,102,103,104,105
+[101] FEITO — carga: autocomplete PROPRIO no campo "Razao Social — CNPJ" (input + lista suspensa) que FILTRA
+      ao digitar por nome OU digitos do CNPJ (acFiltra/acEscolhe/acBlur). Substitui o datalist nativo.
+[102] FEITO — removido o campo CNPJ fixo dos 3 blocos; hidden _cnpj preenchido pela escolha. "+ nova empresa"
+      revela um campo CNPJ so quando a empresa nao esta na base (acNova/acCnpjNovo -> valida e joga no hidden). (opcao B)
+[103] FEITO — sugestoes sempre em ordem ALFABETICA (sort localeCompare pt por razao social).
+[104] FEITO (mitigacao) — pdf_carga: reportlab rl_config.useA85=0 (streams de imagem BINARIOS, sem base85).
+      Corta memoria/CPU ao embutir muitas fotos, SEM perder qualidade. Se ainda estourar com muitas fotos,
+      resta dividir em +1 PDF ou subir RAM do Render (infra).
+[105] FEITO — carga: REMETENTE e DESTINATARIO com endereco completo OBRIGATORIO (cep, logradouro, numero,
+      bairro, cidade, UF) exceto complemento (via required no campos_endereco(..., true)). TRANSPORTADORA:
+      endereco so obrigatorio se uma transportadora for informada (validarTransp no envio). Ajusta o 96.

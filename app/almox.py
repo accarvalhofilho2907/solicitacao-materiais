@@ -971,7 +971,7 @@ def extintor_inspecionar(eid):
                    resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
                    etiqueta_ok=(not et_nok), obs=(request.form.get("obs") or "").strip(),
                    colaborador_id=cid, colaborador_nome=nome,
-                   operador_id=getattr(current_user, "id", None)))
+                   operador_id=_op_id()))
     if core_nok:
         _log("Extintor", f"{e.codigo} ({e.local}): inspeção IRREGULAR por {nome} — notificar ADMIN")
         msg, cat = "Inspeção registrada. Extintor IRREGULAR — leve ao Almox D6.", "warning"
@@ -1005,7 +1005,7 @@ def extintor_reposicao(eid):
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="reposicao",
                    resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
                    etiqueta_ok=(not et_nok), colaborador_id=cid, colaborador_nome=nome,
-                   operador_id=getattr(current_user, "id", None),
+                   operador_id=_op_id(),
                    obs=f"Troca programada. Validade {_competencia(e.validade)}, TH {_th_label(e.teste_hidrostatico)}"))
     _log("Extintor", f"{e.codigo}: reposição/troca por {nome} "
                      f"(validade {_competencia(e.validade)}, TH {_th_label(e.teste_hidrostatico)})")
@@ -1024,7 +1024,7 @@ def extintor_regularizar(eid):
     e.retirado_por = nome
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="retirada",
                    resultado="irregular", colaborador_id=cid, colaborador_nome=nome,
-                   operador_id=getattr(current_user, "id", None)))
+                   operador_id=_op_id()))
     _log("Extintor", f"{e.codigo}: levado ao Almox D6 p/ recarga por {nome}")
     db.session.commit()
     flash("Extintor marcado como Em recarga (levado ao Almox D6).", "info")
@@ -1045,7 +1045,7 @@ def extintor_conferir(eid):
                    resultado=("irregular" if (core_nok or et_nok) else "conforme"),
                    itens_json=_json.dumps(itens, ensure_ascii=False), etiqueta_ok=(not et_nok),
                    colaborador_id=cid, colaborador_nome=nome,
-                   operador_id=getattr(current_user, "id", None)))
+                   operador_id=_op_id()))
     if et_nok and not PendenciaEtiqueta.query.filter_by(extintor_id=e.id, resolvida=False).first():
         db.session.add(PendenciaEtiqueta(extintor_id=e.id, extintor_cod=e.codigo,
                        predio=e.predio, local=e.local, aberta_por=nome))
@@ -1074,7 +1074,7 @@ def extintor_repor(eid):
     e.retirado_por = None
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="reposicao",
                    resultado="conforme", colaborador_id=cid, colaborador_nome=nome,
-                   operador_id=getattr(current_user, "id", None),
+                   operador_id=_op_id(),
                    obs=f"Reposto no local. Validade {_competencia(e.validade)}, TH {_th_label(e.teste_hidrostatico)}"))
     _log("Extintor", f"{e.codigo}: reposto no local por {nome}")
     db.session.commit()
@@ -1143,7 +1143,7 @@ def extintor_novo():
     db.session.add(InspecaoExtintor(extintor_id=e.id, extintor_cod=e.codigo, tipo="inspecao",
                    resultado=resultado, itens_json=_json.dumps(itens, ensure_ascii=False),
                    etiqueta_ok=(not et_nok), colaborador_id=cid, colaborador_nome=nome,
-                   operador_id=getattr(current_user, "id", None), obs="Cadastro / conferência inicial"))
+                   operador_id=_op_id(), obs="Cadastro / conferência inicial"))
     _log("Extintor", f"Extintor cadastrado: {codigo} ({local}) por {nome}")
     db.session.commit()
     flash(f"Extintor {codigo} cadastrado.", "success")

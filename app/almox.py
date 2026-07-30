@@ -823,6 +823,12 @@ def extintores():
     situacoes = _situacoes_sel()
     venc_de = _parse_date_arg(request.args.get("venc_de"))
     venc_ate = _parse_date_arg(request.args.get("venc_ate"))
+    if venc_ate:  # [90] filtro por COMPETENCIA: "até" = último dia do mês
+        import calendar as _cal
+        venc_ate = venc_ate.replace(day=_cal.monthrange(venc_ate.year, venc_ate.month)[1])
+    # [91] extintores com pendência de etiqueta aberta contam como "Atenção" no filtro
+    pend_ids = {p.extintor_id for p in PendenciaEtiqueta.query.filter_by(resolvida=False).all()}
+    atencao_sel = "ATENCAO" in situacoes
     linhas = []
     todos = Extintor.query.filter_by(ativo=True).order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
     for e in todos:
@@ -837,7 +843,10 @@ def extintores():
         if venc_ate and (not e.validade or e.validade > venc_ate):
             continue
         k, lbl, cls = _situacao_extintor(e)
-        if not _match_situacoes(situacoes, k):
+        match = _match_situacoes(situacoes, k)
+        if not match and atencao_sel and e.id in pend_ids:  # [91]
+            match = True
+        if not match:
             continue
         linhas.append((e, k, lbl, cls))
     predios = sorted({e.predio for e in todos if e.predio})

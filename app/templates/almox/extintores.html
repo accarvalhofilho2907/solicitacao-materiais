@@ -77,8 +77,8 @@
       </ul>
     </div>
   </div>
-  <div class="col-6 col-md-2"><input type="date" name="venc_de" value="{{ venc_de }}" class="form-control form-control-sm" title="Vencimento de" onchange="this.form.submit()" placeholder="Venc. de"></div>
-  <div class="col-6 col-md-2"><input type="date" name="venc_ate" value="{{ venc_ate }}" class="form-control form-control-sm" title="Vencimento até" onchange="this.form.submit()" placeholder="Venc. até"></div>
+  <div class="col-6 col-md-2"><input type="month" name="venc_de" value="{{ venc_de }}" class="form-control form-control-sm" title="Vencimento de (competência)" onchange="this.form.submit()"></div>
+  <div class="col-6 col-md-2"><input type="month" name="venc_ate" value="{{ venc_ate }}" class="form-control form-control-sm" title="Vencimento até (competência)" onchange="this.form.submit()"></div>
   <div class="col-6 col-md-1"><a href="{{ url_for('almox.extintores') }}" onclick="try{localStorage.removeItem('filtroExtintores')}catch(e){}" class="btn btn-sm btn-outline-secondary w-100">Limpar</a></div>
 </form>
 

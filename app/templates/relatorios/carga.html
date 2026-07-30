@@ -29,6 +29,7 @@
 
 <form method="post" action="{{ url_for('relatorios.carga_gerar') }}" target="_blank" enctype="multipart/form-data" id="formCarga">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <datalist id="dlEmpresas"></datalist><datalist id="dlTransp"></datalist>
 
   <!-- 1. CABEÇALHO -->
   <div class="card mb-3"><div class="card-body">
@@ -57,8 +58,8 @@
         <input name="rem_cnpj" id="rem_cnpj" class="form-control form-control-sm" inputmode="numeric"
                placeholder="Só números" onblur="tratarCnpj('rem','fornecedor')"></div>
       <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome *</label>
-        <input name="rem_nome" id="rem_nome" class="form-control form-control-sm" required
-               oninput="atualizarTomador()"></div>
+        <input name="rem_nome" id="rem_nome" class="form-control form-control-sm" required list="dlEmpresas"
+               placeholder="Digite nome ou CNPJ para buscar" oninput="autoEmpresa('rem','fornecedor'); atualizarTomador()"></div>
       <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
         <input name="rem_ie" id="rem_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
     </div>
@@ -73,8 +74,8 @@
         <input name="dest_cnpj" id="dest_cnpj" class="form-control form-control-sm" inputmode="numeric"
                placeholder="Só números" onblur="tratarCnpj('dest','fornecedor')"></div>
       <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome *</label>
-        <input name="dest_nome" id="dest_nome" class="form-control form-control-sm" required
-               oninput="atualizarTomador()"></div>
+        <input name="dest_nome" id="dest_nome" class="form-control form-control-sm" required list="dlEmpresas"
+               placeholder="Digite nome ou CNPJ para buscar" oninput="autoEmpresa('dest','fornecedor'); atualizarTomador()"></div>
       <div class="col-md-5"><label class="form-label small mb-0">Inscrição Estadual</label>
         <input name="dest_ie" id="dest_ie" class="form-control form-control-sm" inputmode="numeric" placeholder="Só números"></div>
     </div>
@@ -90,7 +91,8 @@
         <input name="transp_cnpj" id="transp_cnpj" class="form-control form-control-sm" inputmode="numeric"
                placeholder="Só números" onblur="tratarCnpj('transp','transportadora')"></div>
       <div class="col-md-8"><label class="form-label small mb-0">Razão Social / Nome</label>
-        <input name="transp_nome" id="transp_nome" class="form-control form-control-sm"></div>
+        <input name="transp_nome" id="transp_nome" class="form-control form-control-sm" list="dlTransp"
+               placeholder="Digite nome ou CNPJ para buscar" oninput="autoEmpresa('transp','transportadora')"></div>
     </div>
     {{ campos_endereco('transp') }}
   </div></div>
@@ -168,36 +170,65 @@
 </form>
 
 <script>
-// Comprime as fotos no próprio navegador ANTES de enviar (item 152).
+// [94] autocomplete "Razao Social — CNPJ" a partir da base cadastrada
+var AUTO_FORN = {{ mapa_fornecedores|tojson }};
+var AUTO_TRANSP = {{ mapa_transportadoras|tojson }};
+function _montarDatalist(id, mapa){
+  var dl=document.getElementById(id); if(!dl) return;
+  dl.innerHTML='';
+  Object.keys(mapa).forEach(function(d){
+    var o=document.createElement('option');
+    o.value=(mapa[d].nome||'')+' — '+(typeof formatarCnpj==='function'?formatarCnpj(d):d);
+    dl.appendChild(o);
+  });
+}
+function autoEmpresa(prefixo, tipo){
+  var campo=document.getElementById(prefixo+'_nome'); if(!campo) return;
+  var v=campo.value; var i=v.lastIndexOf(' — '); if(i<0) return;   // so age quando escolhe "Nome — CNPJ"
+  var d=(v.slice(i+3)||'').replace(/\D/g,'');
+  var mapa=(tipo==='transportadora')?AUTO_TRANSP:AUTO_FORN;
+  if(mapa[d]){
+    campo.value=mapa[d].nome||'';
+    var cnpjEl=document.getElementById(prefixo+'_cnpj'); if(cnpjEl){ cnpjEl.value=(typeof formatarCnpj==='function'?formatarCnpj(d):d); }
+    var ieEl=document.getElementById(prefixo+'_ie'); if(ieEl && tipo!=='transportadora') ieEl.value=mapa[d].ie||'';
+    ['cep','logradouro','numero','bairro','complemento','cidade','estado'].forEach(function(cp){
+      var el=document.getElementById(prefixo+'_'+cp); if(el) el.value=mapa[d][cp]||'';
+    });
+    if(typeof atualizarTomador==='function') atualizarTomador();
+  }
+}
+document.addEventListener('DOMContentLoaded', function(){ _montarDatalist('dlEmpresas',AUTO_FORN); _montarDatalist('dlTransp',AUTO_TRANSP); });
+</script>
+<script>
 // Isso reduz o tamanho do upload e o uso de memória do servidor ao montar o PDF
 // (era a causa do "exceeded its memory limit" no Render com muitas fotos).
 function _comprimirImagem(file, maxLado, qualidade){
   return new Promise(function(resolve){
     if(!file || !file.type || file.type.indexOf('image/') !== 0){ resolve(file); return; }
-    var reader = new FileReader();
-    reader.onload = function(e){
-      var img = new Image();
-      img.onload = function(){
-        var w = img.width, h = img.height;
-        if(Math.max(w,h) > maxLado){
-          if(w >= h){ h = Math.round(h * maxLado / w); w = maxLado; }
-          else { w = Math.round(w * maxLado / h); h = maxLado; }
-        }
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        canvas.toBlob(function(blob){
-          if(!blob){ resolve(file); return; }
-          // se a "compressão" ficou maior que o original, mantém o original
-          if(blob.size >= file.size){ resolve(file); return; }
-          resolve(new File([blob], (file.name||'foto').replace(/\.[^.]+$/, '') + '.jpg', {type:'image/jpeg'}));
-        }, 'image/jpeg', qualidade);
-      };
-      img.onerror = function(){ resolve(file); };
-      img.src = e.target.result;
+    // [98] usa objectURL (nao base64) e libera memoria — evita travar o celular com muitas fotos
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function(){
+      var w = img.width, h = img.height;
+      if(Math.max(w,h) > maxLado){
+        if(w >= h){ h = Math.round(h * maxLado / w); w = maxLado; }
+        else { w = Math.round(w * maxLado / h); h = maxLado; }
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(function(blob){
+        var out = (!blob || blob.size >= file.size)
+                  ? file
+                  : new File([blob], (file.name||'foto').replace(/\.[^.]+$/, '') + '.jpg', {type:'image/jpeg'});
+        canvas.width = 0; canvas.height = 0;   // libera o canvas da memoria
+        img.src = '';
+        resolve(out);
+      }, 'image/jpeg', qualidade);
     };
-    reader.onerror = function(){ resolve(file); };
-    reader.readAsDataURL(file);
+    img.onerror = function(){ URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
   });
 }
 
@@ -207,6 +238,8 @@ async function _comprimirInput(input, maxLado, qualidade){
   for(var i=0; i<input.files.length; i++){
     var menor = await _comprimirImagem(input.files[i], maxLado, qualidade);
     dt.items.add(menor);
+    menor = null;
+    await new Promise(function(r){ setTimeout(r, 0); });   // [98] respiro p/ o navegador liberar memoria
   }
   input.files = dt.files;
 }
@@ -255,15 +288,20 @@ var _validandoCnpj = false;
 function buscaCepCarga(prefixo){
   var cep = soDigitos(document.getElementById(prefixo+'_cep').value);
   var msg = document.getElementById(prefixo+'_cepmsg');
-  if(cep.length !== 8){ if(msg) msg.textContent=''; return; }
-  if(msg){ msg.textContent='buscando...'; msg.className='small text-muted'; }
+  var campos = ['logradouro','numero','bairro','complemento','cidade','estado'];
+  var trava = function(v){ campos.forEach(function(cp){ var el=document.getElementById(prefixo+'_'+cp); if(el) el.readOnly=v; }); };
+  if(cep.length !== 8){ if(msg) msg.textContent=''; trava(false); return; }
+  if(msg){ msg.textContent='buscando CEP...'; msg.className='small text-muted'; }
+  trava(true);   // [95] bloqueia os campos enquanto busca
   fetch('https://viacep.com.br/ws/'+cep+'/json/').then(function(r){return r.json();}).then(function(d){
-    if(d.erro){ if(msg){ msg.textContent='CEP não encontrado — preencha manualmente'; msg.className='small text-danger'; } return; }
+    if(d.erro){ trava(false); if(msg){ msg.textContent='CEP não encontrado — preencha manualmente'; msg.className='small text-danger'; } return; }
     var set=function(campo,val){ var el=document.getElementById(prefixo+'_'+campo); if(el && val) el.value=val; };
     set('logradouro',(d.logradouro||'').toUpperCase()); set('bairro',(d.bairro||'').toUpperCase());
     set('cidade',(d.localidade||'').toUpperCase()); set('estado',(d.uf||'').toUpperCase());
+    trava(false);   // libera para completar número/complemento e ajustes
+    var n=document.getElementById(prefixo+'_numero'); if(n) n.focus();
     if(msg){ msg.textContent='endereço preenchido ✓'; msg.className='small text-success'; }
-  }).catch(function(){ if(msg){ msg.textContent='sem internet — preencha manualmente'; msg.className='small text-danger'; } });
+  }).catch(function(){ trava(false); if(msg){ msg.textContent='sem internet — preencha manualmente'; msg.className='small text-danger'; } });
 }
 function tratarCnpj(prefixo, tipo){
   if(_validandoCnpj) return;              // evita reentrada (o alert dispara blur de novo)
@@ -337,20 +375,24 @@ function removerFoto(i){
   _syncInputFotos();
   renderFotos();
 }
+var _thumbUrls = [];
 function renderFotos(){
   var lista = document.getElementById('listaFotos');
+  _thumbUrls.forEach(function(u){ try{ URL.revokeObjectURL(u); }catch(e){} });
+  _thumbUrls = [];
   lista.innerHTML = '';
   FOTOS.forEach(function(f, i){
     var id = 'foto_' + (i+1);   // posicao = igual ao servidor
+    var _u = URL.createObjectURL(f.file); _thumbUrls.push(_u);
     var col = document.createElement('div');
     col.className = 'col-md-3';
     col.innerHTML =
       '<div class="border rounded p-2 position-relative">' +
         '<button type="button" class="btn btn-sm btn-danger py-0 px-2" style="position:absolute;top:6px;right:6px;line-height:1.2" title="Excluir foto" onclick="removerFoto('+i+')">×</button>' +
-        '<img src="'+URL.createObjectURL(f.file)+'" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
+        '<img src="'+_u+'" style="width:100%;height:90px;object-fit:cover;border-radius:4px;" class="mb-1">' +
         '<div class="form-check"><input class="form-check-input chkAvaria" type="checkbox" name="foto_avariada" value="'+id+'" id="chk_'+id+'" '+(f.avaria?'checked':'')+' onchange="FOTOS['+i+'].avaria=this.checked; toggleObs(this,\''+id+'\')">' +
         '<label class="form-check-label small text-danger" for="chk_'+id+'">Avariado?</label></div>' +
-        '<textarea class="form-control form-control-sm mt-1 '+(f.avaria?'':'d-none')+' obsAvaria" name="obs_'+id+'" id="obs_'+id+'" placeholder="Descreva a avaria (obrigatório)" oninput="FOTOS['+i+'].obs=this.value">'+(f.obs||'')+'</textarea>' +
+        '<textarea class="form-control form-control-sm mt-1 obsAvaria" name="obs_'+id+'" id="obs_'+id+'" placeholder="Observação (opcional' + (f.avaria?' — obrigatória p/ avaria)':')') + '" '+(f.avaria?'required':'')+' oninput="FOTOS['+i+'].obs=this.value">'+(f.obs||'')+'</textarea>' +
       '</div>';
     lista.appendChild(col);
   });
@@ -364,8 +406,9 @@ function renderFotos(){
 }
 function toggleObs(chk, id){
   var o = document.getElementById('obs_'+id);
-  o.classList.toggle('d-none', !chk.checked);
-  if(chk.checked) o.setAttribute('required','required'); else o.removeAttribute('required');
+  if(!o) return;
+  if(chk.checked){ o.setAttribute('required','required'); o.placeholder='Observação (obrigatória p/ avaria)'; }
+  else { o.removeAttribute('required'); o.classList.remove('is-invalid'); o.placeholder='Observação (opcional)'; }
 }
 function validarAvarias(){
   var ok = true;

@@ -303,9 +303,12 @@ def gerar_pdf_relatorio_carga(modo, dados, fotos=None):
                 el.append(_faixa_secao(legenda))
                 el.append(Spacer(1, 4 * mm))
                 el.append(img)
-                if foto.get("avaria") and foto.get("obs"):
+                if foto.get("obs"):
                     el.append(Spacer(1, 3 * mm))
-                    el.append(Paragraph(f'<font color="#C0392B"><b>Avaria:</b></font> {foto["obs"]}', _OBS))
+                    if foto.get("avaria"):
+                        el.append(Paragraph(f'<font color="#C0392B"><b>Avaria:</b></font> {foto["obs"]}', _OBS))
+                    else:
+                        el.append(Paragraph(f'<b>Observação:</b> {foto["obs"]}', _OBS))
             except Exception:
                 el.append(PageBreak())
                 el.append(_faixa_secao(legenda))

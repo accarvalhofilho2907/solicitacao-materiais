@@ -1856,3 +1856,141 @@ RESTANTE: 66, 72, 73, 74, 75, 76.
 [76] FEITO — coleta avulsa resolve o Fornecedor cadastrado pelo nome -> mostra contato no bloco/texto da cidade.
 FILA ZERADA (62-76 concluidos; 68 explicado). Tabelas novas ja criadas em levas anteriores (coleta_avulsa,
 roadmap_item/nota). Esta leva NAO cria tabela nova.
+
+### LISTA do ROADMAP in-app (Antonio 29/07) — FILA, aguarda "pode executar"
+[77] Empresas e Fornecedores ficou com DOIS filtros; quero APENAS 01 (o filtro ao vivo que digita e filtra).
+     Remover o filtro/campo antigo, manter so o novo.
+[78] Ao incluir a cotacao em Solicitacao, RETIRAR a opcao/campo "Prazo".
+[79] Em Solicitacao, onde esta "Valor" trocar para "Valor unitario".
+[80] Importar orcamento: LER FOTO (imagem) tambem, com OCR. E permitir ARRASTAR (drag&drop) o arquivo,
+     inclusive direto do WhatsApp, na tela de importacao. (fotos = menos confiavel; PDF continua o ideal.)
+[81] Relatorio de carga: ao digitar o CNPJ, buscar na base e PUXAR os demais dados automaticamente
+     (transportadora, remetente e destinatario).
+[82] Extintores - memoria de filtro (ajuste do 58): gravar o filtro SO enquanto ficar na tela/abrir e fechar
+     ficha; se navegar para outra area (Cadastro, Relatorio, etc.) RESETA. Abrir ficha e voltar -> mantem.
+[83] Filtros de Extintores (e de TODO o sistema): NAO fechar/aplicar a cada clique — deixar marcar varias
+     opcoes antes de aplicar. Trocar o estilo para "chips/botoes" que ao clicar ficam EVIDENCIADOS com fundo
+     CORAL (Serena). Fazer VARREDURA FINA e aplicar o mesmo padrao em todos os filtros do sistema.
+     (obs: no bloco anterior eu tinha voltado ao dropdown; Antonio agora quer chips coral que acumulam — este
+     item substitui aquela decisao.)
+[84] Extintores: "Filtrar na lista" (codigo/local/tipo) + botao QR deve gerar o QR SO do que esta filtrado/
+     visivel, nao de todos. Consertar (o filtro ao vivo e client-side; o QR precisa considerar so os visiveis).
+[85] Checklist: renomear o item "Etiqueta grudada e em bom estado?" para "QR Code de inspecao".
+[86] Checklist do ALMOX (conferencia p/ Pronto p/ reposicao): REMOVER os itens "Suporte/fixacao em bom estado"
+     e "Acesso e sinalizacao desobstruidos". Esses devem ser conferidos na REPOSICAO no local, junto com
+     validade e TH que o colaborador informa ao repor.
+[87] Extintores: incluir filtro por VENCIMENTO (DE x ATE).
+[88] Relatorio de carga: opcao de EXCLUIR foto.
+
+### Esclarecimentos (29/07)
+[83] Detalhe: os chips devem permitir MARCAR VARIAS ao mesmo tempo. NAO fechar a lista estendida a cada
+     clique. Opcoes: (a) aplicar o filtro so quando clicar FORA da lista; OU (b) aplicar enquanto clica, mas
+     mantendo a lista aberta (nao sumir). O incomodo hoje e a lista fechar e ter que reabrir toda hora.
+     -> Implementar: painel/chips que ficam abertos, marca varias, aplica ao clicar fora (ou botao Aplicar),
+     chips selecionados evidenciados com fundo CORAL Serena. Padrao para TODO o sistema.
+[80] AUTORIZADO por Antonio (foto/OCR + drag&drop; PDF continua o ideal, avisar na tela).
+
+### BLOCO A (29/07) ✓ — 77,78,79,85,86,88
+[77] Fornecedores/empresas: removida a busca server-side (q); ficou so o filtro AO VIVO + atalho "Sem CNPJ".
+[78] Removida a opcao/campo "Prazo" (prazo_entrega) e a coluna Prazo ao incluir cotacao.
+[79] "Valor" -> "Valor unitario" (coluna e campo do orcamento na ficha).
+[85] Item do checklist "Etiqueta grudada..." -> "QR Code de inspeção grudado e em bom estado?".
+[86] Checklist do ALMOX (retorno) agora tira "Acesso e sinalizacao" E "Suporte/fixacao" (conferidos na reposicao).
+[88] Relatorio de carga: fotos gerenciadas em array; cada foto tem "x" para EXCLUIR; ids por posicao (nao
+     bagunca a marcacao de avaria); estado de avaria/obs preservado no re-render.
+
+### BLOCO B parcial (29/07) ✓ — 87,84,82  (83 = proximo bloco dedicado)
+[87] FEITO — filtro por VENCIMENTO (De x Ate) nos extintores (helper _parse_date_arg; filtra e.validade).
+[84] FEITO — botao QR/PDF gera so dos itens marcados E VISIVEIS (respeita o 'Filtrar na lista').
+[82] FEITO — memoria do filtro de extintores so vale na area de extintores (lista+ficha); reseta ao sair
+     (script global no base.html que limpa filtroExtintores fora de /almoxarifado/extintores).
+[83] PENDENTE (proximo bloco dedicado) — chips coral que acumulam, painel nao fecha a cada clique, aplica ao
+     clicar fora; varredura em todo o sistema. E o mais arriscado; faco isolado p/ nao quebrar filtros atuais.
+
+### BLOCO C (30/07) ✓ — 83 (chips em todo o sistema) + 80 (foto/OCR)
+[83] FEITO — padrao global "filtro-chips" (base.html): dropdowns nao aplicam mais a cada clique; marca varias
+     e aplica ao FECHAR (clicar fora, evento hidden.bs.dropdown); opcoes marcadas evidenciadas em CORAL
+     (#FF5246). Aplicado em: extintores, dashboard (Solicitacoes), chaves, notinhas, solicitante. Removido o
+     onchange=submit dos checkboxes de extintores e chaves. (Filtros de TEXTO ao vivo e DATAS seguem imediatos.)
+[80] FEITO — importar orcamento aceita FOTO (image/*) alem de PDF; drag&drop ja dropa arquivo (serve p/ arrastar
+     do WhatsApp). Backend: _linhas roteia imagem para _ocr_imagem (pytesseract). Aviso na tela de que PDF e o
+     ideal. Fallback: se OCR indisponivel/falhar, a rota mostra mensagem amigavel (nao quebra).
+     >>> ATENCAO DEPLOY: OCR precisa do BINARIO tesseract-ocr no Render (pip so instala pytesseract). Sem ele,
+     a leitura por foto sempre cai no aviso "nao consegui ler; envie PDF". Para habilitar: adicionar no Render
+     um Aptfile com 'tesseract-ocr' e 'tesseract-ocr-por' (ou build que instale o pacote). requirements ja tem pytesseract.
+FILA 77-88 CONCLUIDA.
+
+### LISTA do ROADMAP in-app (Antonio 30/07) — FILA, aguarda "pode executar"
+[89] Numerar cada item do ROADMAP (aqui e, se der, no modal do app) para facilitar marcar como concluido.
+[90] Extintores: o filtro DE x ATE (vencimento) deve ser por COMPETENCIA (MM/AAAA), nao por dia. Trocar os
+     inputs date por mes/competencia e ajustar o _parse_date_arg/compare.
+[91] BUG: ha 2 extintores com pendencia de etiqueta, mas ao filtrar situacao "Atencao (etiquetas)" eles NAO
+     aparecem. Conferir o casamento do filtro de situacao ATENCAO com quem tem pendencia de etiqueta aberta.
+[92] OCR ILUMINAR: a leitura do orcamento ILUMINAR por foto falhou. >>> PEDIR AO ANTONIO a FOTO do orcamento
+     ILUMINAR para ajustar o modelo de leitura/parser. (me cobrar a foto quando formos executar)
+[93] Busca de Empresas/Fornecedores: pesquisar TAMBEM na razao social interna; e ao buscar por CNPJ, IGNORAR
+     pontuacao (ex.: "34108887" acha "34.108.887..."). (o filtro ao vivo e/ou server precisa normalizar digitos)
+[94] Relatorio de carga (CNPJ->dados): a busca nao puxou. MELHORAR: remetente, destinatario e transportador
+     num unico campo "Razao Social - CNPJ" com autocomplete da base cadastrada (digita nome OU cnpj e sugere).
+[95] Relatorio de carga (CEP): enquanto pesquisa o CEP, deixar os demais campos de endereco BLOQUEADOS; se
+     nao localizar, aí libera para digitar manual.
+[96] Relatorio de carga: manter o campo "Nº" como OBRIGATORIO.
+[97] Relatorio de carga: campo OBSERVACAO por foto (opcional); se a foto for marcada como Avariado, aí vira
+     OBRIGATORIO. A observacao so entra no relatorio se tiver algo escrito.
+[98] BUG: gerar relatorio de carga com 20 fotos quebra o link (provavel timeout/memoria no Render). Investigar
+     (tamanho do payload/PDF; talvez processar em lote ou comprimir mais/limitar).
+
+### Esclarecimentos (30/07)
+[96] CORRECAO do escopo: o "N obrigatorio" e o NUMERO DO ENDERECO (nao o numero do documento). Tornar o
+     campo "numero" do endereco OBRIGATORIO no relatorio de carga.
+[98] CORRECAO: nao e o Render. Pelo computador gerou relatorio com +30 fotos OK. So QUEBRA no CELULAR.
+     -> investigar limite de memoria do NAVEGADOR MOBILE ao comprimir/enviar muitas fotos (canvas/File no
+     iOS/Android). Provavel: comprimir de forma mais leve/sequencial e liberar memoria; talvez upload em lote.
+[92] Foto do orcamento ILUMINAR RECEBIDA (rm/iluminar_orcamento.png). Cabecalho "ILUMINAR - COMERCIO E
+     SERVICOS LTDA", CNPJ 03.534.081/0001-06. Tabela "DADOS DOS PRODUTOS":
+     CODIGO | DESCRICAO DO PRODUTO (+ MARCA/NCM em linhas abaixo) | QUANT | EMBALAGEM | VL TAB | VL DESC |
+     VL UNIT | VL TOTAL. Ex.: 10044 | CABO DE COBRE NU 95MM... | 18,0000 | MT | 123,89 | 0,00 | 123,89 | 2.230,02.
+     Numeros PT-BR. Ha um parser _parse_iluminar antigo (CNPJ 03534081000106) que precisa ser revisto/ajustado
+     para este layout (QUANT com 4 casas, EMBALAGEM, VL TAB/DESC/UNIT/TOTAL; descricao multi-linha com MARCA/NCM).
+
+### Esclarecimento (30/07)
+[98] RESTRICAO: NAO pode perder qualidade no relatorio. Entao a solucao NAO pode ser "comprimir mais forte".
+     O problema e memoria do NAVEGADOR MOBILE ao processar muitas fotos de uma vez (canvas/File no celular).
+     Abordagens a avaliar (mantendo a qualidade atual 2400px/0.9):
+       (a) processar/comprimir as fotos UMA A UMA e liberar memoria (revoke canvas/objectURL) entre cada,
+           evitando segurar todas na RAM ao mesmo tempo;
+       (b) enviar em LOTES e o servidor montar 1 PDF unico (varias requisicoes, mesma qualidade);
+       (c) fazer a montagem sem manter todas as imagens decodificadas em memoria simultaneamente.
+     Objetivo: aguentar 20+ fotos no celular SEM reduzir a qualidade final do PDF.
+
+### BLOCO D (30/07) ✓ — 89,90,91,93,96
+[89] FEITO (parcial) — itens do ROADMAP numerados neste documento (facilita marcar). Numeracao no modal do
+     app fica como melhoria menor se Antonio quiser depois.
+[90] FEITO — filtro de vencimento dos extintores por COMPETENCIA (inputs type=month); "ate" vira ultimo dia do mes.
+[91] FEITO — filtro situacao "Atencao (etiqueta)" agora inclui extintores com PENDENCIA DE ETIQUETA aberta,
+     mesmo que a situacao gravada nao seja ATENCAO (pend_ids no route).
+[93] FEITO — busca de fornecedores/empresas: procura tambem na RAZAO SOCIAL (data-busca) e por CNPJ IGNORANDO
+     pontuacao (data-cnpj + normaliza digitos no filtrarForn).
+[96] FEITO — relatorio de carga: NUMERO do endereco agora OBRIGATORIO (required) nos 3 enderecos.
+RESTANTE (proximo bloco): 92 (parser ILUMINAR - foto recebida), 94 (autocomplete Razao-CNPJ na carga),
+95 (bloquear campos durante busca de CEP), 97 (observacao por foto), 98 (memoria mobile c/ 20+ fotos, sem perder qualidade).
+
+### BLOCO E (30/07) ✓ — 95,97,98 + 92(parser verificado). 94 pendente.
+[92] Parser ILUMINAR VERIFICADO com as 3 linhas reais do orcamento (le codigo/desc/qtd/VL UNIT/VL TOTAL ok).
+     O parser esta CORRETO. A falha era via FOTO->OCR: precisa do binario tesseract no Render, OU subir como PDF
+     (o PDF cai no parser e funciona). Nada a mudar no parser.
+[95] FEITO — relatorio de carga: ao buscar o CEP, os campos de endereco ficam bloqueados (readOnly); se nao
+     achar (ou sem internet), liberam para preenchimento manual; ao achar, preenche e foca no numero.
+[97] FEITO — observacao por foto agora SEMPRE visivel e OPCIONAL; vira OBRIGATORIA se a foto for marcada
+     avariada; e so aparece no PDF se estiver preenchida (avaria em vermelho, observacao comum em cinza).
+     Servidor le a obs de todas as fotos; pdf_carga imprime a obs embaixo da foto quando houver.
+[98] FEITO (sem perder qualidade) — compressao passa a usar objectURL (nao base64) e LIBERA a memoria de cada
+     foto antes da proxima (revoke + canvas 0x0 + setTimeout entre elas); miniaturas tambem revogadas no
+     re-render. Mantem maxLado/qualidade atuais. Objetivo: aguentar 20+ fotos no CELULAR (iPhone e Android).
+[94] PENDENTE — campo unico "Razao Social - CNPJ" com autocomplete da base (remetente/destinatario/transportador).
+     E o maior; fica para o proximo bloco.
+
+### BLOCO F (30/07) ✓ — 94  (FILA 89-98 CONCLUIDA)
+[94] FEITO — relatorio de carga: campos Razao Social dos 3 (remetente/destinatario/transportador) com
+     AUTOCOMPLETE "Nome — CNPJ" a partir da base (datalist dlEmpresas/dlTransp alimentados por
+     mapa_fornecedores/mapa_transportadoras). Ao escolher, preenche CNPJ, IE e endereco. Digita nome OU cnpj.

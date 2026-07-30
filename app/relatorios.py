@@ -402,10 +402,8 @@ def carga_gerar():
             continue
         foto_id = f"foto_{idx}"
         avaria = foto_id in avarias_ids
-        obs = ""
-        if avaria:
-            obs_lista = f.getlist(f"obs_{foto_id}")
-            obs = obs_lista[0].strip() if obs_lista else ""
+        obs_lista = f.getlist(f"obs_{foto_id}")
+        obs = obs_lista[0].strip() if obs_lista else ""
         fotos.append({"path": pth, "legenda": arquivo.filename, "avaria": avaria, "obs": obs})
 
     try:

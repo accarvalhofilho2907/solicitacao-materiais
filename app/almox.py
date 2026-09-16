@@ -113,7 +113,7 @@ from .models import (Chave, Extintor, Colaborador, AlmoxLog, QuadroChave,
                      InspecaoExtintor, PendenciaEtiqueta, CHECK_EXTINTOR, ITEM_ETIQUETA_EXTINTOR,
                      ProdutoAlmox, MovimentacaoMaterial, LocalAlmox, Fabricante,
                      NotaFiscalAlmox, NotificacaoAlmox, AjusteInventario,
-                     EstoqueLocalizador, InstanciaItem)
+                     EstoqueLocalizador, InstanciaItem, Notinha)
 
 
 def _qr_svg(texto, box=8, border=2):
@@ -154,7 +154,6 @@ TOPICOS = [
     {"slug": "chaves",      "nome": "Chaves",                          "icone": "🔑", "liberado": True, "endpoint": "almox.chaves"},
     {"slug": "relatorio_chaves","nome": "Relatório de chaves",         "icone": "📈", "liberado": True, "endpoint": "almox.relatorio_chaves"},
     {"slug": "extintores",  "nome": "Extintores",                      "icone": "🧯", "liberado": True, "endpoint": "almox.extintores"},
-    {"slug": "pend_etiqueta","nome": "Pendências de etiqueta",          "icone": "🏷", "liberado": True, "endpoint": "almox.pendencias_etiqueta"},
     {"slug": "colaboradores","nome": "Colaboradores",                  "icone": "👤", "liberado": True, "endpoint": "almox.colaboradores", "somente_colab": True},
     {"slug": "papeis",      "nome": "Papéis de colaborador",           "icone": "🎭", "liberado": True, "endpoint": "almox.papeis", "somente_admin": True},
 ]
@@ -279,9 +278,7 @@ def home():
             outros = cont["EM_RECARGA"] + cont["PRONTO_REPO"] + cont["ATENCAO"]
             if outros:
                 pend.append((outros, "Em recarga / reposição / atenção", _purl))
-            n_etq = PendenciaEtiqueta.query.filter_by(resolvida=False).count()
-            if n_etq:
-                pend.append((n_etq, "Pendências de etiqueta", _purl))
+            # [119] removido "Pendências de etiqueta" daqui: ja esta contado dentro de "atenção" acima
         if cap["material"]:
             mb = sum(1 for p in ProdutoAlmox.query.filter_by(ativo=True).all() if p.abaixo_minimo)
             if mb:
@@ -292,8 +289,23 @@ def home():
     except Exception:
         pass
 
+    # [116] valor das notinhas por CIDADE (mes corrente), visivel so para admin/admin master
+    notinhas_por_cidade = []
+    if is_admin:
+        try:
+            hoje = date.today()
+            comp = f"{hoje.year:04d}-{hoje.month:02d}"
+            resumo = {}
+            for n in Notinha.query.filter_by(competencia=comp).all():
+                cidade = (n.fornecedor.cidade or "Sem cidade") if n.fornecedor else "Sem cidade"
+                resumo[cidade] = resumo.get(cidade, 0.0) + float(n.valor)
+            notinhas_por_cidade = sorted(resumo.items(), key=lambda x: -x[1])
+        except Exception:
+            notinhas_por_cidade = []
+
     return render_template("almox/home.html", modo=modo, principal=principal,
-                           acoes=ACOES, pend=pend, tiles=tiles, listas_pend=listas_pend, cap=cap)
+                           acoes=ACOES, pend=pend, tiles=tiles, listas_pend=listas_pend, cap=cap,
+                           notinhas_por_cidade=notinhas_por_cidade)
 
 
 @almox_bp.route("/em-construcao/<slug>")
@@ -728,8 +740,12 @@ def _colab_sessao():
 
 
 def _pode_gerir_ext():
-    """True se o ator atual pode fazer as ações de gestão (regularizar/conferir/repor)."""
-    return bool(current_user.is_authenticated and getattr(current_user, "pode_extintores", False))
+    """True se o ator atual pode fazer as ações de gestão (regularizar/conferir/repor).
+    Considera tanto o usuário logado (Flask-Login) quanto o colaborador de campo (sessão QR) — [122]."""
+    if current_user.is_authenticated and getattr(current_user, "pode_extintores", False):
+        return True
+    colab = _colab_sessao()
+    return bool(colab and getattr(colab, "pode_extintores", False))
 
 
 def _ext_acesso(f):

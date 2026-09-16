@@ -15,7 +15,7 @@
   </form>
 </div></div>
 
-{% if not grupos %}
+{% if not grupos and not sem_forn %}
   <div class="alert alert-info">Nada para enviar com esses filtros.</div>
 {% else %}
   {% for g in grupos %}

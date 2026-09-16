@@ -2159,3 +2159,61 @@ INVESTIGAR/CORRIGIR (quando autorizar):
 [108] FEITO — base.html: no modo APP do iOS (standalone), todo form target=_blank passa a _self (gera na
       mesma aba). Resolve o "gerar PDF volta ao botao sem gerar" no iPhone salvo como app. Desktop/Android
       seguem abrindo em nova aba.
+
+### LISTA (Antonio 30/07 - nova leva) — FILA, aguarda "pode executar"
+(itens 90-98 desta lista ja foram tratados em blocos anteriores; abaixo so os NOVOS)
+[109] CANCELADO a pedido de Antonio (nao ficou claro o que seria; removido da fila).
+[110] Cadastro de empresa: ao FINALIZAR o cadastro de uma empresa pre-cadastrada (a partir do recebimento de
+      material) e salvar, ela continua constando como NAO finalizada. Bug no calculo de "cadastro_incompleto"
+      ou na troca de aprovacao pendente->aprovado ao salvar via admin.fornecedores.
+[111] Campos dentro das secoes do MENU nao estao em ordem alfabetica — organizar (varredura no menu).
+[112] LER PDF do orcamento da ECOFORTES — novo parser. (pedir o PDF/exemplo quando for executar, se ainda nao
+      recebido)
+[113] Incluir campo para ALTERAR O PRAZO DE RECEBIMENTO dos itens (hoje conta como atrasado e nao da pra
+      atualizar a nova data). Fazer, de preferencia, EM LOTE (selecionar varios itens e definir nova data).
+[114] Tela de confirmar CHEGADAS: pedir DATA como OBRIGATORIA, com padrao = data de hoje.
+[115] Reorganizar o menu MOVIMENTO: hoje mistura notinhas, extintor, material, importar orcamento etc. Criar
+      SECOES dentro de Movimento (Antonio vai indicar a organizacao quando formos executar, ou eu proponho
+      uma agrupando por afinidade: Materiais/Compras, Extintores, Notinhas, Import).
+[116] Tela de ENTRADA (home) para ADMIN e ADMIN MASTER: mostrar o VALOR das notinhas de compra POR CIDADE.
+[117] PDF das notinhas: nome do arquivo passa a ser "NOTINHAS_DDMMAA(inicial)_DDMMAA(final)_FORNECEDOR".
+[118] Layout do PDF de notinhas: hoje texto sai do quadro, so preto/branco. Redesenhar com as CORES da Serena
+      (coral/grafite/areia/verde), texto contido.
+[119] Em Pendencias: remover o item "PENDENCIAS DE ETIQUETA" (duplicado — ja existe o status "Atencao (etiqueta)").
+[120] Renomear "COLETAS PROPRIAS" para "COLETAS E ENVIOS PROPRIOS" (vai incluir tambem material que
+      PRECISAMOS ENVIAR, nao so coletar).
+[121] BUG (regressao do 69): em Enviar Cotacao, a secao "sem fornecedor cadastrado" estava certa, mas ao
+      ZERAR TODOS os fornecedores de um tipo, os itens dessa classificacao SUMIRAM (nao podem sumir). Revisar
+      o calculo de sem_forn/tem_forn em admin.enviar_lote.
+[122] BUG: Colaborador com papel "COLABORADOR DIVERSO" nao consegue fazer REPOSICAO de extintor mesmo com
+      permissao marcada e o extintor em "Pronto p/ reposicao". Investigar checagem de permissao na rota
+      extintor_repor/_ficha_campo (provavel checagem de papel hardcoded nao incluindo esse papel).
+[89] (numeracao) ja feito; ITEM DE LEMBRETE: nesta lista Antonio tambem pediu novamente numeracao — reforcar
+     que os itens aqui ja estao numerados (90 em diante) para facilitar marcar.
+
+### BLOCO K (30/07) ✓ — 110,111,113,114,115,116,117,118,119,120,121,122 (109 cancelado)
+[121] FEITO — fix: {% if not grupos %} no enviar_lote.html escondia TAMBEM a secao "sem fornecedor cadastrado"
+      quando todos os fornecedores de um tipo eram zerados. Corrigido p/ {% if not grupos and not sem_forn %}.
+[122] FEITO — fix: _pode_gerir_ext() so olhava current_user (Flask-Login); agora tambem considera o
+      COLABORADOR autenticado via sessao de campo (_colab_sessao). Colaborador Diverso com permissao
+      ext_repor consegue repor extintor Pronto p/ reposicao. Testado nos dois casos.
+[110] FEITO — fornecedor_editar: ao salvar um fornecedor PENDENTE (pre-cadastrado) com CNPJ valido + razao
+      social preenchidos, muda automaticamente aprovacao->"aprovado" (antes ficava pendente para sempre).
+[111] FEITO — menu (base.html): secoes Cadastro, Movimento, Relatorio, Ajuda reordenadas em ordem alfabetica
+      (admin e colaborador), respeitando os blocos condicionais de permissao.
+[113] FEITO — nova rota admin.prazo_lote: atualiza prazo_recebimento EM LOTE para os itens marcados no
+      dashboard de Solicitacoes (checkbox + campo de nova data + botao "Atualizar prazo em lote").
+[114] FEITO — tela de Confirmar chegadas: campo de data agora OBRIGATORIO (required) e vem preenchido com a
+      data de hoje via JS.
+[115] FEITO — menu Movimento (admin) reorganizado em sub-secoes: Solicitacoes | Cotacao e Fornecimento |
+      Extintores | Notinhas e Estoque.
+[116] FEITO — home do almox: para ADMIN/ADMIN MASTER, mostra valor de notinhas do MES CORRENTE agrupado por
+      cidade do fornecedor.
+[117] FEITO — PDF de notinhas: nome do arquivo passa a ser NOTINHAS_DDMMAA(inicial)_DDMMAA(final)[_FORNECEDOR].pdf.
+[118] FEITO — layout do PDF de notinhas redesenhado com cores Serena (coral no cabecalho, areia intercalado,
+      grafite no total); texto do fornecedor/atividade em Paragraph (quebra de linha, nao estoura a celula).
+[119] FEITO — removido "Pendencias de etiqueta" do menu do modulo E da home (duplicava o status
+      Atencao/etiqueta que ja soma esses casos).
+[120] FEITO — "Coletas Próprias" renomeado para "Coletas e Envios Próprios" (menu e titulo da tela).
+[109] CANCELADO a pedido de Antonio.
+PENDENTES: 106(ja feito bloco anterior),107(ja feito),108(ja feito),112 (Ecofortes - aguarda PDF de exemplo).

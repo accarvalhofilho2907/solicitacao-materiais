@@ -9,7 +9,7 @@ from reportlab.lib import colors
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
 )
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 _ST = getSampleStyleSheet()
 
@@ -124,22 +124,43 @@ def gerar_pdf_fichas(solicitacoes):
 
 
 def gerar_pdf_notinhas(notas):
+    # [118] Layout com a identidade Serena (coral/grafite/areia) e texto contido nas células
+    CORAL = colors.HexColor("#FF5246")
+    GRAFITE = colors.HexColor("#4B4B4B")
+    AREIA = colors.HexColor("#EDE9E5")
+    BRANCO = colors.white
+
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm)
-    el = [Paragraph("Notinhas", _ST["Title"]),
-          Paragraph(f"Exportado em {datetime.now():%d/%m/%Y %H:%M}", _ST["Normal"]), Spacer(1, 6 * mm)]
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=16 * mm, bottomMargin=16 * mm,
+                            leftMargin=16 * mm, rightMargin=16 * mm)
+    titulo_style = ParagraphStyle("NotinhasTitulo", parent=_ST["Title"], textColor=GRAFITE, fontSize=18)
+    sub_style = ParagraphStyle("NotinhasSub", parent=_ST["Normal"], textColor=colors.HexColor("#6f6f6f"), fontSize=9)
+    cel_style = ParagraphStyle("NotinhasCel", parent=_ST["Normal"], fontSize=8, textColor=GRAFITE, leading=10)
+
+    el = [Paragraph("Notinhas", titulo_style),
+          Paragraph(f"Exportado em {datetime.now():%d/%m/%Y %H:%M}", sub_style), Spacer(1, 6 * mm)]
+
     linhas = [["Data", "Competência", "Fornecedor", "Atividade", "Valor (R$)"]]
     total = 0.0
     for n in notas:
         total += float(n.valor)
-        linhas.append([n.data.strftime("%d/%m/%Y"), n.competencia or "-", n.fornecedor.nome,
-                       n.atividade.nome if n.atividade else "-", f"{float(n.valor):.2f}"])
+        linhas.append([n.data.strftime("%d/%m/%Y"), n.competencia or "-",
+                       Paragraph(n.fornecedor.nome, cel_style),
+                       Paragraph(n.atividade.nome if n.atividade else "-", cel_style),
+                       f"{float(n.valor):.2f}"])
     linhas.append(["", "", "", "Total", f"{total:.2f}"])
-    t = Table(linhas, colWidths=[24 * mm, 26 * mm, 55 * mm, 38 * mm, 27 * mm])
-    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (-1, 0), (-1, -1), "RIGHT"), ("PADDING", (0, 0), (-1, -1), 4)]))
+
+    t = Table(linhas, colWidths=[22 * mm, 24 * mm, 62 * mm, 40 * mm, 24 * mm], repeatRows=1)
+    ultima = len(linhas) - 1
+    t.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, AREIA),
+        ("BACKGROUND", (0, 0), (-1, 0), CORAL), ("TEXTCOLOR", (0, 0), (-1, 0), BRANCO),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 9),
+        ("ROWBACKGROUNDS", (0, 1), (-1, ultima - 1), [BRANCO, AREIA]),
+        ("BACKGROUND", (0, ultima), (-1, ultima), GRAFITE), ("TEXTCOLOR", (0, ultima), (-1, ultima), BRANCO),
+        ("FONTNAME", (0, ultima), (-1, ultima), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 1), (-1, -1), 8), ("ALIGN", (-1, 0), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("PADDING", (0, 0), (-1, -1), 5)]))
     el.append(t)
     doc.build(el)
     buf.seek(0)

@@ -82,8 +82,36 @@
     {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Nada encontrado.</td></tr>{% endfor %}</tbody>
   </table></div></div>
 </form>
+{# [113] altera o prazo de recebimento (data prevista) EM LOTE, para os itens marcados acima #}
+<form method="post" action="{{ url_for('admin.prazo_lote') }}" class="card card-body mt-2 py-2" id="formPrazoLote" onsubmit="return _copiarMarcadosPrazo()">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="d-flex flex-wrap align-items-end gap-2">
+    <div><label class="form-label small mb-0">Novo prazo de recebimento (itens marcados acima)</label>
+      <input type="date" name="nova_data" class="form-control form-control-sm" required></div>
+    <button class="btn btn-sm btn-outline-secondary">Atualizar prazo em lote</button>
+    <span class="small text-muted" id="qtdMarcadosPrazo"></span>
+  </div>
+</form>
 <script>
-function marcarTodos(c){ document.querySelectorAll('.cbItem').forEach(function(b){ b.checked=c.checked; }); }
+function marcarTodos(c){ document.querySelectorAll('.cbItem').forEach(function(b){ b.checked=c.checked; }); atualizaQtdPrazo(); }
+function atualizaQtdPrazo(){
+  var n=document.querySelectorAll('.cbItem:checked').length;
+  var el=document.getElementById('qtdMarcadosPrazo'); if(el) el.textContent = n+' item(ns) marcado(s)';
+}
+function _copiarMarcadosPrazo(){
+  var f=document.getElementById('formPrazoLote');
+  f.querySelectorAll('input[name="ids"]').forEach(function(i){ i.remove(); });
+  var marcados=document.querySelectorAll('.cbItem:checked');
+  if(!marcados.length){ alert('Marque ao menos um item na lista para atualizar o prazo.'); return false; }
+  marcados.forEach(function(cb){
+    var h=document.createElement('input'); h.type='hidden'; h.name='ids'; h.value=cb.value; f.appendChild(h);
+  });
+  return confirm('Atualizar o prazo de recebimento de '+marcados.length+' item(ns)?');
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.cbItem').forEach(function(cb){ cb.addEventListener('change', atualizaQtdPrazo); });
+  atualizaQtdPrazo();
+});
 // [70] cards clicaveis: marca/desmarca o status no filtro e aplica (multi-selecao)
 function toggleStatusCard(code){
   var f=document.getElementById('formFiltroSolic'); if(!f) return;

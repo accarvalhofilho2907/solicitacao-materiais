@@ -429,30 +429,6 @@ def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
     return itens, grupos
 
 
-@admin_bp.route("/solicitacoes/prazo-lote", methods=["POST"])
-@admin_required
-def prazo_lote():
-    """[113] Atualiza o prazo de recebimento (data prevista) em LOTE para os itens marcados."""
-    ids = [int(x) for x in request.form.getlist("ids") if x.isdigit()]
-    nova = (request.form.get("nova_data") or "").strip()
-    if not ids:
-        flash("Marque ao menos um item para atualizar o prazo.", "warning")
-        return redirect(request.referrer or url_for("admin.dashboard"))
-    try:
-        nova_data = datetime.strptime(nova, "%Y-%m-%d").date()
-    except ValueError:
-        flash("Informe uma data válida.", "warning")
-        return redirect(request.referrer or url_for("admin.dashboard"))
-    n = 0
-    for s in Solicitacao.query.filter(Solicitacao.id.in_(ids)).all():
-        s.prazo_recebimento = nova_data
-        _log(s, f"Prazo de recebimento atualizado para {nova_data.strftime('%d/%m/%Y')}")
-        n += 1
-    db.session.commit()
-    flash(f"Prazo atualizado em {n} solicitação(ões).", "success")
-    return redirect(request.referrer or url_for("admin.dashboard"))
-
-
 @admin_bp.route("/enviar-lote/excluir-forn/<int:sid>/<int:fid>", methods=["POST"])
 @admin_required
 def enviar_lote_excluir_forn(sid, fid):
@@ -1431,9 +1407,6 @@ def fornecedor_editar(fid):
     if request.method == "POST":
         _aplicar_fornecedor(f)
         f.ativo = request.form.get("ativo") == "1"
-        # [110] empresa PRE-CADASTRADA (pendente): ao completar CNPJ + razao social e salvar, finaliza o cadastro
-        if (f.aprovacao or "") == "pendente" and cnpj_valido((f.cnpj or "")) and (f.razao_social or "").strip():
-            f.aprovacao = "aprovado"
         db.session.commit()
         flash("Fornecedor atualizado.", "success")
         return redirect(url_for("admin.fornecedores"))

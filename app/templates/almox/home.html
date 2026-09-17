@@ -81,15 +81,6 @@
   </div>
   {% endif %}
 
-  {% if notinhas_por_cidade %}
-  <div class="hsec">Notinhas do mês — por cidade</div>
-  <div class="htiles">
-    {% for cidade, valor in notinhas_por_cidade %}
-    <a class="htile" href="{{ url_for('notinhas.index') }}"><div class="v">R$ {{ '%.2f'|format(valor) }}</div><div class="k">{{ cidade }}</div></a>
-    {% endfor %}
-  </div>
-  {% endif %}
-
   {% if not acoes and not pend and not tiles %}
   <p class="text-muted">Sem atalhos disponíveis para o seu perfil no momento.</p>
   {% endif %}

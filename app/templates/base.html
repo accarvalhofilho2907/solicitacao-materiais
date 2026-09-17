@@ -35,7 +35,6 @@
     .sb-sec{ display:flex; align-items:center; gap:6px; color:var(--texto-2); font-size:11px; text-transform:uppercase; letter-spacing:.08em; padding:13px 10px 5px; font-weight:700; cursor:pointer; user-select:none; }
     .sb-sec .chev{ margin-left:auto; transition:transform .15s; opacity:.7; font-size:10px; }
     .sb-sec.collapsed .chev{ transform:rotate(-90deg); }
-    .sb-subsec{ padding:9px 10px 2px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--texto-2); opacity:.65; }
     .sb-item{ display:flex; align-items:center; gap:11px; padding:8px 11px; border-radius:8px; color:var(--texto); cursor:pointer; font-size:13.5px; text-decoration:none; }
     .sb-item:hover{ background:var(--hover-bg); color:var(--texto); }
     .sb-item.active{ background:var(--side-active); color:#fff; box-shadow:inset 3px 0 0 var(--coral); }
@@ -144,44 +143,40 @@
     <nav class="sb-nav" id="sbNav">
     {% if perm.is_admin %}
       <div class="sb-sec">Cadastro<span class="chev">▾</span></div>
+      {{ item('almox.colaboradores','users','Colaboradores') }}
+      {{ item('almox.papeis','shield','Perfis de acesso') }}
+      {{ item('admin.fornecedores','building','Empresas e Fornecedores') }}
+      {{ item('almox.plantas','turbine','Plantas') }}
       {{ item('almox.armazens','warehouse','Armazéns') }}
+      {{ item('almox.localizadores','pin','Localizadores') }}
+      {{ item('almox.fabricantes','tag','Fabricantes') }}
+      {{ item('admin.tipos','tag','Tipos de material') }}
+      {{ item('admin.cidades','tag','Cidades') }}
+      {{ item('admin.transportadoras','truck','Transportadoras') }}
       {{ item('admin.atividades','tag','Atividades') }}
       {{ item('almox.chaves','key','Chaves') }}
-      {{ item('admin.cidades','tag','Cidades') }}
-      {{ item('almox.colaboradores','users','Colaboradores') }}
-      {{ item('admin.fornecedores','building','Empresas e Fornecedores') }}
-      {{ item('almox.fabricantes','tag','Fabricantes') }}
-      {{ item('almox.localizadores','pin','Localizadores') }}
-      {{ item('almox.papeis','shield','Perfis de acesso') }}
-      {{ item('almox.plantas','turbine','Plantas') }}
-      {{ item('admin.tipos','tag','Tipos de material') }}
-      {{ item('admin.transportadoras','truck','Transportadoras') }}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
-      <div class="sb-subsec">Solicitações</div>
       {% if perm.is_admin %}{{ item('admin.dashboard','doc','Solicitações') }}{% else %}{{ item('solicitante.index','doc','Solicitações') }}{% endif %}
       {{ item('admin.aprovacoes','check','Aprovações', n_aprovacoes) }}
       {{ item('almox.index','box','Chegadas') }}
-      <div class="sb-subsec">Cotação e Fornecimento</div>
+      {{ item('admin.coletas_proprias','truck','Coletas próprias') }}
       {{ item('admin.enviar_lote','chat','Enviar cotação', n_cotacao) }}
       {{ item('admin.importar_orcamento','doc','Importar orçamento') }}
       {{ item('admin.comparativo','scale','Comparativo (menor custo)') }}
       {{ item('admin.precos','money','Histórico de preços') }}
-      {{ item('admin.coletas_proprias','truck','Coletas e Envios Próprios') }}
-      {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
-      <div class="sb-subsec">Extintores</div>
-      {{ item('almox.extintores','ext','Extintores') }}
-      <div class="sb-subsec">Notinhas e Estoque</div>
       {{ item('notinhas.index','doc','Notinhas') }}
+      {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
+      {{ item('almox.extintores','ext','Extintores') }}
       {{ item('almox.inventario_pendentes','check','Baixas de inventário') }}
       {{ item('almox.localizadores_gerar','cog','Gerar localizadores') }}
 
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
-      {{ item('almox.relatorios_central','chart','Central de relatórios') }}
       {{ item('almox.dashboard','chart','Dashboard') }}
-      {{ item('relatorios.carga','chart','Relatório de carga') }}
-      {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
+      {{ item('almox.relatorios_central','chart','Central de relatórios') }}
       {{ item('almox.relatorio_perdas','chart','Perdas de estoque') }}
+      {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
+      {{ item('relatorios.carga','chart','Relatório de carga') }}
 
       {% if perm.is_admin %}
       <div class="sb-sec">Administrativo<span class="chev">▾</span></div>
@@ -190,10 +185,10 @@
       {% endif %}
 
       <div class="sb-sec">Ajuda<span class="chev">▾</span></div>
-      {{ item('admin.backup','save','Baixar backup (.sql)') }}
-      {{ item('geral.faq','quest','FAQ') }}
       {{ item('admin.log_sistema','list','Log do sistema') }}
+      {{ item('admin.backup','save','Baixar backup (.sql)') }}
       {{ item('admin.sugestoes','bulb','Sugestões') }}
+      {{ item('geral.faq','quest','FAQ') }}
       {% if current_user.is_master %}{{ item('admin.usuarios','user','Usuários - Antigo') }}{% endif %}
     {% else %}
       {% if perm.pode_colaboradores %}
@@ -202,26 +197,22 @@
       {% endif %}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
-      {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
       {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
-      {% if perm.pode_material %}
-        {{ item('almox.index','box','Confirmar chegadas') }}
-      {% endif %}
-      {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
-      {% if perm.pode_material %}
-        {{ item('almox.materiais','box','Material (estoque)') }}
-      {% endif %}
       {% if perm.pode_ver_solicitacoes %}{{ item('solicitante.index','doc','Minhas solicitações') }}{% endif %}
       {% if perm.pode_material %}
+        {{ item('almox.materiais','box','Material (estoque)') }}
+        {{ item('almox.index','box','Confirmar chegadas') }}
         {{ item('notinhas.index','doc','Notinhas') }}
       {% endif %}
+      {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
+      {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
 
       {% if perm.pode_relatorios or perm.is_almox %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
-      {% if perm.pode_relatorios %}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{{ item('almox.dashboard','chart','Dashboard') }}{% endif %}
+      {% if perm.pode_relatorios %}{{ item('almox.dashboard','chart','Dashboard') }}{{ item('almox.relatorios_central','chart','Central de relatórios') }}{% endif %}
       {% if perm.is_almox %}
-      {{ item('relatorios.carga','chart','Relatório de carga') }}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
+      {{ item('relatorios.carga','chart','Relatório de carga') }}
       {% endif %}
       {% endif %}
 

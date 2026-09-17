@@ -7,7 +7,6 @@ from flask_login import login_required, current_user
 
 from .extensions import db, csrf
 from .models import Notinha, Fornecedor, Atividade
-from .util import sem_acentos
 from .pdf import gerar_pdf_notinhas
 
 notinhas_bp = Blueprint("notinhas", __name__, url_prefix="/notinhas")
@@ -158,28 +157,8 @@ def atividade_rapida():
 @notinhas_bp.route("/exportar")
 @_pode
 def exportar():
-    q, f_de, f_ate, f_forn, f_ativ, f_vmin, f_vmax = _filtra(Notinha.query)
+    q, *_ = _filtra(Notinha.query)
     notas = q.order_by(Notinha.data).all()
     pdf = gerar_pdf_notinhas(notas)
-    # [117] nome do arquivo: NOTINHAS_DDMMAA(inicial)_DDMMAA(final)_FORNECEDOR
-    def _fmt(d):
-        try:
-            return datetime.strptime(d, "%Y-%m-%d").strftime("%d%m%y")
-        except Exception:
-            return None
-    ini = _fmt(f_de) if f_de else (min((n.data for n in notas), default=None) and min(n.data for n in notas).strftime("%d%m%y"))
-    fim = _fmt(f_ate) if f_ate else (max((n.data for n in notas), default=None) and max(n.data for n in notas).strftime("%d%m%y"))
-    forn_nome = None
-    if f_forn:
-        fo = db.session.get(Fornecedor, int(f_forn))
-        forn_nome = fo.nome if fo else None
-    partes = ["NOTINHAS"]
-    if ini:
-        partes.append(ini)
-    if fim:
-        partes.append(fim)
-    if forn_nome:
-        partes.append(sem_acentos(forn_nome).upper().replace(" ", "_"))
-    nome_arquivo = "_".join(partes) + ".pdf"
     return Response(pdf, mimetype="application/pdf",
-                    headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"})
+                    headers={"Content-Disposition": "attachment; filename=notinhas.pdf"})

@@ -18,7 +18,7 @@
           <span class="input-group-text">Qtd</span>
           <input type="number" name="qtd_recebida" min="1" max="{{ restante }}" value="{{ restante }}" class="form-control" title="Quantas chegaram">
         </div>
-        <input type="date" name="data_chegada" class="form-control form-control-sm data-chegada-hoje" required style="max-width:145px" title="Data da chegada (obrigatória)">
+        <input type="date" name="data_chegada" class="form-control form-control-sm" style="max-width:145px" title="Data da chegada (padrão: hoje)">
         <button class="btn btn-sm btn-success">Confirmar</button></form>
         <div class="form-text">Faltam {{ restante }}. Informe quantas chegaram (parcial é aceito) e, se precisar, a data real da chegada.</div></td></tr>
     {% else %}<tr><td colspan="6" class="text-center text-muted py-4">Nada aguardando chegada.</td></tr>{% endfor %}
@@ -37,10 +37,4 @@
   </form>
 </li>{% endfor %}</ul>
 {% endif %}
-<script>
-// [114] data da chegada: obrigatoria, padrao = hoje
-document.querySelectorAll('.data-chegada-hoje').forEach(function(el){
-  if(!el.value){ var d=new Date(); el.value=d.toISOString().slice(0,10); }
-});
-</script>
 {% endblock %}

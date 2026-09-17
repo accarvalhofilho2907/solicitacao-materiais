@@ -386,6 +386,7 @@ function filtraDrop(inp){
       var li=document.createElement('li');
       li.className='list-group-item d-flex align-items-center gap-2'+(it.feito?' list-group-item-success':'');
       li.innerHTML='<input type="checkbox" class="form-check-input mt-0" '+(it.feito?'checked':'')+' onchange="toggleRoadmap('+it.id+')">'
+        +'<span class="badge bg-secondary" style="min-width:2.4em">#'+it.id+'</span>'
         +'<span style="flex:1;'+(it.feito?'text-decoration:line-through;opacity:.7':'')+'">'+esc(it.texto)+'</span>'
         +'<button class="btn btn-sm btn-outline-danger py-0" onclick="delRoadmap('+it.id+')">×</button>';
       lista.appendChild(li);
@@ -402,7 +403,7 @@ function filtraDrop(inp){
   window.toggleRoadmap=function(id){ fetch(URL_L+'/'+id+'/toggle',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(){ carregar(); }); };
   window.delRoadmap=function(id){ if(!confirm('Excluir este item?'))return; fetch(URL_L+'/'+id+'/del',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(){ carregar(); }); };
   window.copiarRoadmap=function(){
-    var txt=dados.map(function(it){ return (it.feito?'[x] ':'[ ] ')+it.texto; }).join('\n');
+    var txt=dados.map(function(it){ return (it.feito?'[x] ':'[ ] ')+'#'+it.id+' — '+it.texto; }).join('\n');
     navigator.clipboard.writeText(txt).then(function(){ st.textContent='Copiado! Cole no chat.'; });
   };
   inp && inp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addRoadmapItem(); } });

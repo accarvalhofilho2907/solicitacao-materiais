@@ -13,17 +13,21 @@
   <form method="post" action="{{ url_for('almox.quadro_novo') }}" class="d-flex gap-2">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input class="form-control" name="nome" placeholder="Ex.: QUADRO DE CHAVES — D6" required>
+    <select name="planta_id" class="form-select" required style="max-width:200px">
+      {% for p in plantas_disp %}<option value="{{ p.id }}" {{ 'selected' if planta_padrao_cad and p.id==planta_padrao_cad.id }}>{{ p.nome }}</option>{% endfor %}
+    </select>
     <button class="btn btn-primary">Cadastrar</button>
   </form>
 </div></div>
 
 <div class="card" style="max-width:520px"><div class="table-responsive">
 <table class="table table-hover mb-0 align-middle">
-  <thead class="table-light"><tr><th>Quadro de Chaves</th><th>Status</th><th></th></tr></thead>
+  <thead class="table-light"><tr><th>Quadro de Chaves</th><th>Planta</th><th>Status</th><th></th></tr></thead>
   <tbody>
     {% for qd in quadros %}
     <tr>
       <td>{{ qd.nome }}</td>
+      <td class="small">{{ qd.planta.nome if qd.planta else '—' }}</td>
       <td>{% if qd.ativo %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
       <td class="text-end">
         <a href="{{ url_for('almox.quadros_qr', ids=qd.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">QR</a>
@@ -34,7 +38,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="3" class="text-muted text-center py-3">Nenhum quadro cadastrado.</td></tr>
+    <tr><td colspan="4" class="text-muted text-center py-3">Nenhum quadro cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

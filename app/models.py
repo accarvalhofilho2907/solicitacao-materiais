@@ -415,8 +415,10 @@ class QuadroChave(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(160), unique=True, nullable=False)
     qr_uid = db.Column(db.String(20), unique=True)   # QR próprio do quadro (QUAD-...)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))   # [correção] dono do registro
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    planta = db.relationship("Planta")
 
 
 class Chave(db.Model):

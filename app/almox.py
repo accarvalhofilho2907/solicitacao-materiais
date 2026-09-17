@@ -266,7 +266,11 @@ def home():
                 pend.append((nnf, "NFs a classificar (OPEX/CAPEX)", url_for("almox.administrativo")))
         if cap["extintores"]:
             cont = {"IRREGULAR": 0, "VENCIDO": 0, "PROX_VENC": 0, "EM_RECARGA": 0, "PRONTO_REPO": 0, "ATENCAO": 0}
-            for e in Extintor.query.filter_by(ativo=True).all():
+            _ids_pl = _plantas_permitidas_ids()
+            _q_ext_home = Extintor.query.filter_by(ativo=True)
+            if _ids_pl:
+                _q_ext_home = _q_ext_home.filter(db.or_(Extintor.planta_id.in_(_ids_pl), Extintor.planta_id.is_(None)))
+            for e in _q_ext_home.all():
                 k = _situacao_extintor(e)[0]
                 if k in cont:
                     cont[k] += 1
@@ -283,11 +287,19 @@ def home():
             if n_etq:
                 pend.append((n_etq, "Pendências de etiqueta", _purl))
         if cap["material"]:
-            mb = sum(1 for p in ProdutoAlmox.query.filter_by(ativo=True).all() if p.abaixo_minimo)
+            _ids_pl = _plantas_permitidas_ids()
+            _q_prod_home = ProdutoAlmox.query.filter_by(ativo=True)
+            if _ids_pl:
+                _q_prod_home = _q_prod_home.filter(db.or_(ProdutoAlmox.planta_id.in_(_ids_pl), ProdutoAlmox.planta_id.is_(None)))
+            mb = sum(1 for p in _q_prod_home.all() if p.abaixo_minimo)
             if mb:
                 tiles.append((mb, "Abaixo do mínimo", "warn", url_for("almox.materiais", baixo="1")))
         if cap["chaves"]:
-            eu = Chave.query.filter_by(ativo=True, status="Em uso").count()
+            _ids_pl = _plantas_permitidas_ids()
+            _q_chave_home = Chave.query.filter_by(ativo=True, status="Em uso")
+            if _ids_pl:
+                _q_chave_home = _q_chave_home.filter(db.or_(Chave.planta_id.in_(_ids_pl), Chave.planta_id.is_(None)))
+            eu = _q_chave_home.count()
             tiles.append((eu, "Chaves em uso", "", url_for("almox.chaves")))
     except Exception:
         pass
@@ -326,13 +338,21 @@ def chaves():
         if status_sel and (c.status or "") not in status_sel:
             continue
         itens.append(c)
-    quadros = QuadroChave.query.filter_by(ativo=True).order_by(QuadroChave.nome).all()
+    _q_quadros = QuadroChave.query.filter_by(ativo=True)
+    if _ids_pl:
+        _q_quadros = _q_quadros.filter(db.or_(QuadroChave.planta_id.in_(_ids_pl), QuadroChave.planta_id.is_(None)))
+    quadros = _q_quadros.order_by(QuadroChave.nome).all()
     colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     n_inativas = Chave.query.filter_by(ativo=False).count()
     atrasadas = [l for l in _chaves_situacao() if l["atrasada"]]   # 48b: alerta ao entrar em chaves
+    from .models import Planta
+    plantas_disp = _plantas_para_cadastro()
+    _pid_padrao = _planta_ativa_id() or (plantas_disp[0].id if plantas_disp else None)
+    planta_padrao_cad = db.session.get(Planta, _pid_padrao) if _pid_padrao else None
     return render_template("almox/chaves.html", itens=itens, q=q, quadros=quadros, colabs=colabs,
                            inativos=inativos, n_inativas=n_inativas,
-                           quadros_sel=quadros_sel, status_sel=status_sel, atrasadas=atrasadas)
+                           quadros_sel=quadros_sel, status_sel=status_sel, atrasadas=atrasadas,
+                           plantas_disp=plantas_disp, planta_padrao_cad=planta_padrao_cad)
 
 
 def _resolver_quadro(form):
@@ -356,12 +376,17 @@ def chave_nova():
     if not desc:
         flash("Informe a descrição da chave.", "danger")
         return redirect(url_for("almox.chaves"))
+    planta_id = request.form.get("planta_id") or None
+    if planta_id:
+        ids_ok = {p.id for p in _plantas_para_cadastro()}
+        if int(planta_id) not in ids_ok:
+            planta_id = None  # ignora tentativa de gravar planta fora do que o ator pode
     quadro_id = _resolver_quadro(request.form)
     uid = "CH-" + secrets.token_hex(4).upper()
     while Chave.query.filter_by(qr_uid=uid).first():
         uid = "CH-" + secrets.token_hex(4).upper()
     c = Chave(descricao=desc.upper(), quadro_chave_id=quadro_id,
-              qr_uid=uid, status="Disponível")
+              qr_uid=uid, status="Disponível", planta_id=(int(planta_id) if planta_id else None))
     db.session.add(c)
     _log("Chave", f"Chave cadastrada: {c.descricao}" + (f" (quadro: {c.quadro_nome})" if quadro_id else " (sem quadro)"))
     db.session.commit()
@@ -514,8 +539,17 @@ def _backfill_qr_quadros():
 @_guard("pode_chaves")
 def quadros_chave():
     _backfill_qr_quadros()
-    quadros = QuadroChave.query.order_by(QuadroChave.nome).all()
-    return render_template("almox/quadros_chave.html", quadros=quadros)
+    from .models import Planta
+    q_quad = QuadroChave.query
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        q_quad = q_quad.filter(db.or_(QuadroChave.planta_id.in_(_ids_pl), QuadroChave.planta_id.is_(None)))
+    quadros = q_quad.order_by(QuadroChave.nome).all()
+    plantas_disp = _plantas_para_cadastro()
+    _pid_padrao = _planta_ativa_id() or (plantas_disp[0].id if plantas_disp else None)
+    planta_padrao_cad = db.session.get(Planta, _pid_padrao) if _pid_padrao else None
+    return render_template("almox/quadros_chave.html", quadros=quadros,
+                           plantas_disp=plantas_disp, planta_padrao_cad=planta_padrao_cad)
 
 
 @almox_bp.route("/chaves/quadros/novo", methods=["POST"])
@@ -529,10 +563,15 @@ def quadro_novo():
     if QuadroChave.query.filter(db.func.upper(QuadroChave.nome) == nome.upper()).first():
         flash("Já existe um Quadro de Chaves com esse nome.", "warning")
         return redirect(url_for("almox.quadros_chave"))
+    planta_id = request.form.get("planta_id") or None
+    if planta_id:
+        ids_ok = {p.id for p in _plantas_para_cadastro()}
+        if int(planta_id) not in ids_ok:
+            planta_id = None
     uid = "QUAD-" + secrets.token_hex(4).upper()
     while QuadroChave.query.filter_by(qr_uid=uid).first():
         uid = "QUAD-" + secrets.token_hex(4).upper()
-    db.session.add(QuadroChave(nome=nome.upper(), qr_uid=uid))
+    db.session.add(QuadroChave(nome=nome.upper(), qr_uid=uid, planta_id=(int(planta_id) if planta_id else None)))
     _log("Chave", f"Quadro de Chaves cadastrado: {nome.upper()}")
     db.session.commit()
     flash("Quadro de Chaves cadastrado.", "success")
@@ -662,6 +701,24 @@ def _plantas_permitidas_ids():
         return ids or None
     pid = _planta_ativa_id()
     return [pid] if pid else None
+
+
+def _plantas_para_cadastro():
+    """Lista de Planta que o ator pode escolher ao CADASTRAR um item novo (extintor/chave/quadro).
+    - Quem pode ver mais de uma planta (Master, ou Admin liberado, ou Colaborador em >1 planta):
+      escolhe entre as que tem acesso.
+    - Quem só tem/vê uma planta: essa mesma, sem escolha (select com 1 opção)."""
+    from flask_login import current_user
+    from .models import Planta, Colaborador as _Colab
+    if not current_user.is_authenticated:
+        return []
+    if isinstance(current_user, _Colab):
+        plantas = list(getattr(current_user, "plantas", []) or [])
+        return plantas
+    if getattr(current_user, "pode_ver_outras_plantas", False):
+        return Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
+    plantas = list(getattr(current_user, "plantas", []) or [])
+    return plantas
 
 
 def _args_list(nome):
@@ -1145,9 +1202,14 @@ def extintor_cadastro():
         "tipo": distintos(Extintor.tipo),
         "classe": distintos(Extintor.classe),
     }
+    from .models import Planta
+    plantas_disp = _plantas_para_cadastro()
+    _pid_padrao = _planta_ativa_id() or (plantas_disp[0].id if plantas_disp else None)
+    planta_padrao_cad = db.session.get(Planta, _pid_padrao) if _pid_padrao else None
     return render_template("almox/extintor_cadastro.html", sugestoes=sugestoes,
                            check=CHECK_EXTINTOR, item_etiqueta=ITEM_ETIQUETA_EXTINTOR,
-                           meses=MESES_PT, anos=_anos_range())
+                           meses=MESES_PT, anos=_anos_range(),
+                           plantas_disp=plantas_disp, planta_padrao_cad=planta_padrao_cad)
 
 
 @almox_bp.route("/extintores/novo", methods=["POST"])
@@ -1161,6 +1223,11 @@ def extintor_novo():
     if not local:
         flash("Informe ao menos o local do extintor.", "danger")
         return redirect(url_for("almox.extintores"))
+    planta_id = request.form.get("planta_id") or None
+    if planta_id:
+        ids_ok = {p.id for p in _plantas_para_cadastro()}
+        if int(planta_id) not in ids_ok:
+            planta_id = None
     seq = (Extintor.query.count() or 0) + 1
     codigo = f"EXT{seq:04d}"
     while Extintor.query.filter_by(codigo=codigo).first():
@@ -1172,7 +1239,8 @@ def extintor_novo():
     e = Extintor(codigo=codigo, predio=predio, local=local, tipo=tipo, classe=classe,
                  validade=_parse_mmaaaa("validade", request.form),
                  teste_hidrostatico=_parse_ano("th", request.form),
-                 situacao="NO_PRAZO", status="No Local", qr_uid=uid, ativo=True)
+                 situacao="NO_PRAZO", status="No Local", qr_uid=uid, ativo=True,
+                 planta_id=(int(planta_id) if planta_id else None))
     db.session.add(e)
     db.session.flush()
     # checklist inicial de conferência
@@ -1280,10 +1348,16 @@ def extintor_campo_sair(qr_uid):
 @almox_bp.route("/extintores/pendencias")
 @_guard("pode_extintores")
 def pendencias_etiqueta():
-    abertas = (PendenciaEtiqueta.query.filter_by(resolvida=False)
-               .order_by(PendenciaEtiqueta.aberta_em.desc()).all())
-    resolvidas = (PendenciaEtiqueta.query.filter_by(resolvida=True)
-                  .order_by(PendenciaEtiqueta.resolvida_em.desc()).limit(30).all())
+    _ids_pl = _plantas_permitidas_ids()
+    _q_ab = PendenciaEtiqueta.query.filter_by(resolvida=False)
+    _q_rv = PendenciaEtiqueta.query.filter_by(resolvida=True)
+    if _ids_pl:
+        _q_ab = (_q_ab.join(Extintor, Extintor.id == PendenciaEtiqueta.extintor_id, isouter=True)
+                 .filter(db.or_(Extintor.planta_id.in_(_ids_pl), Extintor.planta_id.is_(None))))
+        _q_rv = (_q_rv.join(Extintor, Extintor.id == PendenciaEtiqueta.extintor_id, isouter=True)
+                 .filter(db.or_(Extintor.planta_id.in_(_ids_pl), Extintor.planta_id.is_(None))))
+    abertas = _q_ab.order_by(PendenciaEtiqueta.aberta_em.desc()).all()
+    resolvidas = _q_rv.order_by(PendenciaEtiqueta.resolvida_em.desc()).limit(30).all()
     grupos = _pendencias_por_estado()
     return render_template("almox/pendencias_etiqueta.html", abertas=abertas,
                            resolvidas=resolvidas, grupos=grupos)
@@ -1295,8 +1369,11 @@ def _pendencias_por_estado():
               ("EM_RECARGA", "Em recarga"), ("PRONTO_REPO", "Prontos p/ reposição"),
               ("ATENCAO", "Atenção (etiqueta)")]
     buckets = {}
-    for e in (Extintor.query.filter_by(ativo=True)
-              .order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()):
+    _q_pe = Extintor.query.filter_by(ativo=True)
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        _q_pe = _q_pe.filter(db.or_(Extintor.planta_id.in_(_ids_pl), Extintor.planta_id.is_(None)))
+    for e in _q_pe.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
         k = _situacao_extintor(e)[0]
         if k == "NO_PRAZO":
             continue

@@ -2257,3 +2257,42 @@ existe "Excluir" (apaga do banco de verdade), reservado ao ADMIN MASTER:
 Testado: Admin comum tenta excluir -> barrado; Master exclui colaborador sem historico -> funciona;
 Master tenta excluir colaborador COM historico (teve uma solicitacao) -> bloqueado com mensagem clara,
 colaborador preservado. Smoke test geral 200.
+
+### CORRECAO 4 — numero no roadmap in-app + campo de planta no cadastro + home vazava planta (Antonio, 16/09)
+Antonio reportou 3 pontos:
+
+1) "Numero la nas solicitacoes do Roadmap na plataforma" — o botao 🗺️ ROADMAP (existe em toda tela,
+   item 54 do historico) lista itens sem mostrar o ID de cada um. CORRIGIDO: cada item agora mostra
+   "#id" (badge) na lista, e o botao "Copiar tudo" tambem inclui o numero no texto copiado — facilita
+   referenciar "resolve o item #12" no chat.
+
+2) "Nao foi incluso os campos de planta no cadastro de extintores, chaves, quadros" — confirmado: as
+   TELAS DE LISTAGEM ja filtravam por planta (correcoes anteriores desta sessao), mas o FORMULARIO DE
+   CADASTRAR um item novo nunca perguntava a planta — o registro nascia sempre com planta_id=None.
+   CORRIGIDO:
+   - QuadroChave ganhou a coluna planta_id (nao existia) + relationship .planta.
+   - Novo helper _plantas_para_cadastro(): lista as plantas que o ator pode ESCOLHER ao cadastrar —
+     Colaborador ve as suas; Usuario com pode_ver_outras_plantas ve todas; os demais veem so a sua.
+   - Formularios de: Novo extintor, Nova chave, Novo quadro de chaves — todos ganharam um campo
+     "Planta" (select, obrigatorio), pre-selecionado com a planta ativa/padrao do ator.
+   - As 3 rotas (extintor_novo, chave_nova, quadro_novo) validam que a planta enviada esta na lista
+     permitida para o ator (ignora/zera se alguem tentar forjar um id de planta fora do que pode).
+   - Listagem de Quadros de chave tambem passou a filtrar por planta (nao filtrava) + nova coluna
+     "Planta" na tabela.
+
+3) "Estou no perfil do Delta PI... consigo abrir os extintores do Delta Maranhao indo direto pelo
+   dashboard" — bug real e serio: a HOME (rota almox.home, tela que abre ao entrar no sistema) contava
+   e listava Extintores/Material/Chaves SEM NENHUM FILTRO DE PLANTA, diferente das telas de listagem
+   que ja tinham sido corrigidas. Os contadores/links da home (ex.: "Extintores irregulares") levavam
+   para pendencias-de-etiqueta, que TAMBEM nao filtrava. CORRIGIDO:
+   - almox.home(): os 3 blocos (extintores/material/chaves) agora usam _plantas_permitidas_ids().
+   - _pendencias_por_estado() (usada pela home E pelo PDF de pendencias) agora filtra por planta.
+   - Rota extintores/pendencias (pendencias_etiqueta): abertas/resolvidas agora fazem JOIN com
+     Extintor e filtram pela planta permitida.
+   Este era o bug MAIS GRAVE dos tres — a home é a PRIMEIRA tela que todo mundo ve, e o vazamento
+   acontecia so' por estar logado, sem precisar nem clicar em nada.
+
+TESTADO: colaborador vinculado SO ao Piaui -> home nao vaza extintor do Maranhao; tela de pendencias de
+etiqueta nao vaza; extintores lista so os dele. Master cadastra extintor/chave/quadro escolhendo Piaui
+explicitamente -> planta gravada corretamente nos 3. Tentativa de forjar um id de planta invalido no
+cadastro -> ignorado (planta fica None), sem quebrar. Smoke test geral (11 telas) 200.

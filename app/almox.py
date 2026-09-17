@@ -314,9 +314,9 @@ def chaves():
     quadros_sel = _args_list("quadro")
     status_sel = _args_list("status")
     base = Chave.query.filter_by(ativo=False) if inativos else Chave.query.filter_by(ativo=True)
-    _pid = _planta_ativa_id()
-    if _pid:
-        base = base.filter((Chave.planta_id == _pid) | (Chave.planta_id.is_(None)))
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        base = base.filter(db.or_(Chave.planta_id.in_(_ids_pl), Chave.planta_id.is_(None)))
     itens = []
     for c in base.order_by(Chave.descricao).all():
         if q and not contem_busca(" ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]), q):
@@ -632,8 +632,8 @@ def _parse_date_arg(v):
 
 
 def _planta_ativa_id():
-    """[137] Resolve o id da planta ativa da sessao de forma robusta (nao depende do
-    context processor ja ter rodado antes nesta mesma requisicao)."""
+    """[137] Resolve o id da planta ativa da sessao (usado por quem ESCOLHE uma planta por vez —
+    Usuario/Admin). Nao depende do context processor ja ter rodado antes nesta requisicao."""
     from flask_login import current_user
     if not current_user.is_authenticated:
         return None
@@ -645,6 +645,23 @@ def _planta_ativa_id():
         session["planta_ativa_id"] = plantas[0].id
         return plantas[0].id
     return None
+
+
+def _plantas_permitidas_ids():
+    """[correcao] Ids de planta que o ator atual pode ver AGORA.
+    - Colaborador: TODAS as plantas as quais ele esta vinculado, sempre (nao escolhe uma por vez —
+      se esta em Maranhao e Piaui, ve as duas ao mesmo tempo).
+    - Usuario (Admin/Master): so a planta ATIVA da sessao (ele escolhe uma por vez no seletor).
+    Devolve None se nao deve filtrar (sem vinculo nenhum — evita esconder tudo por engano)."""
+    from flask_login import current_user
+    from .models import Colaborador as _Colab
+    if not current_user.is_authenticated:
+        return None
+    if isinstance(current_user, _Colab):
+        ids = [p.id for p in (getattr(current_user, "plantas", []) or [])]
+        return ids or None
+    pid = _planta_ativa_id()
+    return [pid] if pid else None
 
 
 def _args_list(nome):
@@ -849,10 +866,10 @@ def extintores():
     pend_ids = {p.extintor_id for p in PendenciaEtiqueta.query.filter_by(resolvida=False).all()}
     atencao_sel = "ATENCAO" in situacoes
     linhas = []
-    _pid = _planta_ativa_id()
+    _ids_pl = _plantas_permitidas_ids()
     _q_ext = Extintor.query.filter_by(ativo=True)
-    if _pid:
-        _q_ext = _q_ext.filter((Extintor.planta_id == _pid) | (Extintor.planta_id.is_(None)))
+    if _ids_pl:
+        _q_ext = _q_ext.filter(db.or_(Extintor.planta_id.in_(_ids_pl), Extintor.planta_id.is_(None)))
     todos = _q_ext.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
     for e in todos:
         if predios_sel and e.predio not in predios_sel:
@@ -1596,17 +1613,22 @@ PAPEIS_COLAB = [("COLABORADOR DIVERSO", "Colaborador diverso"),
 @almox_bp.route("/colaboradores")
 @_guard("pode_colaboradores")
 def colaboradores():
-    from .models import Fornecedor
-    # [correção] Colaboradores é cadastro-base compartilhado entre plantas — a tela mostra TODOS,
-    # independente da planta ativa, pois é aqui que se DEFINE a quais plantas cada um pertence.
-    itens = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+    from .models import Fornecedor, Planta
+    # Tela de GESTÃO (Admin/Almox cadastrando e definindo plantas) mostra todos, independente da
+    # planta ativa — é aqui que se atribui a quais plantas cada colaborador tem acesso.
+    # Quando o COLABORADOR loga e usa o sistema, ele so ve dados das plantas as quais pertence
+    # (isso e' feito por _plantas_permitidas_ids() nas telas de uso, nao nesta tela de cadastro).
+    inativos = request.args.get("inativos") == "1"
+    base = Colaborador.query.filter_by(ativo=False) if inativos else Colaborador.query.filter_by(ativo=True)
+    itens = base.order_by(Colaborador.nome).all()
+    n_inativos = Colaborador.query.filter_by(ativo=False).count()
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
     empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
-    from .models import Planta
     todas_plantas = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
     return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas,
                            papeis_colab=PAPEIS_COLAB, pode_papel=current_user.is_admin,
-                           is_master=current_user.is_master, todas_plantas=todas_plantas)
+                           is_master=current_user.is_master, todas_plantas=todas_plantas,
+                           inativos=inativos, n_inativos=n_inativos)
 
 
 @almox_bp.route("/colaboradores/novo", methods=["POST"])
@@ -1725,6 +1747,17 @@ def colaborador_desativar(cid):
     db.session.commit()
     flash("Colaborador desativado.", "success")
     return redirect(url_for("almox.colaboradores"))
+
+
+@almox_bp.route("/colaboradores/<int:cid>/reativar", methods=["POST"])
+@_guard("pode_colaboradores")
+def colaborador_reativar(cid):
+    c = db.session.get(Colaborador, cid) or abort(404)
+    c.ativo = True
+    _log("Colaborador", f"Colaborador reativado: {c.nome}")
+    db.session.commit()
+    flash("Colaborador reativado.", "success")
+    return redirect(url_for("almox.colaboradores", inativos="1"))
 
 
 @almox_bp.route("/colaboradores/<int:cid>/reset-senha", methods=["POST"])
@@ -2061,9 +2094,9 @@ def _filtra_saldo():
     loc = request.args.get("loc") or ""
     baixo = request.args.get("baixo") == "1"
     q = ProdutoAlmox.query.filter_by(ativo=True)
-    _pid = _planta_ativa_id()
-    if _pid:
-        q = q.filter((ProdutoAlmox.planta_id == _pid) | (ProdutoAlmox.planta_id.is_(None)))
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        q = q.filter(db.or_(ProdutoAlmox.planta_id.in_(_ids_pl), ProdutoAlmox.planta_id.is_(None)))
     itens = q.order_by(ProdutoAlmox.nome).all()
     if cat:
         itens = [p for p in itens if contem_busca(p.categoria, cat)]
@@ -2576,6 +2609,9 @@ def armazens():
             flash("Armazém cadastrado.", "success")
         return redirect(url_for("almox.armazens"))
     itens = Armazem.query.order_by(Armazem.nome).all()
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        itens = [a for a in itens if a.planta_id in _ids_pl]
     plantas_l = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
     return render_template("almox/armazens.html", itens=itens, plantas=plantas_l)
 
@@ -2622,6 +2658,11 @@ def localizadores():
     itens = Localizador.query.order_by(Localizador.armazem_id, Localizador.fila,
                                        Localizador.estante, Localizador.nivel).all()
     armazens_l = Armazem.query.filter_by(ativo=True).order_by(Armazem.nome).all()
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        armazens_l = [a for a in armazens_l if a.planta_id in _ids_pl]
+        ids_armazens = {a.id for a in armazens_l}
+        itens = [l for l in itens if l.armazem_id in ids_armazens]
     return render_template("almox/localizadores.html", itens=itens, armazens=armazens_l)
 
 

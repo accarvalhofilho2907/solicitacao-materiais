@@ -2199,3 +2199,35 @@ NOTA para o mesmo padrao em outros cadastros-base: Fornecedores/Empresas e Tipos
 compartilhados (nunca tiveram filtro de planta aplicado) — nao precisam de correcao. Usuarios (staff)
 ja tem a logica de plantas propria (tela de Usuarios, item 138), que ja funciona no sentido certo
 (Master ve/edita todos, atribui planta por usuario).
+
+### CORRECAO 2 — Armazens vazava entre plantas + regra certa de Colaborador + inativos (Antonio, 16/09)
+Antonio reportou: dentro de Delta Piaui, via Armazens do Delta Maranhao. E corrigiu a regra de
+Colaboradores: NAO sao compartilhados. Um colaborador cadastrado so no Maranhao ve so o Maranhao; se
+tambem for vinculado ao Piaui, passa a ver OS DOIS ao mesmo tempo (nao "escolhe" uma planta como o Admin).
+Tambem faltava o local de VER/REATIVAR colaboradores desativados.
+
+CAUSA do vazamento em Armazens/Localizadores: esses dois JA TINHAM planta_id (Armazem) desde antes desta
+leva (parte da hierarquia Planta->Armazem->Localizador ja existente), mas a listagem NUNCA filtrava por
+planta. Corrigido: armazens() e localizadores() agora filtram pela(s) planta(s) permitida(s).
+
+MUDANCA DE MODELO — helper novo _plantas_permitidas_ids() (substitui o uso direto de _planta_ativa_id()
+nas telas de USO/listagem; _planta_ativa_id() continua existindo para o SELETOR do Admin):
+  - Se ator = Colaborador: retorna TODAS as plantas as quais ele esta vinculado (ve todas ao mesmo tempo,
+    nao escolhe uma "ativa" como o Admin).
+  - Se ator = Usuario (Admin/Master): retorna so a planta ATIVA da sessao (continua escolhendo uma por vez
+    no seletor, como ja era).
+Aplicado (.in_(ids) no lugar de == pid) em: Chaves, Extintores, Material, Solicitacoes/dashboard, Enviar
+Cotacao, Coletas Proprias, Notinhas, Armazens (novo), Localizadores (novo, via armazem_id).
+
+COLABORADORES — corrigido de vez (a correcao anterior desta sessao tinha ido longe demais):
+  - A tela de GESTAO (Admin cadastrando/editando) continua mostrando TODOS os colaboradores, pois e' ali
+    que se ATRIBUI a quais plantas cada um pertence (nao da pra restringir essa tela por planta, senao
+    ninguem consegue dar acesso a quem esta em outra planta).
+  - O que MUDA de verdade: quando o COLABORADOR loga e usa o sistema (Extintores, Chaves, etc.), ele
+    passa pelo _plantas_permitidas_ids() e ve SOMENTE as plantas as quais esta vinculado — testado com um
+    colaborador em 2 plantas vendo extintor de AMBAS ao mesmo tempo (nao troca de planta, ve tudo junto).
+  - NOVO: toggle "Ver desativados/Ver ativos" na tela de Colaboradores (igual ja existia em Chaves) +
+    nova rota colaborador_reativar. Antes nao havia como ver quem foi desativado.
+Testado: Admin com planta ativa MA ve so Armazem/Localizador de MA; colaborador vinculado a MA+PI ve
+extintor de MA e PI ao mesmo tempo (sem trocar planta); lista de colaboradores mostra todos p/ Admin
+gerenciar; toggle inativos funciona, reativar funciona. Smoke test geral (12 telas) 200.

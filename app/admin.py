@@ -188,11 +188,11 @@ def _mailto(fornecedor, itens, seq, spe_escolhida=None):
 @admin_bp.route("/")
 @admin_required
 def dashboard():
-    from .almox import _planta_ativa_id
+    from .almox import _plantas_permitidas_ids
     q = Solicitacao.query
-    _pid = _planta_ativa_id()
-    if _pid:
-        q = q.filter((Solicitacao.planta_id == _pid) | (Solicitacao.planta_id.is_(None)))
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        q = q.filter(db.or_(Solicitacao.planta_id.in_(_ids_pl), Solicitacao.planta_id.is_(None)))
     f_status = request.args.getlist("status")
     f_sol = request.args.getlist("solicitante")
     f_tipo = request.args.get("tipo")
@@ -401,11 +401,11 @@ def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
     expandir=True -> considera qualquer status (exceto Concluído/Cancelada), não só o status pedido (item 122).
     busca -> filtra por nome de empresa(fornecedor)/tipo de material/produto (item 122).
     excluir_fornecedores -> ids de fornecedor para pular nesta tela (item 123, sessão/temporário)."""
-    from .almox import _planta_ativa_id
+    from .almox import _plantas_permitidas_ids
     query = Solicitacao.query.filter(Solicitacao.tipo_material_id.isnot(None))
-    _pid = _planta_ativa_id()
-    if _pid:
-        query = query.filter((Solicitacao.planta_id == _pid) | (Solicitacao.planta_id.is_(None)))
+    _ids_pl = _plantas_permitidas_ids()
+    if _ids_pl:
+        query = query.filter(db.or_(Solicitacao.planta_id.in_(_ids_pl), Solicitacao.planta_id.is_(None)))
     if expandir:
         query = query.filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
     else:
@@ -1450,13 +1450,13 @@ def coletas_proprias():
     """Solicitações com frete FOB/retirada por colaborador (item 125), agrupadas por
     cidade e, dentro de cada cidade, por fornecedor (item 142) — com o contato do
     fornecedor (nome/e-mail/telefone) ao lado, e texto pronto para o motorista."""
-    from .almox import _planta_ativa_id
-    _pid = _planta_ativa_id()
+    from .almox import _plantas_permitidas_ids
+    _ids_pl = _plantas_permitidas_ids()
     q_itens = (Solicitacao.query
              .filter_by(frete_tipo="FOB", frete_modalidade="COLABORADOR")
              .filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"])))
-    if _pid:
-        q_itens = q_itens.filter((Solicitacao.planta_id == _pid) | (Solicitacao.planta_id.is_(None)))
+    if _ids_pl:
+        q_itens = q_itens.filter(db.or_(Solicitacao.planta_id.in_(_ids_pl), Solicitacao.planta_id.is_(None)))
     itens = q_itens.order_by(Solicitacao.cidade_retirada_id, Solicitacao.id).all()
 
     # estrutura: { cidade: { chave: {"fornecedor": f, "nome": nome, "itens": [...], "avulsas": [...]} } }

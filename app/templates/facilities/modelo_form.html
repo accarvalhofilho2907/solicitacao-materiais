@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar modelo' if modelo else 'Novo modelo' }}{% endblock %}
+{% block content %}
+<h4 class="mb-3">{{ 'Editar modelo — ' + modelo.nome if modelo else 'Novo modelo de checklist' }}</h4>
+
+<form method="post" action="{{ url_for('facilities.modelo_editar', mid=modelo.id) if modelo else url_for('facilities.modelo_novo') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card mb-3"><div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-6"><label class="form-label small">Nome do modelo</label>
+        <input name="nome" class="form-control" value="{{ modelo.nome if modelo else '' }}" required></div>
+      <div class="col-md-6"><label class="form-label small">Descrição (opcional)</label>
+        <input name="descricao" class="form-control" value="{{ modelo.descricao if modelo else '' }}"></div>
+    </div>
+  </div></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="mb-2">Itens do checklist</h6>
+    <div class="alert alert-secondary small py-2 mb-3">
+      <b>Impeditivo</b>: reprovou, bloqueia gerar/fechar o checklist até resolver.
+      <b>Atenção</b>: reprovou, mas não bloqueia — só fica pendência.
+      <b>Temporário</b>: começa como Atenção, mas tem um prazo (em dias); se continuar falho e o prazo vencer, vira Impeditivo sozinho.
+    </div>
+    <div id="listaItens">
+      {% if modelo %}
+        {% for it in modelo.itens %}
+        <div class="row g-2 align-items-center mb-2 linha-item">
+          <div class="col-md-5"><input name="item_texto" class="form-control form-control-sm" value="{{ it.texto }}" required></div>
+          <div class="col-md-3">
+            <select name="item_tipo" class="form-select form-select-sm sel-tipo" onchange="toggleupPrazo(this)">
+              <option value="IMPEDITIVO" {{ 'selected' if it.tipo=='IMPEDITIVO' }}>Impeditivo</option>
+              <option value="ATENCAO" {{ 'selected' if it.tipo=='ATENCAO' }}>Atenção</option>
+              <option value="TEMPORARIO" {{ 'selected' if it.tipo=='TEMPORARIO' }}>Temporário</option>
+            </select>
+          </div>
+          <div class="col-md-2"><input type="number" name="item_prazo" class="form-control form-control-sm campo-prazo" min="1" value="{{ it.prazo_dias or '' }}" placeholder="dias" {{ '' if it.tipo=='TEMPORARIO' else 'style=display:none' }}></div>
+          <div class="col-md-2 text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.linha-item').remove()">Remover</button></div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addItemLinha()">＋ Adicionar item</button>
+  </div></div>
+
+  <button class="btn btn-primary">Salvar modelo</button>
+  <a class="btn btn-outline-secondary" href="{{ url_for('facilities.modelos') }}">Cancelar</a>
+</form>
+
+<template id="templateLinhaItem">
+  <div class="row g-2 align-items-center mb-2 linha-item">
+    <div class="col-md-5"><input name="item_texto" class="form-control form-control-sm" placeholder="Texto do item" required></div>
+    <div class="col-md-3">
+      <select name="item_tipo" class="form-select form-select-sm sel-tipo" onchange="toggleupPrazo(this)">
+        <option value="IMPEDITIVO">Impeditivo</option>
+        <option value="ATENCAO" selected>Atenção</option>
+        <option value="TEMPORARIO">Temporário</option>
+      </select>
+    </div>
+    <div class="col-md-2"><input type="number" name="item_prazo" class="form-control form-control-sm campo-prazo" min="1" placeholder="dias" style="display:none"></div>
+    <div class="col-md-2 text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.linha-item').remove()">Remover</button></div>
+  </div>
+</template>
+
+<script>
+function addItemLinha(){
+  var tpl = document.getElementById('templateLinhaItem').content.cloneNode(true);
+  document.getElementById('listaItens').appendChild(tpl);
+}
+function toggleupPrazo(sel){
+  var linha = sel.closest('.linha-item');
+  var campoPrazo = linha.querySelector('.campo-prazo');
+  campoPrazo.style.display = (sel.value === 'TEMPORARIO') ? '' : 'none';
+  if (sel.value !== 'TEMPORARIO') campoPrazo.value = '';
+}
+{% if not modelo %}
+// modelo novo: comeca com 1 linha vazia para nao ficar em branco
+addItemLinha();
+{% endif %}
+</script>
+{% endblock %}

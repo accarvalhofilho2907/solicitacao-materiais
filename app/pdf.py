@@ -124,22 +124,55 @@ def gerar_pdf_fichas(solicitacoes):
 
 
 def gerar_pdf_notinhas(notas):
+    # [R51] Cores da marca Serena (mesmo padrão usado em pdf_etiquetas.py)
+    CORAL = colors.HexColor("#FF5246")
+    GRAFITE = colors.HexColor("#4B4B4B")
+    AREIA = colors.HexColor("#EDE9E5")
+
+    from reportlab.lib.styles import ParagraphStyle
+    _celula = ParagraphStyle("celula", parent=_ST["Normal"], fontSize=8, leading=10, textColor=GRAFITE)
+    _cabecalho = ParagraphStyle("cabecalho", parent=_ST["Normal"], fontSize=8, leading=10,
+                                textColor=colors.white, fontName="Helvetica-Bold")
+
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=18 * mm)
-    el = [Paragraph("Notinhas", _ST["Title"]),
+    titulo_style = ParagraphStyle("tituloSerena", parent=_ST["Title"], textColor=CORAL)
+    el = [Paragraph("Notinhas", titulo_style),
           Paragraph(f"Exportado em {datetime.now():%d/%m/%Y %H:%M}", _ST["Normal"]), Spacer(1, 6 * mm)]
-    linhas = [["Data", "Competência", "Fornecedor", "Atividade", "Valor (R$)"]]
+    # Cabeçalho como Paragraph em branco (para contrastar com o fundo coral) — [R51] texto longo agora
+    # quebra dentro da célula em vez de estourar, pois todas as celulas passam a ser Paragraph.
+    header = [Paragraph(h, _cabecalho) for h in ["Data", "Competência", "Fornecedor", "Atividade", "Valor (R$)"]]
+    linhas = [header]
     total = 0.0
     for n in notas:
         total += float(n.valor)
-        linhas.append([n.data.strftime("%d/%m/%Y"), n.competencia or "-", n.fornecedor.nome,
-                       n.atividade.nome if n.atividade else "-", f"{float(n.valor):.2f}"])
-    linhas.append(["", "", "", "Total", f"{total:.2f}"])
-    t = Table(linhas, colWidths=[24 * mm, 26 * mm, 55 * mm, 38 * mm, 27 * mm])
-    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (-1, 0), (-1, -1), "RIGHT"), ("PADDING", (0, 0), (-1, -1), 4)]))
+        linhas.append([
+            Paragraph(n.data.strftime("%d/%m/%Y"), _celula),
+            Paragraph(n.competencia or "-", _celula),
+            Paragraph(n.fornecedor.nome or "-", _celula),
+            Paragraph(n.atividade.nome if n.atividade else "-", _celula),
+            Paragraph(f"{float(n.valor):.2f}", _celula),
+        ])
+    total_style = ParagraphStyle("totalCel", parent=_celula, fontName="Helvetica-Bold", textColor=GRAFITE)
+    linhas.append([Paragraph("", _celula), Paragraph("", _celula), Paragraph("", _celula),
+                   Paragraph("Total", total_style), Paragraph(f"{total:.2f}", total_style)])
+    t = Table(linhas, colWidths=[24 * mm, 26 * mm, 55 * mm, 38 * mm, 27 * mm], repeatRows=1)
+    estilo = [
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CCCCCC")),
+        ("BACKGROUND", (0, 0), (-1, 0), CORAL),          # cabeçalho coral
+        ("BACKGROUND", (0, -1), (-1, -1), AREIA),        # linha de total, areia
+        ("ALIGN", (-1, 0), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]
+    # zebra (linhas intercaladas em areia clara) para facilitar leitura em listas longas
+    for i in range(1, len(linhas) - 1):
+        if i % 2 == 0:
+            estilo.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#F7F5F3")))
+    t.setStyle(TableStyle(estilo))
     el.append(t)
     doc.build(el)
     buf.seek(0)

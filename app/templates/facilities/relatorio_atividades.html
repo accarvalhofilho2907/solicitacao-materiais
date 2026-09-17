@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Relatório de atividades{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h4 class="mb-0">Relatório de atividades</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNovoRelatorio">＋ Novo registro</button>
+</div>
+<div class="alert alert-secondary small py-2">O que foi de fato executado — pode estar ligado a uma atividade programada ou ser um registro avulso.</div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Data</th><th>Atividade</th><th>Equipamento / local</th><th>Executado por</th></tr></thead>
+  <tbody>
+    {% for r in itens %}
+    <tr>
+      <td class="small">{{ r.executado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+      <td><b>{{ r.titulo }}</b>{% if r.descricao %}<div class="text-muted small">{{ r.descricao }}</div>{% endif %}
+        {% if r.atividade_programada %}<div class="text-muted small">Programada: {{ r.atividade_programada.titulo }}</div>{% endif %}</td>
+      <td class="small">{{ r.equipamento.nome if r.equipamento else (r.planta.nome if r.planta else '—') }}</td>
+      <td class="small">{{ r.executado_por_nome }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-muted text-center py-3">Nenhum relatório registrado ainda.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<div class="modal fade" id="modalNovoRelatorio" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-header"><h5 class="modal-title">Novo registro de atividade</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small">Título</label><input name="titulo" class="form-control" required></div>
+        <div class="mb-2"><label class="form-label small">Descrição / observações (opcional)</label><textarea name="descricao" class="form-control" rows="3"></textarea></div>
+        <div class="mb-2"><label class="form-label small">Ligar a uma atividade programada (opcional)</label>
+          <select name="atividade_programada_id" class="form-select">
+            <option value="">— registro avulso —</option>
+            {% for a in pendentes_disp %}<option value="{{ a.id }}">{{ a.titulo }} ({{ a.data_prevista.strftime('%d/%m') }})</option>{% endfor %}
+          </select>
+          <div class="form-text">Selecionar uma atividade programada marca ela como concluída automaticamente.</div></div>
+        <div class="row g-2">
+          <div class="col-md-6"><label class="form-label small">Planta</label>
+            <select name="planta_id" class="form-select">
+              <option value="">—</option>
+              {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+            </select></div>
+          <div class="col-md-6"><label class="form-label small">Equipamento (opcional)</label>
+            <select name="equipamento_id" class="form-select">
+              <option value="">—</option>
+              {% for e in equipamentos_disp %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
+            </select></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary">Registrar</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

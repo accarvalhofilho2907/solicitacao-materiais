@@ -2296,3 +2296,346 @@ TESTADO: colaborador vinculado SO ao Piaui -> home nao vaza extintor do Maranhao
 etiqueta nao vaza; extintores lista so os dele. Master cadastra extintor/chave/quadro escolhendo Piaui
 explicitamente -> planta gravada corretamente nos 3. Tentativa de forjar um id de planta invalido no
 cadastro -> ignorado (planta fica None), sem quebrar. Smoke test geral (11 telas) 200.
+
+### ================== ROADMAP IN-APP (Antonio, 17/09) — ITENS COLADOS PARA REGISTRO ==================
+Antonio colou a lista completa do roadmap in-app (o botao 🗺️ do sistema). Os marcados [x] por ele (#1-#29)
+ja foram confirmados como implementados nas sessoes anteriores. Adicionalmente, confirmado por Claude que
+os seguintes tambem ja foram implementados e testados, mesmo aparecendo como [ ] na lista colada (redacao
+antiga, a lista do Antonio nao tinha sido atualizada apos as correcoes recentes):
+  - #39 (numeracao do roadmap in-app) -> FEITO na correcao 4
+  - #43 (ordem alfabetica dentro das secoes do menu) -> FEITO no bloco de reexecucao do menu
+  - #48 (sub-secoes dentro de Movimento) -> FEITO no bloco de reexecucao do menu
+  - #52 (remover "Pendencias de etiqueta" duplicado) -> FEITO no Bloco K anterior
+  - #53 (Coletas Proprias -> Coletas e Envios Proprios) -> FEITO no bloco de reexecucao do menu
+  ATENCAO especial ao #54: o enunciado bate com um bug ja corrigido antes (item 66/69 do historico antigo),
+  mas Antonio precisa RETESTAR o cenario especifico (zerar fornecedores de um tipo em Enviar Cotacao) antes
+  de confirmar como concluido — pode ser recaida do mesmo bug, nao apenas duplicata de registro.
+
+ITENS REALMENTE PENDENTES (nunca tratados nas sessoes rastreadas), na ordem que aparecem na lista do
+Antonio — FILA NOVA, aguardando "pode executar":
+
+[R30] Tela de extintores: filtro "DE x ATE" de vencimento esta em DIAS, precisa ser em COMPETENCIA
+      (mes/ano), nao dia a dia.
+[R31] Pendencias: aparecem 2 extintores pendentes de etiqueta na contagem, mas o filtro "ATENCAO
+      (ETIQUETA)" na lista de extintores nao os traz. Investigar por que a contagem e o filtro divergem.
+[R33] Parser de orcamento ILUMINAR: falha ao ler arquivo (system pediu foto nitida/reta ou o PDF).
+      Antonio vai enviar o orcamento em foto para Claude ajustar o modelo de leitura — PEDIR O ARQUIVO
+      quando for a vez deste item.
+[R34] Busca de Empresas/Fornecedores: precisa buscar tambem pela RAZAO SOCIAL INTERNA de cada fornecedor
+      (hoje so busca outros campos); busca por CNPJ deve IGNORAR pontuacao (buscar "34108887" deve achar
+      "34.108.887/...").
+[R35] Relatorio de carga: campo de pesquisa (Razao Social/CNPJ) parou de funcionar — precisa investigar
+      e corrigir. Antonio tambem propos MELHORAR: unificar em um so campo "Razao Social - CNPJ" para
+      remetente, destinatario E transportador, com autocomplete puxando da base cadastrada (parece que
+      isso ja foi feito antes no historico antigo — item 101 — CONFIRMAR SE REGREDIU ou se e' pedido novo).
+[R36] Relatorio de carga: ao pesquisar o CEP, bloquear os demais campos de endereco ate a busca terminar;
+      se nao encontrar, ai sim libera para preenchimento manual.
+[R37] Relatorio de carga: manter o campo NUMERO do endereco como OBRIGATORIO.
+[R38] Relatorio de carga: campo OBSERVACAO em cada foto, opcional por padrao; se a foto for marcada como
+      AVARIADA, o campo vira obrigatorio. So aparece no PDF final se algo foi escrito.
+[R40] BUG: gerar relatorio de carga com ~20 fotos -> o link quebra (nao gera/abre). Investigar a fundo
+      (pode ser recaida do problema de memoria/timeout ja tratado antes, ou algo novo).
+[R41] Incluir um link para gerar PDF de "integracao" (documento novo, nao existe ainda). PEDIR O MODELO
+      em PDF ao Antonio quando for a vez deste item.
+[R42] Cadastro de empresa (uma das pre-cadastradas no recebimento de material): Antonio finalizou o
+      cadastro e salvou, mas o sistema continua tratando como "nao finalizado". Investigar a logica de
+      "pendente" -> "aprovado" (ja existe regra parecida no historico — item 110 — CONFIRMAR SE REGREDIU).
+[R44] LER PDF de orcamento da ECOFORTES — novo parser (igual aos ja existentes: Cofermeta, FBM,
+      Ferramentech, Lojao/Tucano, Mundial, Dimensional, Iluminar, Casa das Mangueiras). PEDIR O PDF DE
+      EXEMPLO ao Antonio quando for a vez deste item (ja era um item antigo pendente, nunca recebido).
+[R45] Incluir campo para ALTERAR O PRAZO DE RECEBIMENTO de um item (hoje conta como atrasado sem opcao de
+      atualizar a data). Antonio pediu, de preferencia, que isso funcione EM LOTE (ja existe uma rota
+      admin.prazo_lote no historico antigo — item 113 — CONFIRMAR SE EXISTE/FUNCIONA e so faltou expor
+      na tela, ou se precisa ser refeito).
+[R46] Tela de confirmar chegadas: campo DATA obrigatorio, com a data de HOJE como padrao (ja existe algo
+      parecido no historico antigo — item 114 — CONFIRMAR SE REGREDIU).
+[R49] Tela de entrada (home), para ADMIN/ADMIN MASTER: mostrar o VALOR DE NOTINHAS DE COMPRAS DA CIDADE
+      (ja existia no historico antigo — item 116 — CONFIRMAR SE REGREDIU OU SE PRECISA SER READICIONADO
+      apos a reestruturacao da home/planta).
+[R50] PDF de notinhas: nome do arquivo deve ser NOTINHAS + DDMMAA inicial + DDMMAA final + FORNECEDOR
+      (ja existia no historico antigo — item 117 — CONFIRMAR SE REGREDIU).
+[R51] Layout do PDF de notinhas: melhorar (hoje texto estourando o quadro, so preto/branco); usar as
+      cores da Serena (ja existia no historico antigo — item 118 — CONFIRMAR SE REGREDIU).
+[R54] Enviar Cotacao: quando TODOS os fornecedores de um tipo de material sao zerados, os itens desse
+      tipo sumiam da secao "sem fornecedor" (ja corrigido antes — item 66/69 do historico — Antonio
+      precisa RETESTAR esse cenario especifico antes de confirmar se e recaida ou resolvido).
+[R55] BUG: Colaborador com papel "COLABORADOR DIVERSO" nao consegue repor extintor, mesmo com a tarefa
+      de reposicao marcada no papel E o extintor estando "PRONTO PARA REPOSICAO". Investigar a permissao
+      _pode_gerir_ext() e o fluxo de reposicao (pode ser regressao do item 122 do historico antigo, que
+      ja tratou algo parecido para Colaborador Diverso).
+
+NADA EXECUTADO AINDA. Fila registrada; Antonio ja autorizou seguir (mensagem: "Vamos seguir com a
+alteracao do sistema para o novo formato com Facilities... + os itens pendentes do Road Map").
+ORDEM DE TRABALHO DEFINIDA: 1) itens do roadmap acima (R30-R55, nesta ordem, pulando os que precisam de
+arquivo do Antonio ate ele enviar); 2) retomar o SIGA/Facilities (itens 123-138, ja em andamento parcial:
+134-138 sobre separacao por planta ja feitos; falta o motor de checklist/inspecao propriamente dito).
+
+### [R55] FEITO (17/09) — Colaborador Diverso nao conseguia repor extintor
+Causa raiz dupla, achada com teste real (nao so leitura de codigo):
+1) _pode_gerir_ext() so olhava current_user (Usuario) — nunca considerava o Colaborador autenticado via
+   QR (sessao de campo, _colab_sessao()). Por isso um Colaborador Diverso, mesmo com a tarefa liberada
+   no papel, era sempre barrado.
+2) Ao corrigir o (1), achei um SEGUNDO bug mais sutil: a property pode_extintores (usada tanto para
+   Usuario quanto seria usada para Colaborador) so checa se a pessoa tem QUALQUER tarefa do grupo
+   extintores (inclui ext_ver, so ver) — nao a tarefa ESPECIFICA de repor/conferir. Usar essa property
+   generica para decidir _pode_gerir_ext() deixaria QUALQUER colaborador que so pode VER conseguir
+   REPOR de verdade (confirmado num teste antes da correcao final: reposicao aconteceu mesmo sem a
+   tarefa ext_repor).
+CORRIGIDO: _pode_gerir_ext() agora checa a tarefa GRANULAR certa (ext_repor OU ext_conferir OU
+perm_total) tanto para Usuario (via _perms_efetivas, quando existir) quanto para Colaborador em sessao
+de campo — alem de continuar liberando direto para is_admin.
+TESTADO nos 3 cenarios: Admin repoe (sempre pode); Colaborador COM ext_repor no papel repoe (extintor
+PRONTO_REPO -> NO_PRAZO); Colaborador SO com ext_ver e BLOQUEADO (extintor continua PRONTO_REPO, nao
+muda). Smoke test geral 200.
+
+### [R30] JA ESTAVA RESOLVIDO (confirmado por teste, 17/09) — filtro de vencimento em competencia
+Testado: o campo ja e' type="month" (competencia) tanto no HTML quanto no backend (_parse_date_arg aceita
+AAAA-MM; "ate" ja soma ate o ultimo dia do mes). Extintor com validade 15/03/2027 aparece ao filtrar
+2027-03 a 2027-03 e NAO aparece ao filtrar 2027-04. Sem alteracao necessaria — o item ja funciona.
+
+### [R31] FEITO (17/09) — divergencia entre contagem de pendencias e o filtro Atencao (etiqueta)
+Causa raiz confirmada por teste: a contagem de pendencias abertas (PendenciaEtiqueta.resolvida=False) NAO
+filtra por Extintor.ativo, mas a lista de Extintores (onde o filtro Atencao e aplicado) so mostra
+ativo=True. Um extintor DESATIVADO com pendencia de etiqueta ainda aberta contava na tela de pendencias
+mas nunca aparecia no filtro — exatamente a divergencia relatada (2 pendentes na contagem, filtro nao traz).
+CORRIGIDO:
+- extintor_desativar(): agora RESOLVE AUTOMATICAMENTE qualquer PendenciaEtiqueta aberta do extintor ao
+  desativa-lo (marca resolvida=True, resolvida_em=agora, resolvida_por="<usuario> (auto: extintor
+  desativado)"). Flash avisa quantas pendencias foram resolvidas junto.
+- Nova migracao _migrar_pendencias_orfas() no boot: resolve automaticamente pendencias ja orfas HOJE
+  (extintor ja inativo, pendencia ainda aberta) — corrige os 2 casos que o Antonio ja tem em producao,
+  sem precisar de acao manual.
+Testado: (1) dado sujo criado antes do boot -> boot seguinte resolve a pendencia orfa automaticamente;
+(2) desativar um extintor com pendencia aberta -> pendencia vira resolvida na mesma acao. Smoke test 200.
+
+### [R34] FEITO (17/09) — busca de Empresas/Fornecedores: razao social + CNPJ sem pontuacao
+Confirmado no codigo: a busca so considerava f.nome (nome fantasia), nao f.razao_social; e comparava
+CNPJ como texto puro (com pontuacao), entao buscar "34108887" nao achava "34.108.887/0001-XX".
+CORRIGIDO: _bate() em admin.fornecedores() agora (1) inclui razao_social na busca de texto geral, e
+(2) compara os DIGITOS do termo buscado (se tiver 4+ digitos) contra os DIGITOS do CNPJ cadastrado,
+ignorando pontuacao nos dois lados.
+Testado: busca por trecho da razao social acha o fornecedor certo; busca por CNPJ sem pontuacao acha o
+fornecedor certo; busca por CNPJ completo de uma empresa NAO traz outra empresa (sem falso positivo
+entre cadastros diferentes).
+
+### [R35, R36, R37, R38] JA ESTAVAM RESOLVIDOS (confirmado por teste real com jsdom, 17/09)
+Investiguei cada um a fundo, simulando digitacao/clique real (nao so leitura de HTML), e confirmei que
+os 4 ja funcionam no codigo atual:
+- R35 (busca de Razao Social/CNPJ no relatorio de carga): testado digitando "Transportes" e tambem CNPJ
+  parcial ("12345678") -> sugestao aparece corretamente, sem erro de JS; ao escolher, preenche CNPJ,
+  cidade e demais campos automaticamente. O mecanismo unificado (itens 101/102/103 do historico antigo)
+  ja esta la e funcionando.
+- R36 (bloquear campos durante busca de CEP): ja implementado (item 95 do historico) — trava(true) antes
+  do fetch, trava(false) e mensagem de erro se nao encontrar.
+- R37 (numero obrigatorio): ja implementado — bloco_empresa('rem'/'dest', ..., obrig=true, ...) exige
+  numero; transportadora (obrig=false) continua opcional, coerente com a regra ja definida (item 105).
+- R38 (observacao por foto, obrigatoria so se avariada): ja implementado (item 97) — textarea vira
+  required via JS quando o checkbox "Avariado?" e marcado; no PDF (pdf_carga.py), so aparece o texto de
+  observacao/avaria se foto.get("obs") tiver conteudo.
+CONCLUSAO: esses 4 itens muito provavelmente foram testados pelo Antonio ANTES do episodio de revert
+(quando um deploy quebrado esteve no ar por um tempo) — o codigo real, hoje, ja contempla tudo isso.
+Nao foi necessaria nenhuma alteracao. Antonio pode simplesmente marcar como concluidos apos confirmar
+na proxima vez que usar o relatorio de carga em producao.
+
+### [R40] FEITO (17/09) — relatorio de carga com ~20 fotos: link quebra
+Investigado: o processamento de fotos em si (draft(), useA85=0, streaming em disco) ja estava bom
+(itens 98/104 do historico), e testado localmente com 20 fotos reais de 12MP levou so ~4.7s. MAS o
+Start Command do servico e' "gunicorn wsgi:app" SEM nenhum timeout customizado — o padrao do Gunicorn
+e' 30 segundos. No ambiente real do Render (CPU compartilhada, 0.5 CPU no Starter, mais lento que o
+teste local), processar 20 fotos grandes pode facilmente passar dos 30s, matando o worker no meio
+(WORKER TIMEOUT, o mesmo problema do item 100 do historico, agora reaparecendo em volume maior).
+CORRIGIDO: criado gunicorn.conf.py na raiz do projeto (timeout = 120s). O Gunicorn LE esse arquivo
+AUTOMATICAMENTE ao rodar "gunicorn wsgi:app" (nao precisa mudar o Start Command no painel do Render).
+Validado com "gunicorn --check-config" e confirmando programaticamente que app.cfg.timeout == 120.
+Smoke test geral 200.
+
+### [R42] FEITO (17/09) — fornecedor pre-cadastrado nao virava "aprovado" ao completar
+Causa raiz: fornecedor_editar() (via _aplicar_fornecedor) salva razao social, CNPJ, endereco etc., mas
+NUNCA atualizava o campo aprovacao — ficava "pendente" para sempre, mesmo com o cadastro completo.
+CORRIGIDO: _aplicar_fornecedor() agora promove aprovacao para "aprovado" automaticamente quando o
+cadastro estava "pendente" E passa a ter CNPJ valido E razao social preenchida (a mesma regra que ja
+existia para o CADASTRO NOVO — item 110 do historico — mas nunca tinha sido replicada para EDICAO).
+Testado: completar CNPJ+razao social de um fornecedor pendente -> vira aprovado; editar sem CNPJ valido
+-> continua pendente (nao aprova prematuramente).
+
+### [R45] FEITO (17/09) — alterar prazo de recebimento EM LOTE
+Confirmado: nao existia rota de prazo em lote (so existia alterar prazo de UMA solicitacao ao definir
+fornecedor, ou "aprovar fornecedor em lote" que so serve na 1a definicao, nao para REAGENDAR item ja
+atrasado). CRIADA rota nova admin.prazo_lote: recebe uma lista de ids marcados (checkbox) + uma nova
+data, aplica a MESMA data a todos de uma vez — so mexe em quem esta com status AGUARDANDO_CHEGADA
+(protege contra alterar prazo de algo que nao deveria). Interface: tela "O que precisa de mim hoje"
+(admin/pendencias.html), secao "Chegada atrasada" ganhou checkbox por linha + campo de nova data +
+botao "Atualizar prazo dos marcados". Testado: 2 solicitacoes atrasadas -> as duas atualizadas; uma
+terceira com status diferente (ainda aguardando aprovacao) -> corretamente ignorada, nao mexida.
+
+### [R46] FEITO (17/09) — confirmar chegada: data obrigatoria com padrao hoje
+Confirmado: o campo ja tinha o TITULO dizendo "padrao: hoje" mas isso nunca foi implementado de fato —
+sem required, sem valor preenchido. CORRIGIDO: campo agora tem required + classe "data-chegada-hoje";
+novo script global em base.html preenche automaticamente com a data de hoje (formato ISO) qualquer
+campo com essa classe, reaproveitavel em outras telas futuras que precisem do mesmo padrao. Testado com
+jsdom: campo carrega ja preenchido com a data real do dia (2026-09-17) e required=true.
+
+### [R49] FEITO (17/09) — home mostra valor de notinhas do mes por cidade (Admin)
+Nao existia (nunca chegou a ser implementado neste codigo, so mencionado no historico antigo item 116).
+Adicionado: bloco novo na home (almox.home), so para is_admin, somando Notinha.valor do MES CORRENTE
+(campo competencia = AAAA-MM de hoje) agrupado pela CIDADE do Fornecedor relacionado, respeitando o
+filtro de planta permitida. Exibido como tiles clicaveis (leva para a tela de Notinhas). Testado: duas
+notinhas do mesmo fornecedor/cidade somam corretamente (150.50+50.00=200.50); cidade diferente aparece
+separada com seu proprio total.
+
+### [R50] FEITO (17/09) — nome do arquivo PDF de notinhas
+Nao existia (nome fixo "notinhas.pdf"). Corrigido: nome agora e' NOTINHAS_<DDMMAA-de>_<DDMMAA-ate>
+[_<FORNECEDOR>].pdf, montado a partir dos filtros de data/fornecedor ja aplicados na tela. Testado:
+filtro de/ate + fornecedor "Posto Central" -> gera "NOTINHAS_010926_300926_POSTOCENTRAL.pdf".
+
+### [R51] FEITO (17/09) — layout do PDF de notinhas com cores Serena
+Confirmado visualmente (renderizado e inspecionado como imagem): PDF antigo usava so preto/branco/cinza
+e as celulas eram texto puro (nao Paragraph), entao nomes longos de fornecedor/atividade estouravam a
+largura da coluna. Corrigido: cabecalho em CORAL (#FF5246) com texto branco, linha de Total em AREIA
+(#EDE9E5), zebra leve nas linhas (facilita leitura em listas longas), titulo "Notinhas" em coral: TODAS
+as celulas agora sao Paragraph (quebram texto dentro da celula, nunca mais estouram). Mesmo padrao de
+cores ja usado em pdf_etiquetas.py, reaproveitado aqui. Smoke test geral 200.
+
+### [R54] FEITO (17/09) — RECAIDA CONFIRMADA: item sumia ao zerar fornecedores do tipo
+Reproduzido o cenario exato: com 1 unico fornecedor cadastrado para um tipo, o item aparece normalmente
+na tela de Enviar Cotacao. Ao DESATIVAR esse fornecedor (zerando os fornecedores elegiveis do tipo), o
+item deveria continuar aparecendo (na secao "Sem fornecedor cadastrado"), mas SUMIA por completo.
+CAUSA: no template enviar_lote.html, a condicao "{% if not grupos %}" (mostra "Nada para enviar") englobava
+TODO o resto da pagina, incluindo a secao sem_forn — que fica dentro do "{% else %}" desse mesmo bloco.
+Quando grupos fica vazio (nenhum fornecedor ativo elegivel para nenhum item), a pagina inteira cai no
+"nada para enviar", e a secao sem_forn (que deveria aparecer) nunca e' renderizada. Essa EXATA correção ja
+tinha sido feita antes (item 121 do historico: "{% if not grupos and not sem_forn %}"), mas nao esta' no
+codigo atual — confirma mais uma recaida do episodio de revert.
+CORRIGIDO: condicao ajustada para "{% if not grupos and not sem_forn %}", reaplicando o item 121.
+Testado: fornecedor desativado -> item continua aparecendo, agora na secao "Sem fornecedor cadastrado".
+Smoke test geral 200.
+
+### ================== FILA R30-R55 CONCLUIDA (exceto as que dependem de arquivo) ==================
+Restam pendentes, aguardando arquivo do Antonio: R33 (foto/PDF orcamento Iluminar), R41 (modelo PDF de
+integracao), R44 (PDF orcamento Ecofortes). Esses ficam registrados e retomamos assim que o Antonio
+enviar os arquivos. Proximo passo: retomar SIGA/Facilities (motor de checklist/inspecao).
+
+### ================== SIGA/FACILITIES — MOTOR DE CHECKLIST (17/09) ==================
+Retomado o desenho ja validado com Antonio (03 modulos: Compras&Estoque / Facilities com Inspecoes
+dentro / Cadastros&Administrativo), que tinha sido perdido do roadmap real por causa do episodio de
+revert (so existia em conversa, nao no arquivo). Reconstituido e IMPLEMENTADO desta vez, com testes.
+
+MODELAGEM (app/models.py, novos, no final do arquivo):
+  - ModeloChecklist: nome/descricao, lista de ItemChecklist (so Admin cria/edita).
+  - ItemChecklist: texto + tipo (IMPEDITIVO/ATENCAO/TEMPORARIO) + prazo_dias (so usado se TEMPORARIO).
+  - TipoEquipamento: categoria (ex. "Gerador") que aponta para o ModeloChecklist que ele usa.
+  - Equipamento: o ativo fisico (nome, codigo, tipo, planta_id — mesma separacao por planta ja usada em
+    todo o sistema, qr_uid para leitura futura por QR).
+  - ExecucaoChecklist: uma inspecao concluida (quem, quando, resultado geral, respostas em JSON).
+  - ItemFalhaAberta: o "relogio" de um item TEMPORARIO reprovado (aberto_em, prazo_final, status:
+    ATENCAO -> IMPEDITIVO (promovido por tempo) -> RESOLVIDO).
+
+REGRA DE NEGOCIO IMPLEMENTADA E TESTADA (exatamente como definida por Antonio):
+  - IMPEDITIVO reprovado -> bloqueia GERAR o checklist na hora (rollback, nada e' salvo, flash claro).
+  - ATENCAO reprovado -> nao bloqueia, checklist e' gerado normalmente.
+  - TEMPORARIO reprovado -> abre ItemFalhaAberta (status ATENCAO, prazo_final = hoje + prazo_dias do
+    item), NAO bloqueia ainda. Se o mesmo item continuar falho e o PRAZO VENCER POR TEMPO CORRIDO (sem
+    precisar de nova inspecao), uma rotina "preguicosa" (roda a cada acesso as telas de Facilities, ja
+    que o Render Starter atual nao tem cron job nativo configurado) promove a falha para IMPEDITIVO —
+    dai em diante, reprovar esse item de novo BLOQUEIA a geracao, igual um impeditivo comum.
+  - Corrigir o item (marcar OK numa proxima inspecao) resolve a ItemFalhaAberta (status RESOLVIDO) e
+    permite gerar o checklist normalmente.
+
+BLUEPRINT NOVO: app/facilities.py (url_prefix /facilities), registrado em __init__.py.
+  Rotas: /facilities/modelos (listar, so Admin), /modelos/novo, /modelos/<id>/editar (construtor de
+  itens com os 3 tipos + campo de prazo condicional), /tipos (listar+cadastrar, so Admin), /equipamentos
+  (listar+cadastrar; qualquer logado ve, so Admin cadastra; filtra por planta permitida, mesmo padrao
+  ja usado em Extintores/Material/etc.), /equipamentos/<id>/inspecionar (GET mostra o formulario com a
+  situacao de cada item incluindo falhas ja abertas; POST processa e aplica a regra acima).
+  _promover_falhas_vencidas() chamada no inicio de equipamentos() e inspecionar(), alem de no boot
+  (__init__.py) — como nao ha cron job configurado no Render atual, a promocao acontece "on demand" a
+  cada acesso as telas relevantes, o que e' suficiente na pratica (idempotente, barata).
+
+TEMPLATES NOVOS (app/templates/facilities/): modelos.html, modelo_form.html (construtor de itens com
+JS para add/remover linha e mostrar/esconder o campo de prazo conforme o tipo escolhido), tipos.html,
+equipamentos.html, inspecionar.html (mostra o "relogio" visualmente: dias em aberto vs prazo, e o aviso
+claro de "venceu o prazo -> impeditivo" quando promovido).
+
+MENU: nova secao "Facilities" entre Administrativo e Ajuda — Equipamentos direto, e sub-secao
+"Inspecoes" (Modelos de checklist, Tipos de equipamento) so visivel para Admin. Testado com o mesmo
+rigor de antes (simulacao de clique real via jsdom): abre/fecha corretamente, 3 itens, sem erros de JS.
+
+TESTADO DE PONTA A PONTA (cenario completo, simulando o exemplo do farol de veiculo que Antonio deu):
+  1) Reprovar item TEMPORARIO -> abre ItemFalhaAberta status ATENCAO. OK.
+  2) Prazo vencido (retroagido no teste) + acessar qualquer tela de Facilities -> promovido para
+     IMPEDITIVO automaticamente, SEM nova inspecao. OK.
+  3) Tentar gerar novo checklist reprovando o MESMO item ja promovido -> BLOQUEADO, nenhuma
+     ExecucaoChecklist criada. OK.
+  4) Corrigir o item (marcar OK) -> falha vira RESOLVIDO E o checklist e' gerado normalmente. OK.
+  5) Item IMPEDITIVO reprovado bloqueia na hora, sem depender de prazo nenhum. OK.
+Smoke test geral (9 telas, incluindo as 3 novas de Facilities) 200, sem regressao em nenhuma tela
+existente do sistema.
+
+PENDENTE (proximos passos do SIGA, quando Antonio priorizar): Programacao de atividades e Relatorio de
+atividades (o modulo "Rotina" do desenho original) ainda nao foram implementados — ficam para uma
+proxima leva. Decisao em aberto: se/quando o Extintor migra para este motor generico (Antonio disse
+"depois decido").
+
+### FACILITIES — PERMISSOES GRANULARES ADICIONADAS AOS PERFIS DE ACESSO (17/09)
+Antonio apontou lacuna real: o motor de Facilities recem-criado so' controlava acesso por is_admin
+("qualquer logado" para inspecionar) — sem passar pelo sistema de Perfis de Acesso que o resto do
+sistema usa. Corrigido:
+  - 4 tarefas novas em TAREFAS_PERFIL (aparecem automaticamente na tela de Perfis de Acesso, grupo
+    "Facilities"): fac_ver (ver equipamentos), fac_inspecionar (executar checklist), fac_cadastrar_
+    equipamento (cadastrar equipamento novo), fac_gerir_modelos (criar/editar modelos e tipos —
+    delegacao pontual de gestao, alem do Admin).
+  - Novo _GRUPO_FAC e 4 properties (pode_facilities, pode_facilities_inspecionar, pode_facilities_
+    cadastrar, pode_facilities_gerir) em perm_from_tasks() + espelhadas na classe Colaborador, seguindo
+    o MESMO padrao ja usado para Chaves/Extintores/Material.
+  - facilities.py reescrito: 4 decoradores novos (_gerir_required, _ver_required, _inspecionar_required,
+    _cadastrar_equip_required) — cada rota agora exige a tarefa granular certa, nao mais um controle
+    generico. Admin sempre passa por tudo (como em todo o resto do sistema); Colaborador so' passa se
+    tiver a tarefa especifica liberada no papel.
+  - Menu: item "Equipamentos (Facilities)" adicionado tambem no bloco do Colaborador, condicionado a
+    perm.pode_facilities (antes so' aparecia no bloco Admin).
+TESTADO (11 cenarios): as 4 tarefas aparecem na lista global; colaborador SEM nenhuma tarefa de
+facilities e' bloqueado ate' de VER a lista de equipamentos; colaborador com fac_ver consegue VER mas e'
+bloqueado de INSPECIONAR; colaborador com fac_ver+fac_inspecionar consegue os dois; nenhum colaborador
+comum (mesmo com fac_inspecionar) consegue acessar /facilities/modelos (exclusivo de Admin ou de quem
+tiver fac_gerir_modelos); Admin sempre passa por tudo. Smoke test geral (7 telas, incluindo Perfis de
+Acesso) 200.
+
+### ================== SIGA — PROGRAMACAO E RELATORIO DE ATIVIDADES (17/09) ==================
+Fecha o desenho completo do SIGA/Facilities original (o bloco "Rotina" do mockup validado com Antonio).
+
+MODELAGEM (app/models.py):
+  - AtividadeProgramada: titulo, descricao, data_prevista, equipamento_id (opcional), planta_id,
+    responsavel (pode ser Usuario, Colaborador OU texto livre — ex.: alguem que ainda nao tem login no
+    sistema), status (PENDENTE/CONCLUIDA/CANCELADA). Property .atrasada (PENDENTE + data ja passou).
+    AGENDA SIMPLES, SEM RECORRENCIA (decisao ja confirmada por Antonio — fica para uma etapa futura).
+  - RelatorioAtividade: o que foi de fato executado; pode estar LIGADO a uma AtividadeProgramada
+    (fechando o ciclo planejado x executado) ou ser registro avulso. Fotos ficam pensadas para disco
+    (fotos_json guarda so os caminhos), no mesmo espirito do Relatorio de Carga ja existente — nao
+    persistem como blob no banco.
+
+ROTAS NOVAS (app/facilities.py): /facilities/programacao (listar + criar, GET/POST),
+/programacao/<id>/concluir (marca concluida manualmente, sem precisar de relatorio),
+/programacao/<id>/cancelar (so quem tem fac_gerir_modelos/Admin), /facilities/relatorio-atividades
+(listar + criar). Criar um relatorio JA LIGADO a uma atividade programada fecha o ciclo automaticamente
+(marca ela como concluida) — nao precisa de duas acoes separadas.
+
+TEMPLATES NOVOS: facilities/programacao.html (linhas em vermelho quando atrasada, botoes Concluir/
+Cancelar), facilities/relatorio_atividades.html (modal com select de atividade programada pendente
+para ligar, ou deixar avulso).
+
+MENU: sub-secao "Rotina" dentro de Facilities (Programacao de atividades, Relatorio de atividades),
+tanto no bloco Admin quanto no bloco Colaborador (condicionado a perm.pode_facilities). Testado com
+clique real (jsdom): Facilities agora tem 5 itens, sem erros de JS.
+
+TESTADO (10 cenarios): telas carregam; criar atividade com data passada -> aparece corretamente
+marcada como "atrasada"; criar relatorio LIGADO a uma atividade -> fecha o ciclo (marca CONCLUIDA
+automaticamente) e a atividade some da lista de pendentes; botao manual "Concluir" (sem relatorio)
+tambem funciona isoladamente. Smoke test geral (11 telas) 200.
+
+=== SIGA/FACILITIES: DESENHO ORIGINAL AGORA COMPLETO ===
+01 Compras & Estoque (existente) / 02 Facilities [Equipamentos, Inspecoes (Modelos+Tipos), Rotina
+(Programacao+Relatorio)] / 03 Cadastros & Administrativo (existente). Com separacao por planta em
+tudo, e controle de acesso granular via Perfis (fac_ver/fac_inspecionar/fac_cadastrar_equipamento/
+fac_gerir_modelos) desde a modelagem inicial — nao como remendo posterior.
+PENDENTE (decisao em aberto de Antonio, sem prazo definido): se/quando o Extintor migra do sistema
+proprio (CHECK_EXTINTOR fixo) para este motor generico de checklist.

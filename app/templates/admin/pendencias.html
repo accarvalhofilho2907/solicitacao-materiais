@@ -23,5 +23,32 @@
 
 {{ lista('Aguardando aprovação', aprovar, 'warning', 'Criada em') }}
 {{ lista('Cotação com prazo vencido', vencidas, 'danger', 'Prazo cotação') }}
-{{ lista('Chegada atrasada', atrasadas, 'danger', 'Prazo chegada') }}
+
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">Chegada atrasada <span class="badge bg-danger">{{ atrasadas|length }}</span></h6>
+  {% if atrasadas %}
+  <form method="post" action="{{ url_for('admin.prazo_lote') }}" id="formPrazoLote">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="table-responsive"><table class="table table-sm align-middle mb-2">
+      <thead class="table-light"><tr>
+        <th><input type="checkbox" onclick="document.querySelectorAll('.chkPrazoLote').forEach(c=>c.checked=this.checked)"></th>
+        <th>Nº</th><th>Material</th><th>Solicitante</th><th>Prazo chegada</th><th></th>
+      </tr></thead>
+      <tbody>{% for p in atrasadas %}<tr>
+        <td><input type="checkbox" class="chkPrazoLote" name="sids" value="{{ p.id }}"></td>
+        <td>{{ p.id }}</td>
+        <td>{{ p.material }} <span class="text-muted small">(x{{ p.quantidade }})</span></td>
+        <td class="small">{{ p.solicitante_display }}</td>
+        <td class="small text-danger">{{ p.prazo_recebimento.strftime('%d/%m/%Y') if p.prazo_recebimento else '-' }}</td>
+        <td><a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('admin.solicitacao', sid=p.id) }}">Abrir</a></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <div class="d-flex gap-2 align-items-center">
+      <label class="form-label small mb-0">Nova data de recebimento para os marcados:</label>
+      <input type="date" name="nova_data" class="form-control form-control-sm" style="max-width:160px" required>
+      <button type="submit" class="btn btn-sm btn-danger">Atualizar prazo dos marcados</button>
+    </div>
+  </form>
+  {% else %}<p class="text-muted small mb-0">Nada aqui. 👍</p>{% endif %}
+</div></div>
 {% endblock %}

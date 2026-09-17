@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Modelos de checklist{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h4 class="mb-0">Modelos de checklist</h4>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('facilities.modelo_novo') }}">＋ Novo modelo</a>
+</div>
+<div class="alert alert-secondary small py-2">Só o Admin cria/edita modelos. Quem executa o checklist em campo só responde — não altera os itens.</div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Modelo</th><th>Descrição</th><th>Itens</th><th></th></tr></thead>
+  <tbody>
+    {% for m in itens %}
+    <tr>
+      <td><b>{{ m.nome }}</b></td>
+      <td class="small text-muted">{{ m.descricao or '—' }}</td>
+      <td>{{ m.qtd_itens }}</td>
+      <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.modelo_editar', mid=m.id) }}">Editar</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-muted text-center py-3">Nenhum modelo cadastrado ainda.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

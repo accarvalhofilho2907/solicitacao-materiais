@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 
 from flask_login import UserMixin
 from sqlalchemy import event
@@ -885,6 +885,11 @@ TAREFAS_PERFIL = [
     ("adm_sugestao", "Sugestão de melhoria", "Ajuda / Administração", False),
     ("adm_usuarios_antigo", "Gerenciar Usuários - Antigo (Master)", "Ajuda / Administração", False),
     ("adm_backup", "Backup do banco", "Ajuda / Administração", True),
+    # Facilities (SIGA — motor de checklist/inspeção de equipamentos)
+    ("fac_ver", "Ver equipamentos", "Facilities", False),
+    ("fac_inspecionar", "Executar checklist / inspecionar equipamento", "Facilities", False),
+    ("fac_cadastrar_equipamento", "Cadastrar equipamento", "Facilities", False),
+    ("fac_gerir_modelos", "Criar/editar modelos de checklist e tipos (gestão)", "Facilities", False),
 ]
 
 # Compatibilidade: as 4 tarefas antigas continuam válidas (perfis já salvos não quebram)
@@ -960,6 +965,7 @@ _GRUPO_MAT = {"mat_ver", "mat_cadastrar", "mat_entrada", "mat_saida", "mat_ajust
               "mat_devolucao_forcada", "mat_kit", "mat_unidades"}
 _GRUPO_LOC = {"perm_cadastros", "loc_planta", "loc_armazem", "loc_localizador", "loc_gerar"}
 _GRUPO_COLETOR = {"col_chaves", "col_material", "col_movimentacao", "col_inventario"}
+_GRUPO_FAC = {"fac_ver", "fac_inspecionar", "fac_cadastrar_equipamento", "fac_gerir_modelos"}
 _GRUPO_ALMOX = (_GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | _GRUPO_COLETOR
                 | {"perm_modulo_almox"})
 
@@ -988,6 +994,14 @@ def perm_from_tasks(perms, prop):
         return ("perm_relatorios" in perms) or bool(perms & {"carga_receber", "carga_enviar"})
     if prop == "pode_coletor":
         return bool(perms & _GRUPO_COLETOR)
+    if prop == "pode_facilities":
+        return bool(perms & _GRUPO_FAC)
+    if prop == "pode_facilities_inspecionar":
+        return ("fac_inspecionar" in perms)
+    if prop == "pode_facilities_cadastrar":
+        return ("fac_cadastrar_equipamento" in perms)
+    if prop == "pode_facilities_gerir":
+        return ("fac_gerir_modelos" in perms)
     if prop == "pode_colaboradores":
         return "perm_colaboradores" in perms
     if prop == "pode_criar_solicitacao":
@@ -1089,6 +1103,14 @@ class Colaborador(UserMixin, db.Model):
     @property
     def pode_coletor(self): return perm_from_tasks(self._perms_efetivas(), "pode_coletor")
     @property
+    def pode_facilities(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities")
+    @property
+    def pode_facilities_inspecionar(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities_inspecionar")
+    @property
+    def pode_facilities_cadastrar(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities_cadastrar")
+    @property
+    def pode_facilities_gerir(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities_gerir")
+    @property
     def pode_criar_solicitacao(self): return perm_from_tasks(self._perms_efetivas(), "pode_criar_solicitacao")
     @property
     def pode_ver_solicitacoes(self): return perm_from_tasks(self._perms_efetivas(), "pode_ver_solicitacoes")
@@ -1172,3 +1194,217 @@ class ColetaAvulsa(db.Model):
     fornecedor_nome = db.Column(db.String(160))
     coletado = db.Column(db.Boolean, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ============================================================================
+# SIGA / FACILITIES — MOTOR GENÉRICO DE CHECKLIST E INSPEÇÃO
+# ============================================================================
+# Decisão de arquitetura (registrada com Antonio): em vez de cada tipo de equipamento
+# novo (gerador, veículo, ar-condicionado...) ganhar um checklist "hardcoded" no
+# código (como o extintor tem hoje, via CHECK_EXTINTOR), o Facilities usa um motor
+# GENÉRICO: só o ADMIN cria/edita MODELOS de checklist (nome, itens); qualquer
+# EQUIPAMENTO cadastrado aponta para um modelo; a EXECUÇÃO usa esse modelo na hora.
+#
+# Regra de reprovação de cada item (definida por Antonio), por tipo:
+#   - IMPEDITIVO: reprovado -> bloqueia gerar/fechar o checklist até resolver.
+#   - ATENCAO: reprovado -> não bloqueia, só fica registrado como pendência.
+#   - TEMPORARIO: começa como ATENCAO, mas tem um PRAZO PRÓPRIO em dias (definido
+#     item a item, na criação do modelo). Se o MESMO item continuar falho e o
+#     prazo vencer por TEMPO CORRIDO (não depende de nova inspeção), o item vira
+#     IMPEDITIVO automaticamente — feito por uma rotina periódica que varre
+#     ItemFalhaAberta (não pelo ato de inspecionar de novo).
+#
+# O extintor NÃO migra para este motor por enquanto (decisão em aberto de Antonio);
+# este motor nasce para os equipamentos NOVOS de Facilities.
+
+TIPO_ITEM_CHECKLIST = ("IMPEDITIVO", "ATENCAO", "TEMPORARIO")
+
+
+class ModeloChecklist(db.Model):
+    """Um "formulário" de checklist reutilizável (ex.: "Inspeção de Gerador",
+    "Ronda de Veículo"). Só o Admin/Master cria e edita. Pode ser aplicado a
+    qualquer TipoEquipamento compatível."""
+    __tablename__ = "sf_modelos_checklist"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(160), nullable=False)
+    descricao = db.Column(db.String(300))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    itens = db.relationship("ItemChecklist", backref="modelo", order_by="ItemChecklist.ordem",
+                            cascade="all, delete-orphan")
+
+    @property
+    def qtd_itens(self):
+        return len(self.itens)
+
+
+class ItemChecklist(db.Model):
+    """Um item dentro de um ModeloChecklist. tipo define a regra de bloqueio;
+    prazo_dias só é usado quando tipo == 'TEMPORARIO'."""
+    __tablename__ = "sf_itens_checklist"
+    id = db.Column(db.Integer, primary_key=True)
+    modelo_id = db.Column(db.ForeignKey("sf_modelos_checklist.id"), nullable=False)
+    texto = db.Column(db.String(300), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="ATENCAO")  # ver TIPO_ITEM_CHECKLIST
+    prazo_dias = db.Column(db.Integer)   # obrigatório (na prática) se tipo == TEMPORARIO
+    ordem = db.Column(db.Integer, default=0)
+    ativo = db.Column(db.Boolean, default=True)
+
+
+class TipoEquipamento(db.Model):
+    """Categoria de equipamento (ex.: "Gerador", "Veículo leve", "Ar-condicionado").
+    Aponta para o ModeloChecklist que será usado ao inspecionar equipamentos desse tipo."""
+    __tablename__ = "sf_tipos_equipamento"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(160), nullable=False, unique=True)
+    modelo_checklist_id = db.Column(db.ForeignKey("sf_modelos_checklist.id"))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    modelo_checklist = db.relationship("ModeloChecklist")
+
+
+class Equipamento(db.Model):
+    """Um ativo físico de Facilities (ex.: "Gerador subestação", "Hilux QZX-1140").
+    Pertence a uma planta (igual às demais tabelas operacionais) e a um TipoEquipamento,
+    que define qual checklist ele usa."""
+    __tablename__ = "sf_equipamentos"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False)
+    codigo = db.Column(db.String(40))          # identificador curto (ex.: "GER-002")
+    tipo_id = db.Column(db.ForeignKey("sf_tipos_equipamento.id"), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    local = db.Column(db.String(200))
+    qr_uid = db.Column(db.String(20), unique=True)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    tipo = db.relationship("TipoEquipamento")
+    planta = db.relationship("Planta")
+
+    @property
+    def modelo_checklist(self):
+        return self.tipo.modelo_checklist if self.tipo else None
+
+
+class ExecucaoChecklist(db.Model):
+    """Uma inspeção/execução concluída de um Equipamento, usando um ModeloChecklist.
+    resultado_geral: 'OK' (nada reprovado), 'ATENCAO' (algo em atenção, mas fechou),
+    'IMPEDITIVO' (tinha item impeditivo — nesse caso o registro existe mas a UI deve
+    ter bloqueado o fechamento; guardamos para auditoria de tentativa)."""
+    __tablename__ = "sf_execucoes_checklist"
+    id = db.Column(db.Integer, primary_key=True)
+    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"), nullable=False)
+    modelo_id = db.Column(db.ForeignKey("sf_modelos_checklist.id"), nullable=False)
+    executado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    executado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    executado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    resultado_geral = db.Column(db.String(20))
+    respostas_json = db.Column(db.Text)   # snapshot das respostas item a item (JSON)
+    observacoes = db.Column(db.Text)
+
+    equipamento = db.relationship("Equipamento")
+    modelo = db.relationship("ModeloChecklist")
+
+
+class ItemFalhaAberta(db.Model):
+    """O "relógio" de um item TEMPORARIO reprovado e ainda não corrigido. Criado quando
+    uma execução reprova um item TEMPORARIO; resolvido quando uma execução seguinte
+    aprova o mesmo item. Uma rotina periódica varre os registros com status='ATENCAO'
+    cujo prazo_final já passou e promove para status='IMPEDITIVO' — SEM depender de
+    nova inspeção acontecer (é por tempo corrido, conforme definido por Antonio)."""
+    __tablename__ = "sf_falhas_abertas"
+    id = db.Column(db.Integer, primary_key=True)
+    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"), nullable=False)
+    item_checklist_id = db.Column(db.ForeignKey("sf_itens_checklist.id"), nullable=False)
+    aberto_em = db.Column(db.DateTime, default=datetime.utcnow)
+    prazo_final = db.Column(db.Date)   # aberto_em + prazo_dias do item
+    status = db.Column(db.String(20), default="ATENCAO")   # ATENCAO -> IMPEDITIVO (promovido) -> RESOLVIDO
+    promovido_em = db.Column(db.DateTime)
+    resolvido_em = db.Column(db.DateTime)
+
+    equipamento = db.relationship("Equipamento")
+    item_checklist = db.relationship("ItemChecklist")
+
+    @property
+    def dias_em_aberto(self):
+        fim = self.resolvido_em.date() if self.resolvido_em else date.today()
+        return (fim - self.aberto_em.date()).days
+
+
+# ============================================================================
+# SIGA / FACILITIES — PROGRAMAÇÃO E RELATÓRIO DE ATIVIDADES ("Rotina")
+# ============================================================================
+# Decisão (Antonio): agenda SIMPLES por enquanto, sem recorrência automática (fica para
+# uma etapa futura). Programação = o que deve acontecer, quando, quem é responsável.
+# Relatório de Atividades = o que de fato aconteceu (pode ou não estar ligado a uma
+# atividade programada), no mesmo espírito do Relatório de Carga já existente.
+
+class AtividadeProgramada(db.Model):
+    """Uma atividade agendada (avulsa, sem recorrência por ora): "trocar filtro do gerador
+    em 05/08", "inspecionar quadro elétrico"). Pode ou não estar ligada a um Equipamento."""
+    __tablename__ = "sf_atividades_programadas"
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(200), nullable=False)
+    descricao = db.Column(db.Text)
+    data_prevista = db.Column(db.Date, nullable=False)
+    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"))
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    responsavel_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    responsavel_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    responsavel_texto = db.Column(db.String(160))  # nome livre, se o responsável não é usuário do sistema
+    status = db.Column(db.String(20), default="PENDENTE")  # PENDENTE | CONCLUIDA | CANCELADA
+    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    equipamento = db.relationship("Equipamento")
+    planta = db.relationship("Planta")
+
+    @property
+    def responsavel_nome(self):
+        if self.responsavel_usuario_id:
+            u = db.session.get(Usuario, self.responsavel_usuario_id)
+            return u.nome if u else "—"
+        if self.responsavel_colaborador_id:
+            c = db.session.get(Colaborador, self.responsavel_colaborador_id)
+            return c.nome if c else "—"
+        return self.responsavel_texto or "—"
+
+    @property
+    def atrasada(self):
+        return self.status == "PENDENTE" and self.data_prevista < date.today()
+
+
+class RelatorioAtividade(db.Model):
+    """O que foi de fato EXECUTADO — pode estar ligado a uma AtividadeProgramada (fechando
+    o ciclo planejado x executado) ou ser um registro avulso. Fotos ficam em disco, como o
+    Relatório de Carga já faz (não persistem como blob no banco)."""
+    __tablename__ = "sf_relatorios_atividade"
+    id = db.Column(db.Integer, primary_key=True)
+    atividade_programada_id = db.Column(db.ForeignKey("sf_atividades_programadas.id"))
+    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"))
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    titulo = db.Column(db.String(200), nullable=False)
+    descricao = db.Column(db.Text)
+    executado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    executado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    executado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    fotos_json = db.Column(db.Text)   # lista de caminhos/nomes de arquivo (fotos ficam em disco)
+
+    atividade_programada = db.relationship("AtividadeProgramada")
+    equipamento = db.relationship("Equipamento")
+    planta = db.relationship("Planta")
+
+    @property
+    def executado_por_nome(self):
+        if self.executado_por_usuario_id:
+            u = db.session.get(Usuario, self.executado_por_usuario_id)
+            return u.nome if u else "—"
+        if self.executado_por_colaborador_id:
+            c = db.session.get(Colaborador, self.executado_por_colaborador_id)
+            return c.nome if c else "—"
+        return "—"
+
+

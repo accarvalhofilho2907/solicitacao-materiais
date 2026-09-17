@@ -770,6 +770,39 @@ def pendencias():
     return render_template("admin/pendencias.html", aprovar=aprovar, vencidas=vencidas, atrasadas=atrasadas)
 
 
+@admin_bp.route("/prazo-lote", methods=["POST"])
+@admin_required
+def prazo_lote():
+    """[R45] Atualiza o PRAZO DE RECEBIMENTO em lote para as solicitações marcadas (checkboxes),
+    todas ganhando a MESMA nova data. Usado principalmente para reagendar itens já atrasados
+    (status AGUARDANDO_CHEGADA) sem precisar entrar item por item."""
+    ids = request.form.getlist("sids")
+    nova_data = request.form.get("nova_data")
+    if not ids:
+        flash("Marque ao menos uma solicitação.", "warning")
+        return redirect(url_for("admin.pendencias"))
+    if not nova_data:
+        flash("Informe a nova data de recebimento.", "danger")
+        return redirect(url_for("admin.pendencias"))
+    try:
+        nova_data_d = datetime.strptime(nova_data, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Data inválida.", "danger")
+        return redirect(url_for("admin.pendencias"))
+    n = 0
+    for sid in ids:
+        s = db.session.get(Solicitacao, int(sid))
+        if not s or s.status != "AGUARDANDO_CHEGADA":
+            continue
+        de = s.prazo_recebimento
+        s.prazo_recebimento = nova_data_d
+        _log(s, f"Prazo de recebimento alterado em lote: {de} → {nova_data_d} (por {current_user.nome})")
+        n += 1
+    db.session.commit()
+    flash(f"Prazo atualizado em {n} solicitação(ões).", "success")
+    return redirect(url_for("admin.pendencias"))
+
+
 @admin_bp.route("/precos")
 @admin_required
 def precos():
@@ -1362,6 +1395,12 @@ def _aplicar_fornecedor(f):
     # se não marcou nenhum, assume fornecedor (não deixa cadastro "órfão")
     if not f.is_fornecedor and not f.is_empresa_interna:
         f.is_fornecedor = True
+    # [R42] Fornecedor pré-cadastrado (aprovacao="pendente") vira "aprovado" automaticamente assim
+    # que o cadastro é COMPLETADO de verdade (CNPJ válido + razão social preenchida). Antes disso
+    # nunca acontecia aqui — o cadastro salvava normalmente, mas continuava marcado como pendente
+    # para sempre, mesmo já estando completo.
+    if (f.aprovacao or "pendente") == "pendente" and cnpj_valido(cnpj_raw) and (f.razao_social or "").strip():
+        f.aprovacao = "aprovado"
 
 
 @admin_bp.route("/fornecedores", methods=["GET", "POST"])
@@ -1406,10 +1445,17 @@ def fornecedores():
                 return True
             if quer_sem_cnpj and f.cadastro_incompleto:
                 return True
-            # texto do cadastro (inclui o papel por extenso, para busca natural)
+            # [R34] CNPJ: compara só os dígitos, ignorando pontuação (34.108.887/... casa com "34108887")
+            so_digitos_busca = "".join(ch for ch in busca if ch.isdigit())
+            if so_digitos_busca and len(so_digitos_busca) >= 4:
+                so_digitos_cnpj = "".join(ch for ch in (f.cnpj or "") if ch.isdigit())
+                if so_digitos_cnpj and so_digitos_busca in so_digitos_cnpj:
+                    return True
+            # texto do cadastro (inclui o papel por extenso, para busca natural, e a razão social —
+            # antes só buscava nome_fantasia/nome, deixando de fora a razão social interna)
             papel_txt = " ".join(["empresa interna" if f.is_empresa_interna else "",
                                   "fornecedor" if f.is_fornecedor else ""])
-            campos = " ".join([f.nome or "", f.cnpj or "", f.cidade or "", papel_txt])
+            campos = " ".join([f.nome or "", f.razao_social or "", f.cnpj or "", f.cidade or "", papel_txt])
             return contem_busca(campos, busca)
 
         lista = [f for f in lista if _bate(f)]

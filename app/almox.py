@@ -304,8 +304,27 @@ def home():
     except Exception:
         pass
 
+    # [R49] Admin/Admin Master: valor de notinhas do MES CORRENTE, agrupado por cidade (do fornecedor)
+    notinhas_por_cidade = []
+    if is_admin:
+        try:
+            from .models import Notinha, Fornecedor
+            competencia_atual = date.today().strftime("%Y-%m")
+            _ids_pl = _plantas_permitidas_ids()
+            _q_not = Notinha.query.filter_by(competencia=competencia_atual)
+            if _ids_pl:
+                _q_not = _q_not.filter(db.or_(Notinha.planta_id.in_(_ids_pl), Notinha.planta_id.is_(None)))
+            somas = {}
+            for n in _q_not.all():
+                cidade = (n.fornecedor.cidade if n.fornecedor else None) or "Sem cidade"
+                somas[cidade] = somas.get(cidade, 0) + float(n.valor or 0)
+            notinhas_por_cidade = sorted(somas.items(), key=lambda x: -x[1])
+        except Exception:
+            notinhas_por_cidade = []
+
     return render_template("almox/home.html", modo=modo, principal=principal,
-                           acoes=ACOES, pend=pend, tiles=tiles, listas_pend=listas_pend, cap=cap)
+                           acoes=ACOES, pend=pend, tiles=tiles, listas_pend=listas_pend, cap=cap,
+                           notinhas_por_cidade=notinhas_por_cidade)
 
 
 @almox_bp.route("/em-construcao/<slug>")
@@ -821,8 +840,28 @@ def _colab_sessao():
 
 
 def _pode_gerir_ext():
-    """True se o ator atual pode fazer as ações de gestão (regularizar/conferir/repor)."""
-    return bool(current_user.is_authenticated and getattr(current_user, "pode_extintores", False))
+    """True se o ator atual pode fazer as ações de GESTÃO de extintor (regularizar/conferir/repor)
+    — mais restrito que "pode ver a área de extintores".
+    [R55] Antes usava pode_extintores (que só checa se tem QUALQUER tarefa do grupo, incluindo
+    'ext_ver' — só ver) tanto para current_user quanto (na correção anterior) para o colaborador de
+    sessão; isso deixava passar quem só tinha permissão de VER, sem ter ext_repor/ext_conferir de
+    verdade. Agora checa a tarefa granular certa nos dois casos."""
+    if current_user.is_authenticated:
+        if getattr(current_user, "is_admin", False):
+            return True
+        # Usuario (staff) sem is_admin não gerencia extintor nesta função — mantém o comportamento
+        # anterior para Usuario (só admin geria por esse caminho).
+        perms_fn = getattr(current_user, "_perms_efetivas", None)
+        if callable(perms_fn):
+            perms = perms_fn()
+            if "perm_total" in perms or ("ext_repor" in perms or "ext_conferir" in perms):
+                return True
+        return False
+    colab = _colab_sessao()
+    if colab:
+        perms = colab._perms_efetivas()
+        return bool("perm_total" in perms or "ext_repor" in perms or "ext_conferir" in perms)
+    return False
 
 
 def _ext_acesso(f):
@@ -1184,9 +1223,19 @@ def extintor_repor(eid):
 def extintor_desativar(eid):
     e = db.session.get(Extintor, eid) or abort(404)
     e.ativo = False
-    _log("Extintor", f"{e.codigo}: extintor desativado por {current_user.nome}")
+    # [R31] Se o extintor tinha pendencia de etiqueta ABERTA, resolve automaticamente ao desativar —
+    # senao a contagem de "pendencias" continuava incluindo um extintor que a lista/filtro de
+    # Atencao (etiqueta) nunca mostra (pois a lista so traz ativo=True), causando divergencia entre o
+    # numero mostrado e o que o filtro de fato retorna.
+    pendentes = PendenciaEtiqueta.query.filter_by(extintor_id=e.id, resolvida=False).all()
+    for p in pendentes:
+        p.resolvida = True
+        p.resolvida_em = datetime.utcnow()
+        p.resolvida_por = f"{current_user.nome} (auto: extintor desativado)"
+    _log("Extintor", f"{e.codigo}: extintor desativado por {current_user.nome}"
+         + (f" ({len(pendentes)} pendência(s) de etiqueta auto-resolvida(s))" if pendentes else ""))
     db.session.commit()
-    flash("Extintor desativado.", "success")
+    flash("Extintor desativado." + (f" {len(pendentes)} pendência(s) de etiqueta foram resolvidas junto." if pendentes else ""), "success")
     return redirect(url_for("almox.extintores"))
 
 

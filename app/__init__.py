@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from flask import Flask, send_from_directory, session, redirect, url_for, request
 from sqlalchemy import inspect, text
@@ -428,6 +429,25 @@ def _migrar_planta_padrao():
         db.session.rollback()
 
 
+def _migrar_pendencias_orfas():
+    """[R31] Resolve automaticamente pendencias de etiqueta abertas cujo extintor JA ESTA INATIVO
+    (desativado antes desta correcao existir). Idempotente: so mexe nas que ainda estao abertas."""
+    from .models import PendenciaEtiqueta, Extintor
+    try:
+        orfas = (PendenciaEtiqueta.query
+                 .join(Extintor, Extintor.id == PendenciaEtiqueta.extintor_id)
+                 .filter(PendenciaEtiqueta.resolvida.is_(False), Extintor.ativo.is_(False))
+                 .all())
+        for p in orfas:
+            p.resolvida = True
+            p.resolvida_em = datetime.utcnow()
+            p.resolvida_por = "sistema (migração: extintor já estava inativo)"
+        if orfas:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
@@ -461,6 +481,7 @@ def create_app():
     from .geral import geral_bp
     from .notinhas import notinhas_bp
     from .relatorios import relatorios_bp
+    from .facilities import facilities_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(sol_bp)
@@ -469,6 +490,7 @@ def create_app():
     app.register_blueprint(geral_bp)
     app.register_blueprint(notinhas_bp)
     app.register_blueprint(relatorios_bp)
+    app.register_blueprint(facilities_bp)
 
     @app.route("/uploads/<path:nome>")
     def uploads(nome):
@@ -587,5 +609,11 @@ def create_app():
         _seed_fabricantes()
         _migrar_estoque_localizador()
         _migrar_planta_padrao()
+        _migrar_pendencias_orfas()
+        try:
+            from .facilities import _promover_falhas_vencidas
+            _promover_falhas_vencidas()
+        except Exception:
+            pass
 
     return app

@@ -211,6 +211,17 @@
       {{ item('almox.notificacoes','list','Notificações', n_notif_almox) }}
       {% endif %}
 
+      <div class="sb-sec">Facilities<span class="chev">▾</span></div>
+      {{ item('facilities.equipamentos','box','Equipamentos') }}
+      {% if perm.is_admin %}
+      <div class="sb-subsec">Inspeções</div>
+      {{ item('facilities.modelos','doc','Modelos de checklist') }}
+      {{ item('facilities.tipos','tag','Tipos de equipamento') }}
+      {% endif %}
+      <div class="sb-subsec">Rotina</div>
+      {{ item('facilities.programacao','doc','Programação de atividades') }}
+      {{ item('facilities.relatorio_atividades','chart','Relatório de atividades') }}
+
       <div class="sb-sec">Ajuda<span class="chev">▾</span></div>
       {{ item('admin.backup','save','Baixar backup (.sql)') }}
       {{ item('admin.log_sistema','list','Log do sistema') }}
@@ -233,6 +244,11 @@
       {% endif %}
       {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
       {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
+      {% if perm.pode_facilities %}
+      {{ item('facilities.equipamentos','box','Equipamentos (Facilities)') }}
+      {{ item('facilities.programacao','doc','Programação de atividades') }}
+      {{ item('facilities.relatorio_atividades','chart','Relatório de atividades') }}
+      {% endif %}
 
       {% if perm.pode_relatorios or perm.is_almox %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
@@ -419,6 +435,19 @@ function filtraDrop(inp){
     if(location.pathname.indexOf('/almoxarifado/extintores')!==0){
       localStorage.removeItem('filtroExtintores');
     }
+  }catch(e){}
+})();
+</script>
+<script>
+// [R46] Campos de data com a classe "data-chegada-hoje" vem preenchidos com a data de HOJE por padrão
+// (ex.: confirmar chegada de material). O usuario ainda pode trocar antes de enviar.
+(function(){
+  try{
+    var hoje = new Date();
+    var iso = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0') + '-' + String(hoje.getDate()).padStart(2,'0');
+    document.querySelectorAll('.data-chegada-hoje').forEach(function(inp){
+      if(!inp.value) inp.value = iso;
+    });
   }catch(e){}
 })();
 </script>

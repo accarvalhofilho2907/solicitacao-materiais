@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Programação de atividades{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h4 class="mb-0">Programação de atividades</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNovaAtividade">＋ Nova atividade</button>
+</div>
+<div class="alert alert-secondary small py-2">Agenda simples — o que fazer e quando. Sem recorrência automática por enquanto.</div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Data prevista</th><th>Atividade</th><th>Equipamento / local</th><th>Responsável</th><th>Situação</th><th></th></tr></thead>
+  <tbody>
+    {% for a in itens %}
+    <tr {{ 'class=table-danger' if a.atrasada }}>
+      <td class="small">{{ a.data_prevista.strftime('%d/%m/%Y') }}</td>
+      <td><b>{{ a.titulo }}</b>{% if a.descricao %}<div class="text-muted small">{{ a.descricao }}</div>{% endif %}</td>
+      <td class="small">{{ a.equipamento.nome if a.equipamento else (a.planta.nome if a.planta else '—') }}</td>
+      <td class="small">{{ a.responsavel_nome }}</td>
+      <td>{% if a.atrasada %}<span class="badge bg-danger">atrasada</span>{% else %}<span class="badge bg-secondary">agendado</span>{% endif %}</td>
+      <td class="text-end">
+        <form method="post" action="{{ url_for('facilities.programacao_concluir', aid=a.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-success">Concluir</button>
+        </form>
+        {% if current_user.is_admin %}
+        <form method="post" action="{{ url_for('facilities.programacao_cancelar', aid=a.id) }}" style="display:inline" onsubmit="return confirm('Cancelar esta atividade?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger">Cancelar</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted text-center py-3">Nenhuma atividade programada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<div class="modal fade" id="modalNovaAtividade" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-header"><h5 class="modal-title">Nova atividade programada</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small">Título</label><input name="titulo" class="form-control" required></div>
+        <div class="mb-2"><label class="form-label small">Descrição (opcional)</label><textarea name="descricao" class="form-control" rows="2"></textarea></div>
+        <div class="row g-2">
+          <div class="col-md-6"><label class="form-label small">Data prevista</label><input type="date" name="data_prevista" class="form-control" required></div>
+          <div class="col-md-6"><label class="form-label small">Planta</label>
+            <select name="planta_id" class="form-select">
+              <option value="">—</option>
+              {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="mb-2 mt-2"><label class="form-label small">Equipamento (opcional)</label>
+          <select name="equipamento_id" class="form-select">
+            <option value="">—</option>
+            {% for e in equipamentos_disp %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
+          </select></div>
+        <div class="mb-2"><label class="form-label small">Responsável (nome livre, opcional)</label>
+          <input name="responsavel_texto" class="form-control" placeholder="Ex.: Maria Facilities"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary">Programar</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

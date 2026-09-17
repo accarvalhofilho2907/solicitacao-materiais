@@ -161,8 +161,32 @@ def atividade_rapida():
 @notinhas_bp.route("/exportar")
 @_pode
 def exportar():
-    q, *_ = _filtra(Notinha.query)
+    q, f_de, f_ate, f_forn, *_ = _filtra(Notinha.query)
     notas = q.order_by(Notinha.data).all()
     pdf = gerar_pdf_notinhas(notas)
+
+    # [R50] Nome do arquivo: NOTINHAS_DDMMAA_DDMMAA[_FORNECEDOR]
+    def _ddmmaa(iso):
+        if not iso:
+            return None
+        try:
+            return datetime.strptime(iso, "%Y-%m-%d").strftime("%d%m%y")
+        except ValueError:
+            return None
+    partes = ["NOTINHAS"]
+    d1 = _ddmmaa(f_de)
+    d2 = _ddmmaa(f_ate)
+    if d1:
+        partes.append(d1)
+    if d2:
+        partes.append(d2)
+    if f_forn:
+        forn_obj = db.session.get(Fornecedor, int(f_forn))
+        if forn_obj:
+            nome_forn = "".join(ch for ch in (forn_obj.nome or "") if ch.isalnum() or ch == "_").upper()
+            if nome_forn:
+                partes.append(nome_forn)
+    nome_arquivo = "_".join(partes) + ".pdf"
+
     return Response(pdf, mimetype="application/pdf",
-                    headers={"Content-Disposition": "attachment; filename=notinhas.pdf"})
+                    headers={"Content-Disposition": f"attachment; filename={nome_arquivo}"})

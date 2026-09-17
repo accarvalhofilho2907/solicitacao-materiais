@@ -16,7 +16,7 @@
       <td class="small">{{ r.executado_em.strftime('%d/%m/%Y %H:%M') }}</td>
       <td><b>{{ r.titulo }}</b>{% if r.descricao %}<div class="text-muted small">{{ r.descricao }}</div>{% endif %}
         {% if r.atividade_programada %}<div class="text-muted small">Programada: {{ r.atividade_programada.titulo }}</div>{% endif %}</td>
-      <td class="small">{{ r.equipamento.nome if r.equipamento else (r.planta.nome if r.planta else '—') }}</td>
+      <td class="small">{{ r.produto.nome if r.produto else (r.planta.nome if r.planta else '—') }}</td>
       <td class="small">{{ r.executado_por_nome }}</td>
     </tr>
     {% else %}
@@ -47,10 +47,10 @@
               <option value="">—</option>
               {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
             </select></div>
-          <div class="col-md-6"><label class="form-label small">Equipamento (opcional)</label>
-            <select name="equipamento_id" class="form-select">
+          <div class="col-md-6"><label class="form-label small">Material (opcional)</label>
+            <select name="produto_id" class="form-select">
               <option value="">—</option>
-              {% for e in equipamentos_disp %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
+              {% for m in materiais_disp %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}
             </select></div>
         </div>
       </div>

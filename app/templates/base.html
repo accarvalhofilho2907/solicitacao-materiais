@@ -166,18 +166,22 @@
     <nav class="sb-nav" id="sbNav">
     {% if perm.is_admin %}
       <div class="sb-sec">Cadastro<span class="chev">▾</span></div>
-      {{ item('almox.armazens','warehouse','Armazéns') }}
-      {{ item('admin.atividades','tag','Atividades') }}
-      {{ item('almox.chaves','key','Chaves') }}
-      {{ item('admin.cidades','tag','Cidades') }}
+      <div class="sb-subsec">Checklists</div>
+      {{ item('facilities.modelos','doc','Modelos de checklist') }}
+      <div class="sb-subsec">Pessoas e empresas</div>
       {{ item('almox.colaboradores','users','Colaboradores') }}
       {{ item('admin.fornecedores','building','Empresas e Fornecedores') }}
-      {{ item('almox.fabricantes','tag','Fabricantes') }}
-      {{ item('almox.localizadores','pin','Localizadores') }}
       {{ item('almox.papeis','shield','Perfis de acesso') }}
-      {{ item('almox.plantas','turbine','Plantas') }}
-      {{ item('admin.tipos','tag','Tipos de material') }}
       {{ item('admin.transportadoras','truck','Transportadoras') }}
+      <div class="sb-subsec">Plantas, Armazéns e Localizadores</div>
+      {{ item('almox.armazens','warehouse','Armazéns') }}
+      {{ item('almox.localizadores','pin','Localizadores') }}
+      {{ item('almox.plantas','turbine','Plantas') }}
+      <div class="sb-subsec">Operacional</div>
+      {{ item('admin.atividades','tag','Atividades') }}
+      <div class="sb-subsec">Estoque</div>
+      {{ item('admin.tipos','tag','Tipos de material') }}
+      {{ item('almox.fabricantes','tag','Fabricantes') }}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
       <div class="sb-subsec">Solicitações</div>
@@ -186,17 +190,21 @@
       {{ item('almox.index','box','Chegadas') }}
       <div class="sb-subsec">Cotação e Fornecimento</div>
       {{ item('admin.coletas_proprias','truck','Coletas e Envios Próprios') }}
-      {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
       {{ item('admin.comparativo','scale','Comparativo (menor custo)') }}
       {{ item('admin.enviar_lote','chat','Enviar cotação', n_cotacao) }}
       {{ item('admin.precos','money','Histórico de preços') }}
       {{ item('admin.importar_orcamento','doc','Importar orçamento') }}
-      <div class="sb-subsec">Extintores</div>
+      <div class="sb-subsec">Chaves, Inspeções e checklists</div>
+      {{ item('almox.chaves','key','Chaves') }}
       {{ item('almox.extintores','ext','Extintores') }}
-      <div class="sb-subsec">Notinhas e Estoque</div>
+      <div class="sb-subsec">Estoque &amp; Notinhas</div>
       {{ item('almox.localizadores_gerar','cog','Gerar localizadores') }}
       {{ item('almox.inventario_pendentes','check','Baixas de inventário') }}
       {{ item('notinhas.index','doc','Notinhas') }}
+      {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
+      <div class="sb-subsec">Facilities</div>
+      {{ item('facilities.programacao','doc','Programação de atividades') }}
+      {{ item('facilities.rdo','doc','Relatório Diário de Obra') }}
 
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>
       {{ item('almox.relatorios_central','chart','Central de relatórios') }}
@@ -204,23 +212,13 @@
       {{ item('relatorios.carga','chart','Relatório de carga') }}
       {{ item('relatorios.etiquetas','printer','Geração de etiquetas') }}
       {{ item('almox.relatorio_perdas','chart','Perdas de estoque') }}
+      {{ item('facilities.relatorio_atividades','chart','Relatório de atividades') }}
 
       {% if perm.is_admin %}
       <div class="sb-sec">Administrativo<span class="chev">▾</span></div>
       {{ item('almox.adm_notas','doc','Notas fiscais (OPEX/CAPEX)') }}
       {{ item('almox.notificacoes','list','Notificações', n_notif_almox) }}
       {% endif %}
-
-      <div class="sb-sec">Facilities<span class="chev">▾</span></div>
-      {{ item('facilities.equipamentos','box','Equipamentos') }}
-      {% if perm.is_admin %}
-      <div class="sb-subsec">Inspeções</div>
-      {{ item('facilities.modelos','doc','Modelos de checklist') }}
-      {{ item('facilities.tipos','tag','Tipos de equipamento') }}
-      {% endif %}
-      <div class="sb-subsec">Rotina</div>
-      {{ item('facilities.programacao','doc','Programação de atividades') }}
-      {{ item('facilities.relatorio_atividades','chart','Relatório de atividades') }}
 
       <div class="sb-sec">Ajuda<span class="chev">▾</span></div>
       {{ item('admin.backup','save','Baixar backup (.sql)') }}
@@ -245,9 +243,10 @@
       {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
       {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
       {% if perm.pode_facilities %}
-      {{ item('facilities.equipamentos','box','Equipamentos (Facilities)') }}
+      {{ item('facilities.inspecionar','box','Inspecionar (checklist)') }}
       {{ item('facilities.programacao','doc','Programação de atividades') }}
       {{ item('facilities.relatorio_atividades','chart','Relatório de atividades') }}
+      {{ item('facilities.rdo','doc','Relatório Diário de Obra') }}
       {% endif %}
 
       {% if perm.pode_relatorios or perm.is_almox %}
@@ -337,6 +336,16 @@ function filterMenu(q){
 }
 document.querySelectorAll('#sbNav .sb-sec').forEach(function(sec){
   sec.addEventListener('click',function(){
+    var vaiAbrir = sec.classList.contains('collapsed');   // estava fechada -> este clique vai abrir
+    // [M4] Acordeao: ao ABRIR uma secao, fecha qualquer OUTRA que esteja aberta (so uma por vez).
+    if(vaiAbrir){
+      document.querySelectorAll('#sbNav .sb-sec').forEach(function(outra){
+        if(outra===sec || outra.classList.contains('collapsed')) return;
+        outra.classList.add('collapsed');
+        var m=outra.nextElementSibling;
+        while(m&&!m.classList.contains('sb-sec')){ if(m.classList.contains('sb-item')||m.classList.contains('sb-subsec')) m.style.display='none'; m=m.nextElementSibling; }
+      });
+    }
     sec.classList.toggle('collapsed');
     var n=sec.nextElementSibling;
     while(n&&!n.classList.contains('sb-sec')){ if(n.classList.contains('sb-item')||n.classList.contains('sb-subsec')) n.style.display=sec.classList.contains('collapsed')?'none':''; n=n.nextElementSibling; }
@@ -355,6 +364,19 @@ function cadastrarRapido(entidade, selectId, comUF){
    .then(function(r){return r.json();}).then(function(d){ if(!d.ok){alert('Erro: '+(d.erro||''));return;}
      var sel=document.getElementById(selectId); var op=document.createElement('option'); op.value=d.id; op.textContent=d.nome; op.selected=true; sel.appendChild(op);
    }).catch(function(){ alert('Falha ao cadastrar.'); });
+}
+// [M1] Carrega as cidades de uma UF automaticamente (API do IBGE via proxy interno com cache) —
+// substitui o cadastro manual de Cidade. Reaproveitável em qualquer tela com o padrão UF -> Cidade.
+function carregarCidadesPorUF(uf, selectCidadeId){
+  var sel = document.getElementById(selectCidadeId);
+  if(!uf){ sel.innerHTML = '<option value="">— escolha a UF primeiro —</option>'; return; }
+  sel.innerHTML = '<option value="">Carregando...</option>';
+  fetch('/admin/api/cidades-por-uf/'+uf).then(function(r){return r.json();}).then(function(d){
+    if(!d.ok){ sel.innerHTML = '<option value="">Não foi possível carregar — tente de novo</option>'; return; }
+    var opts = '<option value="">— selecione a cidade —</option>';
+    d.cidades.forEach(function(c){ opts += '<option value="'+c.id+'">'+c.nome+'</option>'; });
+    sel.innerHTML = opts;
+  }).catch(function(){ sel.innerHTML = '<option value="">Falha ao carregar cidades</option>'; });
 }
 function copiarTexto(id){ var el=document.getElementById(id); navigator.clipboard.writeText(el.value||el.textContent).then(function(){ alert('Texto copiado!'); }); }
 function filtraDrop(inp){

@@ -1222,8 +1222,8 @@ TIPO_ITEM_CHECKLIST = ("IMPEDITIVO", "ATENCAO", "TEMPORARIO")
 
 class ModeloChecklist(db.Model):
     """Um "formulário" de checklist reutilizável (ex.: "Inspeção de Gerador",
-    "Ronda de Veículo"). Só o Admin/Master cria e edita. Pode ser aplicado a
-    qualquer TipoEquipamento compatível."""
+    "Ronda de Veículo"). Só o Admin/Master cria e edita. [M2] Escolhido livremente
+    na hora de executar — não há vínculo fixo gravado no cadastro de Material."""
     __tablename__ = "sf_modelos_checklist"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(160), nullable=False)
@@ -1253,71 +1253,42 @@ class ItemChecklist(db.Model):
     ativo = db.Column(db.Boolean, default=True)
 
 
-class TipoEquipamento(db.Model):
-    """Categoria de equipamento (ex.: "Gerador", "Veículo leve", "Ar-condicionado").
-    Aponta para o ModeloChecklist que será usado ao inspecionar equipamentos desse tipo."""
-    __tablename__ = "sf_tipos_equipamento"
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(160), nullable=False, unique=True)
-    modelo_checklist_id = db.Column(db.ForeignKey("sf_modelos_checklist.id"))
-    ativo = db.Column(db.Boolean, default=True)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    modelo_checklist = db.relationship("ModeloChecklist")
-
-
-class Equipamento(db.Model):
-    """Um ativo físico de Facilities (ex.: "Gerador subestação", "Hilux QZX-1140").
-    Pertence a uma planta (igual às demais tabelas operacionais) e a um TipoEquipamento,
-    que define qual checklist ele usa."""
-    __tablename__ = "sf_equipamentos"
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(200), nullable=False)
-    codigo = db.Column(db.String(40))          # identificador curto (ex.: "GER-002")
-    tipo_id = db.Column(db.ForeignKey("sf_tipos_equipamento.id"), nullable=False)
-    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
-    local = db.Column(db.String(200))
-    qr_uid = db.Column(db.String(20), unique=True)
-    ativo = db.Column(db.Boolean, default=True)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    tipo = db.relationship("TipoEquipamento")
-    planta = db.relationship("Planta")
-
-    @property
-    def modelo_checklist(self):
-        return self.tipo.modelo_checklist if self.tipo else None
-
-
 class ExecucaoChecklist(db.Model):
-    """Uma inspeção/execução concluída de um Equipamento, usando um ModeloChecklist.
+    """[M2] Uma inspeção/execução concluída sobre um item de MATERIAL (ProdutoAlmox), usando um
+    ModeloChecklist — os dois escolhidos LIVREMENTE no momento da execução (não há vínculo fixo
+    gravado no cadastro do material; o próprio modelo de checklist comporta um "cabeçalho" onde a
+    pessoa registra dados como marca/modelo/nº de série, guardado em cabecalho_json).
     resultado_geral: 'OK' (nada reprovado), 'ATENCAO' (algo em atenção, mas fechou),
     'IMPEDITIVO' (tinha item impeditivo — nesse caso o registro existe mas a UI deve
     ter bloqueado o fechamento; guardamos para auditoria de tentativa)."""
     __tablename__ = "sf_execucoes_checklist"
     id = db.Column(db.Integer, primary_key=True)
-    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"), nullable=False)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"), nullable=False)
     modelo_id = db.Column(db.ForeignKey("sf_modelos_checklist.id"), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
     executado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
     executado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     executado_em = db.Column(db.DateTime, default=datetime.utcnow)
     resultado_geral = db.Column(db.String(20))
-    respostas_json = db.Column(db.Text)   # snapshot das respostas item a item (JSON)
+    respostas_json = db.Column(db.Text)     # snapshot das respostas item a item (JSON)
+    cabecalho_json = db.Column(db.Text)     # dados livres digitados na hora (marca, série, etc.)
     observacoes = db.Column(db.Text)
 
-    equipamento = db.relationship("Equipamento")
+    produto = db.relationship("ProdutoAlmox")
     modelo = db.relationship("ModeloChecklist")
+    planta = db.relationship("Planta")
 
 
 class ItemFalhaAberta(db.Model):
-    """O "relógio" de um item TEMPORARIO reprovado e ainda não corrigido. Criado quando
-    uma execução reprova um item TEMPORARIO; resolvido quando uma execução seguinte
-    aprova o mesmo item. Uma rotina periódica varre os registros com status='ATENCAO'
-    cujo prazo_final já passou e promove para status='IMPEDITIVO' — SEM depender de
-    nova inspeção acontecer (é por tempo corrido, conforme definido por Antonio)."""
+    """[M2] O "relógio" de um item TEMPORARIO reprovado e ainda não corrigido, agora ligado ao
+    MATERIAL (produto_id) inspecionado, não mais a um Equipamento. Criado quando uma execução
+    reprova um item TEMPORARIO; resolvido quando uma execução seguinte aprova o mesmo item NO
+    MESMO PRODUTO. Uma rotina periódica varre os registros com status='ATENCAO' cujo prazo_final
+    já passou e promove para status='IMPEDITIVO' — SEM depender de nova inspeção acontecer (é por
+    tempo corrido, conforme definido por Antonio)."""
     __tablename__ = "sf_falhas_abertas"
     id = db.Column(db.Integer, primary_key=True)
-    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"), nullable=False)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"), nullable=False)
     item_checklist_id = db.Column(db.ForeignKey("sf_itens_checklist.id"), nullable=False)
     aberto_em = db.Column(db.DateTime, default=datetime.utcnow)
     prazo_final = db.Column(db.Date)   # aberto_em + prazo_dias do item
@@ -1325,7 +1296,7 @@ class ItemFalhaAberta(db.Model):
     promovido_em = db.Column(db.DateTime)
     resolvido_em = db.Column(db.DateTime)
 
-    equipamento = db.relationship("Equipamento")
+    produto = db.relationship("ProdutoAlmox")
     item_checklist = db.relationship("ItemChecklist")
 
     @property
@@ -1344,13 +1315,13 @@ class ItemFalhaAberta(db.Model):
 
 class AtividadeProgramada(db.Model):
     """Uma atividade agendada (avulsa, sem recorrência por ora): "trocar filtro do gerador
-    em 05/08", "inspecionar quadro elétrico"). Pode ou não estar ligada a um Equipamento."""
+    em 05/08", "inspecionar quadro elétrico"). Pode ou não estar ligada a um item de Material."""
     __tablename__ = "sf_atividades_programadas"
     id = db.Column(db.Integer, primary_key=True)
     titulo = db.Column(db.String(200), nullable=False)
     descricao = db.Column(db.Text)
     data_prevista = db.Column(db.Date, nullable=False)
-    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"))
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
     planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
     responsavel_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
     responsavel_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
@@ -1359,7 +1330,7 @@ class AtividadeProgramada(db.Model):
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
-    equipamento = db.relationship("Equipamento")
+    produto = db.relationship("ProdutoAlmox")
     planta = db.relationship("Planta")
 
     @property
@@ -1384,7 +1355,7 @@ class RelatorioAtividade(db.Model):
     __tablename__ = "sf_relatorios_atividade"
     id = db.Column(db.Integer, primary_key=True)
     atividade_programada_id = db.Column(db.ForeignKey("sf_atividades_programadas.id"))
-    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos.id"))
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
     planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
     titulo = db.Column(db.String(200), nullable=False)
     descricao = db.Column(db.Text)
@@ -1394,7 +1365,7 @@ class RelatorioAtividade(db.Model):
     fotos_json = db.Column(db.Text)   # lista de caminhos/nomes de arquivo (fotos ficam em disco)
 
     atividade_programada = db.relationship("AtividadeProgramada")
-    equipamento = db.relationship("Equipamento")
+    produto = db.relationship("ProdutoAlmox")
     planta = db.relationship("Planta")
 
     @property
@@ -1406,5 +1377,40 @@ class RelatorioAtividade(db.Model):
             c = db.session.get(Colaborador, self.executado_por_colaborador_id)
             return c.nome if c else "—"
         return "—"
+
+
+# ============================================================================
+# RELATÓRIO DIÁRIO DE OBRA (RDO) — puxa dados da Programação de Atividades
+# ============================================================================
+
+class RelatorioDiarioObra(db.Model):
+    """Registro diário tradicional de campo/obra: mão de obra presente, atividades do dia
+    (alimentadas a partir de AtividadeProgramada daquela data), condições climáticas,
+    equipamentos usados. Um RDO por dia por planta (na prática; não é uma constraint dura)."""
+    __tablename__ = "sf_rdo"
+    id = db.Column(db.Integer, primary_key=True)
+    data = db.Column(db.Date, nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    condicao_climatica = db.Column(db.String(80))
+    mao_de_obra_texto = db.Column(db.Text)      # lista livre (nome + função) por linha
+    equipamentos_texto = db.Column(db.Text)      # equipamentos usados no dia, texto livre
+    atividades_ids_json = db.Column(db.Text)     # ids de AtividadeProgramada puxados daquele dia
+    observacoes = db.Column(db.Text)
+    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    planta = db.relationship("Planta")
+
+    @property
+    def atividades(self):
+        import json as _json
+        try:
+            ids = _json.loads(self.atividades_ids_json or "[]")
+        except (ValueError, TypeError):
+            ids = []
+        if not ids:
+            return []
+        return AtividadeProgramada.query.filter(AtividadeProgramada.id.in_(ids)).all()
+
 
 

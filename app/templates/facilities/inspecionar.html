@@ -1,11 +1,23 @@
 {% extends "base.html" %}
-{% block title %}Inspecionar {{ equipamento.nome }}{% endblock %}
+{% block title %}Inspecionar {{ produto.nome }}{% endblock %}
 {% block content %}
-<h4 class="mb-1">Inspeção — {{ equipamento.nome }}</h4>
-<p class="text-muted small mb-3">Modelo: {{ modelo.nome }}{% if equipamento.codigo %} · {{ equipamento.codigo }}{% endif %}</p>
+<h4 class="mb-1">Inspeção — {{ produto.nome }}</h4>
+<p class="text-muted small mb-3">Modelo: {{ modelo.nome }}</p>
 
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="produto_id" value="{{ produto.id }}">
+  <input type="hidden" name="modelo_id" value="{{ modelo.id }}">
+
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="mb-2">Dados desta inspeção (opcional)</h6>
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label small">Marca/modelo</label><input name="cab_marca" class="form-control form-control-sm"></div>
+      <div class="col-md-4"><label class="form-label small">Nº de série</label><input name="cab_serie" class="form-control form-control-sm"></div>
+      <div class="col-md-4"><label class="form-label small">Local</label><input name="cab_local" class="form-control form-control-sm"></div>
+    </div>
+  </div></div>
+
   <div class="card mb-3"><div class="card-body">
   <table class="table table-sm align-middle mb-0">
     <thead class="table-light"><tr><th style="width:50%">Item</th><th>Tipo</th><th>Resultado</th><th>Situação</th></tr></thead>
@@ -48,6 +60,6 @@
     <textarea name="observacoes" class="form-control" rows="2"></textarea></div>
 
   <button class="btn btn-primary">Gerar checklist</button>
-  <a class="btn btn-outline-secondary" href="{{ url_for('facilities.equipamentos') }}">Cancelar</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('facilities.inspecionar') }}">Cancelar</a>
 </form>
 {% endblock %}

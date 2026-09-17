@@ -1704,6 +1704,42 @@ def atividade_editar(aid):
 
 
 # ---------------- Cadastro rápido (inline / JSON) ----------------
+@admin_bp.route("/api/cidades-por-uf/<uf>")
+@login_required
+def api_cidades_por_uf(uf):
+    """[M1] Retorna a lista de cidades de uma UF. Busca na API pública do IBGE (municípios
+    oficiais e completos, sem precisar de cadastro manual); guarda em cache na própria tabela
+    Cidade (evita bater na API do IBGE de novo na mesma UF, e serve de fallback se a API externa
+    estiver fora do ar). Cidade deixa de ser um cadastro que a pessoa mantém manualmente."""
+    uf = (uf or "").strip().upper()[:2]
+    if len(uf) != 2 or not uf.isalpha():
+        return jsonify(ok=False, erro="UF inválida"), 400
+
+    cache = Cidade.query.filter_by(uf=uf, ativo=True).order_by(Cidade.nome).all()
+    if cache:
+        return jsonify(ok=True, cidades=[{"id": c.id, "nome": c.nome} for c in cache])
+
+    import urllib.request, json as _json
+    try:
+        url = f"https://servicodados.ibge.gov.br/api/v1/localidades/estados/{uf}/municipios"
+        with urllib.request.urlopen(url, timeout=6) as resp:
+            dados = _json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return jsonify(ok=False, erro="Não foi possível consultar as cidades agora. Tente novamente."), 502
+
+    novas = []
+    for m in dados:
+        nome = (m.get("nome") or "").strip().upper()
+        if not nome:
+            continue
+        c = Cidade(nome=nome, uf=uf, ativo=True)
+        db.session.add(c)
+        novas.append(c)
+    db.session.commit()
+    novas.sort(key=lambda c: c.nome)
+    return jsonify(ok=True, cidades=[{"id": c.id, "nome": c.nome} for c in novas])
+
+
 @admin_bp.route("/api/criar/<entidade>", methods=["POST"])
 @admin_required
 @csrf.exempt

@@ -159,8 +159,18 @@
             <div class="input-group input-group-sm"><select name="transportadora_id" id="selTransp" class="form-select"><option value="">— selecione a transportadora —</option>{% for t in transportadoras %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}</select>
             <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('transportadora','selTransp')">+</button></div></div>
           <div id="cbox" style="display:none"><label class="form-label small mb-0">Cidade de retirada</label>
-            <div class="input-group input-group-sm"><select name="cidade_retirada_id" id="selCidade" class="form-select"><option value="">— selecione a cidade —</option>{% for c in cidades %}<option value="{{ c.id }}">{{ c.rotulo }}</option>{% endfor %}</select>
-            <button type="button" class="btn btn-outline-secondary" onclick="cadastrarRapido('cidade','selCidade',true)">+</button></div></div>
+            <div class="row g-1">
+              <div class="col-4"><select id="selUF" class="form-select form-select-sm" onchange="carregarCidadesPorUF(this.value,'selCidade')">
+                <option value="">UF</option>
+                {% for sigla in ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'] %}
+                <option value="{{ sigla }}">{{ sigla }}</option>
+                {% endfor %}
+              </select></div>
+              <div class="col-8"><select name="cidade_retirada_id" id="selCidade" class="form-select form-select-sm">
+                <option value="">— escolha a UF primeiro —</option>
+              </select></div>
+            </div>
+          </div>
         </div>
         <button class="btn btn-success btn-sm mt-2">Definir e enviar Ordem de Compra</button>
         <div class="form-text">O frete é interno (não vai no e-mail ao fornecedor).</div>

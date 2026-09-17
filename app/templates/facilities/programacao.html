@@ -15,7 +15,7 @@
     <tr {{ 'class=table-danger' if a.atrasada }}>
       <td class="small">{{ a.data_prevista.strftime('%d/%m/%Y') }}</td>
       <td><b>{{ a.titulo }}</b>{% if a.descricao %}<div class="text-muted small">{{ a.descricao }}</div>{% endif %}</td>
-      <td class="small">{{ a.equipamento.nome if a.equipamento else (a.planta.nome if a.planta else '—') }}</td>
+      <td class="small">{{ a.produto.nome if a.produto else (a.planta.nome if a.planta else '—') }}</td>
       <td class="small">{{ a.responsavel_nome }}</td>
       <td>{% if a.atrasada %}<span class="badge bg-danger">atrasada</span>{% else %}<span class="badge bg-secondary">agendado</span>{% endif %}</td>
       <td class="text-end">
@@ -55,10 +55,10 @@
               {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
             </select></div>
         </div>
-        <div class="mb-2 mt-2"><label class="form-label small">Equipamento (opcional)</label>
-          <select name="equipamento_id" class="form-select">
+        <div class="mb-2 mt-2"><label class="form-label small">Material (opcional)</label>
+          <select name="produto_id" class="form-select">
             <option value="">—</option>
-            {% for e in equipamentos_disp %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
+            {% for m in materiais_disp %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}
           </select></div>
         <div class="mb-2"><label class="form-label small">Responsável (nome livre, opcional)</label>
           <input name="responsavel_texto" class="form-control" placeholder="Ex.: Maria Facilities"></div>

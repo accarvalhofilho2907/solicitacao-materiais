@@ -2639,3 +2639,166 @@ tudo, e controle de acesso granular via Perfis (fac_ver/fac_inspecionar/fac_cada
 fac_gerir_modelos) desde a modelagem inicial — nao como remendo posterior.
 PENDENTE (decisao em aberto de Antonio, sem prazo definido): se/quando o Extintor migra do sistema
 proprio (CHECK_EXTINTOR fixo) para este motor generico de checklist.
+
+### ================== REORGANIZACAO GRANDE (17/09, mesma sessao) — AGUARDANDO EXECUCAO ==================
+Antonio pediu reorganizacao completa do menu + mudancas estruturais. REGISTRADO, NADA EXECUTADO AINDA
+ate confirmacao final de "pode executar".
+
+[M1] Retirar CIDADES do menu como cadastro solto. Campos que precisam de cidade passam a buscar a lista
+     de cidades automaticamente A PARTIR DA UF escolhida (nao mais cadastro manual avulso).
+
+[M2] MUDANCA ESTRUTURAL GRANDE: Equipamento e TipoEquipamento (criados na leva anterior de Facilities)
+     SAEM do modelo de dados. O motor de checklist passa a rodar sobre PRODUTOALMOX (Material/Estoque)
+     que ja existe, generico POR TIPO (confirmado por Antonio: nao precisa diferenciar unidade fisica
+     individual — nao e' "Gerador nº1 x Gerador nº2", e' generico "Gerador").
+     - ExecucaoChecklist e ItemFalhaAberta passam a referenciar ProdutoAlmox em vez de Equipamento.
+     - O campo que hoje fica em TipoEquipamento (modelo_checklist_id) precisa migrar para o TIPO DE
+       MATERIAL (TipoMaterial) ou para o proprio ProdutoAlmox — A DEFINIR na implementacao qual encaixa
+       melhor no modelo ja existente de Material.
+     - Telas de Equipamentos/Tipos de equipamento SAEM do menu.
+
+[M3] NOVO: Relatorio Diario de Obra (RDO) — diferente do Relatorio de Atividades ja existente. Registro
+     diario tradicional de obra/campo: mao de obra presente, atividades do dia, condicoes climaticas,
+     equipamentos usados. CONFIRMADO por Antonio: "vai puxar da programacao" — ou seja, se alimenta de
+     AtividadeProgramada (o que estava agendado para aquele dia vira insumo do RDO).
+
+[M4] Comportamento do MENU (mudanca de UI): hoje varias secoes podem ficar abertas ao mesmo tempo depois
+     de clicadas. Antonio quer ACORDEAO: tudo comeca fechado; ao clicar para abrir uma secao, QUALQUER
+     outra que estiver aberta se FECHA automaticamente — so uma secao aberta por vez.
+
+[M5] MENU REORGANIZADO (estrutura final, substituindo a atual por completo):
+
+  📁 Cadastro
+    Sub: Checklists → Modelos de checklist
+    Sub: Pessoas e empresas → Colaboradores, Empresas e Fornecedores, Perfis de acesso, Transportadoras
+    Sub: Plantas, Armazens e localizadores → Armazéns, Localizadores, Plantas
+    Sub: Operacional → Atividades
+    Sub: Estoque → Tipos de material, Fabricantes
+    (CIDADES REMOVIDO — ver M1)
+
+  📁 Movimento
+    Sub: Solicitações → Solicitações, Aprovações, Chegadas
+    Sub: Cotação e Fornecimento → Coletas e Envios Próprios, Comparativo (menor custo), Enviar cotação,
+         Histórico de preços, Importar orçamento
+    Sub: Inspeções e checklists → Extintores
+    Sub: Estoque & Notinhas (RENOMEADO de "Notinhas e Estoque") → Gerar localizadores, Baixas de
+         inventário, Notinhas, Coletor (MOVIDO para cá, saiu de Cotação e Fornecimento)
+    Sub: Facilities → Programação de atividades, Relatório Diário de Obra (NOVO, ver M3)
+
+  📁 Relatório
+    Central de relatórios, Dashboard, Relatório de carga, Geração de etiquetas, Perdas de estoque,
+    Relatório de atividades
+
+  📁 Administrativo (só Admin)
+    Notas fiscais (OPEX/CAPEX), Notificações
+
+  📁 Ajuda
+    Baixar backup (.sql), Log do sistema, Sugestões, FAQ, Usuários - Antigo (só Master)
+
+  REMOVIDO do menu: Cidades (M1), Equipamentos e Tipos de equipamento (M2 — inspecao roda sobre
+  Material/Tipo de material, nao precisa mais de cadastro proprio de equipamento).
+
+PROXIMOS PASSOS quando Antonio autorizar (ordem sugerida): 1) M2 primeiro (mudanca de modelo de dados,
+a mais arriscada — remover Equipamento/TipoEquipamento, ligar checklist a Material); 2) M1 (cidade por
+UF); 3) M3 (RDO novo); 4) M5 (reorganizar o menu inteiro); 5) M4 (comportamento acordeao do menu).
+Sugiro essa ordem para nao ter que mexer no menu duas vezes (uma vez com Equipamentos, outra sem).
+
+### [M2] DESENHO FINAL CONFIRMADO (17/09) — sem vinculo fixo Tipo/Item -> Modelo
+Antonio esclareceu: NAO ha vinculo fixo entre Material e Modelo de Checklist (nem no Tipo, nem no Item).
+Na hora de EXECUTAR o checklist, a pessoa escolhe LIVREMENTE: (1) qual Material esta inspecionando,
+(2) qual Modelo de Checklist usar naquele momento. O proprio Modelo de checklist deve comportar um
+"cabecalho" com campos extras preenchidos na execucao (ex.: marca/modelo do gerador, numero de serie
+se houver, etc.) — MAS SEM travar isso no cadastro do Material. Ou seja: ExecucaoChecklist referencia
+produto_id (ProdutoAlmox) + modelo_id (ModeloChecklist), ambos escolhidos livremente no momento de
+inspecionar — nao existe mais TipoEquipamento nem Equipamento fazendo essa ponte.
+
+### [M2 + RDO] IMPLEMENTADO E TESTADO (17/09) — checklist sobre Material, sem Equipamento
+Executado o M2 completo (mudanca estrutural) + M3 (RDO novo), conforme desenho fechado com Antonio.
+
+MODELAGEM: Equipamento e TipoEquipamento REMOVIDOS de app/models.py. ExecucaoChecklist e
+ItemFalhaAberta agora referenciam produto_id (ProdutoAlmox), nao mais equipamento_id.
+ExecucaoChecklist ganhou cabecalho_json (dados livres digitados na hora: marca, serie, local — sem
+travar nada no cadastro do material). AtividadeProgramada e RelatorioAtividade tambem migrados para
+produto_id. Novo modelo RelatorioDiarioObra (RDO): data, planta, condicao_climatica, mao_de_obra_texto,
+equipamentos_texto, atividades_ids_json (lista de AtividadeProgramada puxadas do dia) + property
+.atividades que resolve os objetos reais.
+
+BLUEPRINT facilities.py REESCRITO do zero:
+  - Rotas de Equipamentos/Tipos REMOVIDAS.
+  - /facilities/inspecionar (GET sem parametros = tela de ESCOLHER material+modelo livremente; GET com
+    produto_id+modelo_id = formulario do checklist; POST = processa). A escolha e' livre a cada
+    execucao, sem vinculo fixo gravado em lugar nenhum.
+  - /facilities/programacao, /relatorio-atividades: adaptados para produto_id em vez de equipamento_id.
+  - /facilities/rdo (novo): GET lista RDOs + form de criar (com checkboxes das AtividadeProgramada de
+    HOJE, pre-carregadas); POST grava.
+  - Mantidas as 4 tarefas granulares de perfil (fac_ver/fac_inspecionar/fac_cadastrar_equipamento
+    [nome antigo, mantido por compatibilidade — nao e' mais usado ativamente já que nao ha mais
+    cadastro de equipamento]/fac_gerir_modelos) e os decoradores _gerir_required/_ver_required/
+    _inspecionar_required, sem mudanca de comportamento de permissao.
+
+TEMPLATES: removidos equipamentos.html e tipos.html (obsoletos); criados inspecionar_escolher.html
+(tela de escolha livre) e rdo.html (lista + modal de novo RDO com checkboxes de atividades do dia);
+inspecionar.html reescrito para trabalhar com produto (+ campos de cabecalho livre: marca, serie,
+local); programacao.html e relatorio_atividades.html com "equipamento" trocado por "produto" em
+todas as referencias.
+
+MENU: corrigido para nao referenciar mais facilities.equipamentos/facilities.tipos (que causavam
+BuildError - erro 500 em QUALQUER pagina, pois o menu aparece em toda tela). Facilities agora lista:
+Inspecionar (checklist), Modelos de checklist (so Admin), Programacao de atividades, Relatorio de
+atividades, Relatorio Diario de Obra. Testado com clique real (jsdom): 5 itens, sem erros de JS.
+
+TESTADO DE PONTA A PONTA (12 pontos): todas as telas nao dao mais 500; reprovar item TEMPORARIO sobre
+um MATERIAL (nao mais Equipamento) abre ItemFalhaAberta; cabecalho livre (marca/serie) e' salvo em
+JSON; prazo vencido promove automaticamente a IMPEDITIVO; reprovar de novo o mesmo item ja promovido
+BLOQUEIA a geracao; criar Programacao de atividade para HOJE -> aparece disponivel no formulario de
+RDO; criar RDO selecionando essa atividade -> RDO.atividades resolve corretamente o objeto real.
+Smoke test geral (11 telas) 200.
+
+NOTA IMPORTANTE: esta leva NAO fez ainda a reorganizacao completa do menu (M5 — as sub-secoes
+"Checklists", "Pessoas e empresas", etc. dentro de Cadastro, e "Estoque & Notinhas" com Coletor
+movido para la) nem o comportamento de menu em ACORDEAO (M4) nem a busca de cidade por UF (M1).
+Isso fica para a proxima etapa, para nao arriscar mexer em tudo de uma vez sem testar cada pedaco.
+
+### [M1] FEITO (17/09) — cidade por UF via API do IBGE, sem cadastro manual
+Nova rota admin.api_cidades_por_uf(uf): busca a lista de municipios de uma UF na API publica do
+IBGE (servicodados.ibge.gov.br/api/v1/localidades/estados/{UF}/municipios), grava em CACHE na propria
+tabela Cidade (evita bater na API de novo na mesma UF; serve de fallback se a API do IBGE cair) e
+devolve em JSON. Tela de Solicitacao (definir fornecedor, cidade de retirada no FOB): trocado o select
+solto de Cidade por DOIS selects encadeados (UF -> Cidade), com nova funcao JS global
+carregarCidadesPorUF() que popula o segundo select via fetch. Removido: item "Cidades" do menu de
+Cadastro, e da lista de cadastros em admin/cadastros.html (a rota antiga /admin/cidades continua
+existindo e funcionando, so nao esta mais navegavel pelo menu). NAO mexido: o select de cidade em
+Coletas Proprias, que e' um FILTRO de dados ja existentes (nao um "escolher cidade" de cadastro), fora
+do escopo do M1.
+TESTADO: com resposta simulada da API do IBGE (o sandbox de teste nao tem acesso a internet externa,
+mas a logica de parsing/cache foi validada com mock) — 1a chamada grava as cidades no banco, 2a chamada
+retorna do cache sem precisar da API de novo. UF invalida tratada com erro amigavel. Smoke test geral
+(5 telas) 200; rota antiga /admin/cidades confirmada ainda funcional (200), so nao mais no menu.
+
+### [M5 + M4] FEITOS (17/09) — menu reorganizado por completo + acordeao
+[M5] Menu do Admin reescrito do zero, seguindo EXATAMENTE a estrutura definida por Antonio:
+  Cadastro: Sub Checklists (Modelos de checklist) / Sub Pessoas e empresas (Colaboradores, Empresas
+  e Fornecedores, Perfis de acesso, Transportadoras) / Sub Plantas Armazens e Localizadores (Armazens,
+  Localizadores, Plantas) / Sub Operacional (Atividades) / Sub Estoque (Tipos de material, Fabricantes).
+  Movimento: Sub Solicitacoes (Solicitacoes, Aprovacoes, Chegadas) / Sub Cotacao e Fornecimento
+  (Coletas e Envios Proprios, Comparativo, Enviar cotacao, Historico de precos, Importar orcamento) /
+  Sub "Chaves, Inspecoes e checklists" (Chaves + Extintores — nome e conteudo ajustados apos Antonio
+  notar que Chaves tinha sumido do menu do Admin ao reescrever) / Sub "Estoque & Notinhas" (Gerar
+  localizadores, Baixas de inventario, Notinhas, Coletor — Coletor MOVIDO pra ca, saiu de Cotacao e
+  Fornecimento) / Sub Facilities (Programacao de atividades, Relatorio Diario de Obra).
+  Relatorio: Central de relatorios, Dashboard, Relatorio de carga, Geracao de etiquetas, Perdas de
+  estoque, Relatorio de atividades (Facilities, adicionado aqui conforme pedido).
+  Administrativo (so Admin): Notas fiscais, Notificacoes. Ajuda: igual antes.
+  Testado com clique real (jsdom): ordem e agrupamento EXATOS confirmados item a item; sem erros de JS;
+  smoke test geral (13 telas) 200.
+
+[M4] Comportamento de ACORDEAO no menu: ao clicar para ABRIR uma secao, qualquer OUTRA que estiver
+  aberta se FECHA automaticamente (so uma aberta por vez). Clicar na mesma secao aberta so fecha ela,
+  sem mexer nas demais. Testado com sequencia real de cliques (jsdom): Cadastro abre -> Movimento abre
+  e fecha Cadastro sozinho -> Relatorio abre e fecha Movimento sozinho -> clicar em Relatorio de novo
+  so fecha ele. Todos os 5 passos confirmados no comportamento esperado.
+
+=== REORGANIZACAO GRANDE (M1-M5) CONCLUIDA ===
+Retirar Cidades do menu (M1, via API IBGE) + mudanca estrutural do checklist para Material (M2) + RDO
+novo (M3) + menu reorganizado por completo (M5) + acordeao (M4). Tudo testado e empacotado. Antonio vai
+subir tudo de uma vez ao final.

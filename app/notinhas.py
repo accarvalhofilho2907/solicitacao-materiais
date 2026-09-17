@@ -42,6 +42,10 @@ def _parse_valor_filtro(s):
 
 
 def _filtra(q):
+    from .almox import _planta_ativa_id
+    _pid = _planta_ativa_id()
+    if _pid:
+        q = q.filter((Notinha.planta_id == _pid) | (Notinha.planta_id.is_(None)))
     f_de = request.args.get("de")
     f_ate = request.args.get("ate")
     f_forn = request.args.get("fornecedor")

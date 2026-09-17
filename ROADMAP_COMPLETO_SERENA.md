@@ -2159,3 +2159,24 @@ INVESTIGAR/CORRIGIR (quando autorizar):
 [108] FEITO — base.html: no modo APP do iOS (standalone), todo form target=_blank passa a _self (gera na
       mesma aba). Resolve o "gerar PDF volta ao botao sem gerar" no iPhone salvo como app. Desktop/Android
       seguem abrindo em nova aba.
+echo "roadmap atualizado"
+### CONTINUACAO [137] — varredura estendida (16/09, mesma sessao)
+Aplicado o helper _planta_ativa_id() nas telas restantes, todas testadas com o cenario critico de
+PRIMEIRA VISITA (sessao nova, direto na rota, sem passar pela home antes):
+  - Notinhas (_filtra compartilhada por tela+CSV/PDF)
+  - Chaves (query base antes do filtro em memoria por busca/quadro/status)
+  - Colaboradores (via vinculo N-N ColaboradorPlanta: mostra quem esta vinculado a planta ativa OU quem
+    ainda nao tem NENHUM vinculo — nao esconde colaborador nao migrado)
+  - Enviar Cotacao (_agrupar, usado tanto na tela quanto na finalizacao)
+  - Coletas Proprias (mesma solicitacao, agora com o filtro de planta antes do agrupamento por cidade)
+NAO SE APLICA: Relatorio de carga — e formulario que gera PDF na hora (nao lista dado operacional), com
+autopreenchimento de Fornecedores/Empresas, que sao CADASTRO COMPARTILHADO entre plantas (decisao ja
+tomada). Nada a filtrar ali.
+Testado: 5 cenarios (Notinhas, Chaves, Colaboradores, Enviar Cotacao, Coletas Proprias), cada um com
+registro de Delta Maranhao e Delta Piaui, sessao nova por rota (sem visitar a home antes) — todos isolam
+corretamente. Smoke test geral (13 telas) + reteste do menu com clique real: tudo OK, sem regressao.
+[137] AGORA COBRE: Solicitacoes/dashboard, Extintores, Material, Notinhas, Chaves, Colaboradores,
+Enviar Cotacao, Coletas Proprias (8 telas). Relatorio de carga fora do escopo (fundamentado acima).
+RESTANTE (se houver mais telas que listam dado operacional por planta, ex.: relatorios central, dashboard
+de indicadores, etc.) fica para quando o Antonio identificar/pedir — o padrao (_planta_ativa_id()) ja
+esta pronto para reaproveitar em qualquer rota nova.

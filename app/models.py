@@ -57,6 +57,7 @@ class Usuario(UserMixin, db.Model):
     ativo = db.Column(db.Boolean, default=True)
     is_master = db.Column(db.Boolean, default=False)   # ADMIN MASTER (único; protegido)
     tema_preferido = db.Column(db.String(10), default="escuro")   # 'claro' | 'escuro' — item 113
+    pode_alternar_planta = db.Column(db.Boolean, default=False)   # [134] Admin: concedido pelo Admin Master
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     empresa = db.relationship("Empresa")
@@ -69,6 +70,16 @@ class Usuario(UserMixin, db.Model):
     def get_id(self): return f"U:{self.id}"
     @property
     def is_admin(self): return self.papel == "admin"
+
+    @property
+    def plantas(self):
+        """[134] Plantas às quais este usuário está vinculado."""
+        return [up.planta for up in UsuarioPlanta.query.filter_by(usuario_id=self.id).all()]
+
+    @property
+    def pode_ver_outras_plantas(self):
+        """[134] Master sempre pode. Admin só se o Master liberou (pode_alternar_planta)."""
+        return bool(self.is_master or (self.is_admin and self.pode_alternar_planta))
 
     def pode_gerir(self, alvo):
         """Regras de hierarquia (Etapa 2.5):
@@ -236,6 +247,7 @@ class Fornecedor(db.Model):
 class Solicitacao(db.Model):
     __tablename__ = "solicitacoes"
     id = db.Column(db.Integer, primary_key=True)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))   # [134] dono do registro
     solicitante_id = db.Column(db.ForeignKey("usuarios.id"), nullable=True)
     solicitante_colab_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     solicitante_nome = db.Column(db.String(160))   # snapshot do autor (usuário OU colaborador)
@@ -355,6 +367,7 @@ class Orcamento(db.Model):
 class Notinha(db.Model):
     __tablename__ = "notinhas"
     id = db.Column(db.Integer, primary_key=True)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))   # [134] dono do registro
     data = db.Column(db.Date, nullable=False)
     competencia = db.Column(db.String(7))   # "AAAA-MM" (mês de referência)
     fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"), nullable=False)
@@ -409,6 +422,7 @@ class QuadroChave(db.Model):
 class Chave(db.Model):
     __tablename__ = "almox_chaves"
     id = db.Column(db.Integer, primary_key=True)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))   # [134] dono do registro
     codigo = db.Column(db.String(30))          # legado — não usado nas telas novas
     descricao = db.Column(db.String(160), nullable=False)
     local = db.Column(db.String(120))          # legado — substituído por quadro_chave_id
@@ -429,6 +443,7 @@ class Chave(db.Model):
 class Extintor(db.Model):
     __tablename__ = "almox_extintores"
     id = db.Column(db.Integer, primary_key=True)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))   # [134] dono do registro
     codigo = db.Column(db.String(30))
     predio = db.Column(db.String(40))            # SEPN | DELTA3 | DELTA6 | MIR | UNIT
     local = db.Column(db.String(120))            # Local de instalação
@@ -463,6 +478,28 @@ class Planta(db.Model):
     nome = db.Column(db.String(120), unique=True, nullable=False)
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class UsuarioPlanta(db.Model):
+    """[134] Vinculo N-N: um Usuario pode pertencer a mais de uma Planta ao mesmo tempo."""
+    __tablename__ = "usuarios_plantas"
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.ForeignKey("usuarios.id"), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"), nullable=False)
+    __table_args__ = (db.UniqueConstraint("usuario_id", "planta_id", name="uq_usuario_planta"),)
+
+    planta = db.relationship("Planta")
+
+
+class ColaboradorPlanta(db.Model):
+    """[134] Vinculo N-N: um Colaborador pode pertencer a mais de uma Planta ao mesmo tempo."""
+    __tablename__ = "colaboradores_plantas"
+    id = db.Column(db.Integer, primary_key=True)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"), nullable=False)
+    __table_args__ = (db.UniqueConstraint("colaborador_id", "planta_id", name="uq_colaborador_planta"),)
+
+    planta = db.relationship("Planta")
 
 
 class Armazem(db.Model):
@@ -512,6 +549,7 @@ class ProdutoAlmox(db.Model):
     """Item de estoque com quantidade (entrada/saída/saldo) e um local atual."""
     __tablename__ = "almox_produtos"
     id = db.Column(db.Integer, primary_key=True)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))   # [134] dono do registro
     codigo = db.Column(db.String(40))
     codigo_barras = db.Column(db.String(60))          # p/ leitura na entrada
     nome = db.Column(db.String(160), nullable=False)
@@ -978,6 +1016,10 @@ class Colaborador(UserMixin, db.Model):
     def set_senha(self, s): self.senha_hash = generate_password_hash(s)
     def check_senha(self, s):
         return bool(self.senha_hash) and check_password_hash(self.senha_hash, s)
+    @property
+    def plantas(self):
+        """[134] Plantas às quais este colaborador está vinculado."""
+        return [cp.planta for cp in ColaboradorPlanta.query.filter_by(colaborador_id=self.id).all()]
     @property
     def tem_senha(self): return bool(self.senha_hash)
     @property

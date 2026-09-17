@@ -314,6 +314,9 @@ def chaves():
     quadros_sel = _args_list("quadro")
     status_sel = _args_list("status")
     base = Chave.query.filter_by(ativo=False) if inativos else Chave.query.filter_by(ativo=True)
+    _pid = _planta_ativa_id()
+    if _pid:
+        base = base.filter((Chave.planta_id == _pid) | (Chave.planta_id.is_(None)))
     itens = []
     for c in base.order_by(Chave.descricao).all():
         if q and not contem_busca(" ".join([c.descricao or "", c.quadro_nome or "", c.status or "", c.com_quem or ""]), q):
@@ -628,6 +631,22 @@ def _parse_date_arg(v):
     return None
 
 
+def _planta_ativa_id():
+    """[137] Resolve o id da planta ativa da sessao de forma robusta (nao depende do
+    context processor ja ter rodado antes nesta mesma requisicao)."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        return None
+    pid = session.get("planta_ativa_id")
+    if pid:
+        return pid
+    plantas = list(getattr(current_user, "plantas", []) or [])
+    if plantas:
+        session["planta_ativa_id"] = plantas[0].id
+        return plantas[0].id
+    return None
+
+
 def _args_list(nome):
     """Valores marcados de um filtro multi-selecao (getlist), sem vazios."""
     return [x for x in request.args.getlist(nome) if x]
@@ -830,7 +849,11 @@ def extintores():
     pend_ids = {p.extintor_id for p in PendenciaEtiqueta.query.filter_by(resolvida=False).all()}
     atencao_sel = "ATENCAO" in situacoes
     linhas = []
-    todos = Extintor.query.filter_by(ativo=True).order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
+    _pid = _planta_ativa_id()
+    _q_ext = Extintor.query.filter_by(ativo=True)
+    if _pid:
+        _q_ext = _q_ext.filter((Extintor.planta_id == _pid) | (Extintor.planta_id.is_(None)))
+    todos = _q_ext.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all()
     for e in todos:
         if predios_sel and e.predio not in predios_sel:
             continue
@@ -1573,8 +1596,14 @@ PAPEIS_COLAB = [("COLABORADOR DIVERSO", "Colaborador diverso"),
 @almox_bp.route("/colaboradores")
 @_guard("pode_colaboradores")
 def colaboradores():
-    from .models import Fornecedor
-    itens = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+    from .models import Fornecedor, ColaboradorPlanta
+    _pid = _planta_ativa_id()
+    q_colab = Colaborador.query.filter_by(ativo=True)
+    if _pid:
+        ids_na_planta = {cp.colaborador_id for cp in ColaboradorPlanta.query.filter_by(planta_id=_pid).all()}
+        ids_com_vinculo = {cp.colaborador_id for cp in ColaboradorPlanta.query.all()}
+        q_colab = q_colab.filter(db.or_(Colaborador.id.in_(ids_na_planta), ~Colaborador.id.in_(ids_com_vinculo)))
+    itens = q_colab.order_by(Colaborador.nome).all()
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
     empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
     return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas,
@@ -2017,6 +2046,9 @@ def _filtra_saldo():
     loc = request.args.get("loc") or ""
     baixo = request.args.get("baixo") == "1"
     q = ProdutoAlmox.query.filter_by(ativo=True)
+    _pid = _planta_ativa_id()
+    if _pid:
+        q = q.filter((ProdutoAlmox.planta_id == _pid) | (ProdutoAlmox.planta_id.is_(None)))
     itens = q.order_by(ProdutoAlmox.nome).all()
     if cat:
         itens = [p for p in itens if contem_busca(p.categoria, cat)]

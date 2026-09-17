@@ -188,7 +188,11 @@ def _mailto(fornecedor, itens, seq, spe_escolhida=None):
 @admin_bp.route("/")
 @admin_required
 def dashboard():
+    from .almox import _planta_ativa_id
     q = Solicitacao.query
+    _pid = _planta_ativa_id()
+    if _pid:
+        q = q.filter((Solicitacao.planta_id == _pid) | (Solicitacao.planta_id.is_(None)))
     f_status = request.args.getlist("status")
     f_sol = request.args.getlist("solicitante")
     f_tipo = request.args.get("tipo")
@@ -397,7 +401,11 @@ def _agrupar(status, expandir=False, busca=None, excluir_fornecedores=None):
     expandir=True -> considera qualquer status (exceto Concluído/Cancelada), não só o status pedido (item 122).
     busca -> filtra por nome de empresa(fornecedor)/tipo de material/produto (item 122).
     excluir_fornecedores -> ids de fornecedor para pular nesta tela (item 123, sessão/temporário)."""
+    from .almox import _planta_ativa_id
     query = Solicitacao.query.filter(Solicitacao.tipo_material_id.isnot(None))
+    _pid = _planta_ativa_id()
+    if _pid:
+        query = query.filter((Solicitacao.planta_id == _pid) | (Solicitacao.planta_id.is_(None)))
     if expandir:
         query = query.filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
     else:
@@ -1127,10 +1135,12 @@ def usuarios():
             flash("Usuário criado. Ele trocará a senha no primeiro acesso.", "success")
         return redirect(url_for("admin.usuarios"))
     colabs = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+    from .models import Planta
     return render_template("admin/usuarios.html",
                            lista=Usuario.query.order_by(Usuario.nome).all(),
                            empresas=Empresa.query.filter_by(ativo=True).order_by(Empresa.nome).all(),
-                           colaboradores=colabs)
+                           colaboradores=colabs,
+                           todas_plantas=Planta.query.filter_by(ativo=True).order_by(Planta.nome).all())
 
 
 @admin_bp.route("/usuarios/<int:uid>", methods=["POST"])
@@ -1166,6 +1176,16 @@ def usuario_editar(uid):
         u.set_senha(nova)
         u.senha_temporaria = True
         flash(f"Senha de {u.nome} redefinida (ele troca no próximo acesso).", "success")
+    # [138] Master concede/revoga a permissao de alternar de planta; e ajusta as plantas do usuario
+    if current_user.is_master:
+        from .models import Planta, UsuarioPlanta
+        u.pode_alternar_planta = request.form.get("pode_alternar_planta") == "1"
+        ids_novos = {int(x) for x in request.form.getlist("plantas_ids") if x.isdigit()}
+        if ids_novos:
+            UsuarioPlanta.query.filter_by(usuario_id=u.id).delete()
+            for pid in ids_novos:
+                if Planta.query.get(pid):
+                    db.session.add(UsuarioPlanta(usuario_id=u.id, planta_id=pid))
     db.session.commit()
     flash("Usuário atualizado.", "success")
     return redirect(url_for("admin.usuarios"))
@@ -1430,10 +1450,14 @@ def coletas_proprias():
     """Solicitações com frete FOB/retirada por colaborador (item 125), agrupadas por
     cidade e, dentro de cada cidade, por fornecedor (item 142) — com o contato do
     fornecedor (nome/e-mail/telefone) ao lado, e texto pronto para o motorista."""
-    itens = (Solicitacao.query
+    from .almox import _planta_ativa_id
+    _pid = _planta_ativa_id()
+    q_itens = (Solicitacao.query
              .filter_by(frete_tipo="FOB", frete_modalidade="COLABORADOR")
-             .filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"]))
-             .order_by(Solicitacao.cidade_retirada_id, Solicitacao.id).all())
+             .filter(Solicitacao.status.notin_(["CONCLUIDO", "CANCELADA"])))
+    if _pid:
+        q_itens = q_itens.filter((Solicitacao.planta_id == _pid) | (Solicitacao.planta_id.is_(None)))
+    itens = q_itens.order_by(Solicitacao.cidade_retirada_id, Solicitacao.id).all()
 
     # estrutura: { cidade: { chave: {"fornecedor": f, "nome": nome, "itens": [...], "avulsas": [...]} } }
     grupos = {}

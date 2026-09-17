@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, session, redirect, url_for, request
 from sqlalchemy import inspect, text
 
 from .extensions import db, login_manager, csrf, migrate
@@ -389,6 +389,45 @@ def _migrar_estoque_localizador():
         db.session.commit()
 
 
+def _migrar_planta_padrao():
+    """[135] Separação por planta: TODO dado já existente vai para "Delta Maranhão" (decisão de Antonio —
+    Delta Piauí começa vazio). Idempotente: só preenche o que ainda está None/sem vínculo.
+    Não remove nem altera registros que já tenham planta_id definido (proteção contra rodar 2x)."""
+    from .models import (Planta, Solicitacao, Notinha, Chave, Extintor, ProdutoAlmox,
+                         Usuario, Colaborador, UsuarioPlanta, ColaboradorPlanta)
+    try:
+        planta_ma = Planta.query.filter(Planta.nome.ilike("%maranh%")).first()
+    except Exception:
+        return  # tabela ainda não existe nesta execução (primeiro boot) — próximo boot resolve
+    if planta_ma is None:
+        planta_ma = Planta(nome="Delta Maranhão", ativo=True)
+        db.session.add(planta_ma)
+        db.session.commit()
+
+    # 1) registros operacionais sem planta -> Delta Maranhão
+    for Modelo in (Solicitacao, Notinha, Chave, Extintor, ProdutoAlmox):
+        try:
+            Modelo.query.filter(Modelo.planta_id.is_(None)).update(
+                {Modelo.planta_id: planta_ma.id}, synchronize_session=False)
+        except Exception:
+            db.session.rollback()
+    db.session.commit()
+
+    # 2) usuarios/colaboradores existentes sem NENHUM vinculo de planta -> vincula a Delta Maranhão
+    try:
+        ids_ja_vinc = {up.usuario_id for up in UsuarioPlanta.query.all()}
+        for u in Usuario.query.all():
+            if u.id not in ids_ja_vinc:
+                db.session.add(UsuarioPlanta(usuario_id=u.id, planta_id=planta_ma.id))
+        ids_ja_vinc_c = {cp.colaborador_id for cp in ColaboradorPlanta.query.all()}
+        for c in Colaborador.query.all():
+            if c.id not in ids_ja_vinc_c:
+                db.session.add(ColaboradorPlanta(colaborador_id=c.id, planta_id=planta_ma.id))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
@@ -481,6 +520,47 @@ def create_app():
         return ctx
 
     @app.context_processor
+    def inject_planta_ativa():
+        """[136] Planta ativa da sessao + lista de plantas do usuario (para o seletor no topo)."""
+        from flask_login import current_user
+        ctx = {"planta_ativa": None, "plantas_disponiveis": [], "pode_trocar_planta": False}
+        try:
+            if not current_user.is_authenticated:
+                return ctx
+            plantas = list(getattr(current_user, "plantas", []) or [])
+            pode_ver_outras = bool(getattr(current_user, "pode_ver_outras_plantas", False))
+            if pode_ver_outras:
+                from .models import Planta
+                plantas = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
+            ctx["plantas_disponiveis"] = plantas
+            ctx["pode_trocar_planta"] = pode_ver_outras or len(plantas) > 1
+            pid = session.get("planta_ativa_id")
+            ativa = None
+            if pid:
+                ativa = next((p for p in plantas if p.id == pid), None)
+            if ativa is None and plantas:
+                ativa = plantas[0]
+                session["planta_ativa_id"] = ativa.id
+            ctx["planta_ativa"] = ativa
+        except Exception:
+            pass
+        return ctx
+
+    @app.route("/trocar-planta/<int:planta_id>", methods=["POST"])
+    def trocar_planta(planta_id):
+        """[136] Troca a planta ativa da sessao (so entre plantas permitidas para o usuario)."""
+        from flask_login import current_user
+        from .models import Planta
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login"))
+        permitidas = list(getattr(current_user, "plantas", []) or [])
+        if getattr(current_user, "pode_ver_outras_plantas", False):
+            permitidas = Planta.query.filter_by(ativo=True).all()
+        if any(p.id == planta_id for p in permitidas):
+            session["planta_ativa_id"] = planta_id
+        return redirect(request.referrer or url_for("almox.home"))
+
+    @app.context_processor
     def inject_pendencias_extintor():
         ctx = {"n_pend_extintor": 0}
         from flask_login import current_user
@@ -506,5 +586,6 @@ def create_app():
         _seed_perfis_padrao()
         _seed_fabricantes()
         _migrar_estoque_localizador()
+        _migrar_planta_padrao()
 
     return app

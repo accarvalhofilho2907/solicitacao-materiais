@@ -2231,3 +2231,29 @@ COLABORADORES — corrigido de vez (a correcao anterior desta sessao tinha ido l
 Testado: Admin com planta ativa MA ve so Armazem/Localizador de MA; colaborador vinculado a MA+PI ve
 extintor de MA e PI ao mesmo tempo (sem trocar planta); lista de colaboradores mostra todos p/ Admin
 gerenciar; toggle inativos funciona, reativar funciona. Smoke test geral (12 telas) 200.
+
+### CORRECAO 3 — cadastro duplicado de colaborador + exclusao definitiva so pelo Master (Antonio, 16/09)
+Antonio reportou um cadastro duplicado de colaborador. Investigado: a checagem de CPF duplicado ja
+existia, mas era feita 100% em memoria/aplicacao (sem constraint no banco), o que cria uma condicao de
+corrida real — clique duplo no botao "Cadastrar" ou F5 reenviando o form podiam fazer duas requisicoes
+passarem pela checagem antes de qualquer uma commitar, gerando 2 registros com o mesmo CPF.
+CORRIGIDO:
+- colaborador_novo(): agora faz uma SEGUNDA checagem de duplicidade logo antes do commit (reduz bastante
+  a janela de corrida), alem da checagem original antes de montar o registro.
+- Modal "Novo colaborador": o formulario agora BLOQUEIA o proprio botao apos o 1o clique (JS simples,
+  sem lib) e ignora um 2o submit do mesmo form — evita clique duplo/F5 reenviando.
+- Testado: tentar cadastrar o MESMO CPF duas vezes seguidas -> so 1 fica no banco, a 2a tentativa mostra
+  o aviso de duplicidade.
+NOVO — EXCLUSAO DEFINITIVA (pedido do Antonio): diferente de "Desativar" (so marca ativo=False), agora
+existe "Excluir" (apaga do banco de verdade), reservado ao ADMIN MASTER:
+- Nova rota colaborador_excluir: barra qualquer um que nao seja is_master (mensagem clara).
+- Antes de excluir, verifica EXPLICITAMENTE (nao confia so no banco recusar por FK — SQLite local nao
+  forca FK por padrao) se o colaborador tem vinculo em: Solicitacao (solicitante_colab_id),
+  MovimentacaoChave, InspecaoExtintor, AjusteInventario. Se tiver QUALQUER um desses, BLOQUEIA a exclusao
+  com mensagem amigavel listando o que foi encontrado, orientando a usar "Desativar" em vez de excluir.
+- Se nao tiver nenhum vinculo, remove ColaboradorPlanta/HistoricoColaborador do proprio colaborador e
+  exclui o registro; loga a acao (quem excluiu, quando).
+- Botao "Excluir" na tela so aparece para quem is_master (checagem no template, alem do guard no servidor).
+Testado: Admin comum tenta excluir -> barrado; Master exclui colaborador sem historico -> funciona;
+Master tenta excluir colaborador COM historico (teve uma solicitacao) -> bloqueado com mensagem clara,
+colaborador preservado. Smoke test geral 200.

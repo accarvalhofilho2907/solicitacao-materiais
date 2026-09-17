@@ -1664,6 +1664,21 @@ def colaborador_novo():
                     cargo=(request.form.get("cargo") or "").strip().upper(),
                     papel=papel, qr_uid=uid)
     db.session.add(c)
+    # [correção] re-checa duplicidade JUSTO ANTES do commit (reduz a janela de corrida de
+    # clique duplo/F5 reenviando o form — dois cliques quase simultâneos podiam passar os dois
+    # pela checagem acima antes de qualquer um ter salvo).
+    try:
+        db.session.flush()
+        dup = (Colaborador.query.filter(Colaborador.ativo.is_(True), Colaborador.id != c.id)
+               .all())
+        if any("".join(ch for ch in (d.cpf or "") if ch.isdigit()) == cpf for d in dup):
+            db.session.rollback()
+            flash("Já existe um colaborador ativo com esse CPF (cadastro duplicado evitado).", "warning")
+            return redirect(url_for("almox.colaboradores"))
+    except Exception:
+        db.session.rollback()
+        flash("Não foi possível cadastrar agora — tente novamente.", "danger")
+        return redirect(url_for("almox.colaboradores"))
     _log("Colaborador", f"Colaborador cadastrado: {c.nome} (CPF {cpf}, papel {papel})")
     db.session.commit()
     flash("Colaborador cadastrado. Ele define a senha no 1º acesso (CPF).", "success")
@@ -1758,6 +1773,55 @@ def colaborador_reativar(cid):
     db.session.commit()
     flash("Colaborador reativado.", "success")
     return redirect(url_for("almox.colaboradores", inativos="1"))
+
+
+@almox_bp.route("/colaboradores/<int:cid>/excluir", methods=["POST"])
+@_guard("pode_colaboradores")
+def colaborador_excluir(cid):
+    """Exclusão DEFINITIVA (apaga do banco) — reservada ao Admin Master, para corrigir
+    cadastros duplicados/errados. Diferente de "Desativar" (que so marca ativo=False).
+    So permite excluir quem NAO tem NENHUM historico vinculado (evita apagar dado de verdade)."""
+    voltar = redirect(url_for("almox.colaboradores", inativos=request.form.get("inativos") or ""))
+    if not current_user.is_master:
+        flash("Somente o Admin Master pode excluir um colaborador definitivamente.", "danger")
+        return voltar
+    c = db.session.get(Colaborador, cid) or abort(404)
+    nome_c = c.nome
+
+    # Checagem EXPLICITA de vinculos (nao depende do banco recusar por FK — SQLite local
+    # nao forca FK por padrao, entao a checagem tem que ser feita aqui, na aplicacao).
+    from .models import (Solicitacao, MovimentacaoChave, InspecaoExtintor,
+                         AjusteInventario, HistoricoColaborador, ColaboradorPlanta)
+    vinculos = []
+    if Solicitacao.query.filter_by(solicitante_colab_id=c.id).first():
+        vinculos.append("solicitações")
+    if MovimentacaoChave.query.filter_by(colaborador_id=c.id).first():
+        vinculos.append("movimentações de chave")
+    if InspecaoExtintor.query.filter_by(colaborador_id=c.id).first():
+        vinculos.append("inspeções de extintor")
+    try:
+        if AjusteInventario.query.filter_by(colaborador_id=c.id).first():
+            vinculos.append("ajustes de inventário")
+    except Exception:
+        pass
+    if vinculos:
+        flash(f"Não é possível excluir '{nome_c}': ele já tem histórico no sistema "
+              f"({', '.join(vinculos)}). Use 'Desativar' em vez de excluir.", "danger")
+        return voltar
+
+    ColaboradorPlanta.query.filter_by(colaborador_id=c.id).delete()
+    HistoricoColaborador.query.filter_by(colaborador_id=c.id).delete()
+    db.session.delete(c)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash(f"Não foi possível excluir '{nome_c}' — ele tem outro vínculo no sistema. "
+              f"Use 'Desativar' em vez de excluir.", "danger")
+        return voltar
+    _log("Colaborador", f"Colaborador EXCLUÍDO definitivamente: {nome_c} (por {current_user.nome})")
+    flash(f"Colaborador '{nome_c}' excluído definitivamente.", "success")
+    return redirect(url_for("almox.colaboradores", inativos=request.form.get("inativos") or ""))
 
 
 @almox_bp.route("/colaboradores/<int:cid>/reset-senha", methods=["POST"])

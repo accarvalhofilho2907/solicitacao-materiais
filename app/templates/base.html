@@ -38,7 +38,9 @@
     .sb-planta{ padding:2px 14px 8px; }
     .sb-planta-btn{ width:100%; text-align:left; background:var(--hover-bg); color:var(--texto); border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:6px 10px; font-size:12px; }
     .sb-planta-fixa{ display:block; font-size:12px; color:var(--texto-2); padding:4px 0; }
-    .sb-subsec{ padding:9px 10px 2px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--texto-2); opacity:.65; }
+    .sb-subsec{ padding:9px 10px 2px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--texto-2); opacity:.65; display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+    .sb-subsec .chev2{ margin-left:auto; transition:transform .15s; font-size:9px; }
+    .sb-subsec.collapsed .chev2{ transform:rotate(-90deg); }
     .sb-item{ display:flex; align-items:center; gap:11px; padding:8px 11px; border-radius:8px; color:var(--texto); cursor:pointer; font-size:13.5px; text-decoration:none; }
     .sb-item:hover{ background:var(--hover-bg); color:var(--texto); }
     .sb-item.active{ background:var(--side-active); color:#fff; box-shadow:inset 3px 0 0 var(--coral); }
@@ -166,43 +168,43 @@
     <nav class="sb-nav" id="sbNav">
     {% if perm.is_admin %}
       <div class="sb-sec">Cadastro<span class="chev">▾</span></div>
-      <div class="sb-subsec">Checklists</div>
+      <div class="sb-subsec">Checklists<span class="chev2">▾</span></div>
       {{ item('facilities.modelos','doc','Modelos de checklist') }}
-      <div class="sb-subsec">Pessoas e empresas</div>
+      <div class="sb-subsec">Pessoas e empresas<span class="chev2">▾</span></div>
       {{ item('almox.colaboradores','users','Colaboradores') }}
       {{ item('admin.fornecedores','building','Empresas e Fornecedores') }}
       {{ item('almox.papeis','shield','Perfis de acesso') }}
       {{ item('admin.transportadoras','truck','Transportadoras') }}
-      <div class="sb-subsec">Plantas, Armazéns e Localizadores</div>
+      <div class="sb-subsec">Plantas, Armazéns e Localizadores<span class="chev2">▾</span></div>
       {{ item('almox.armazens','warehouse','Armazéns') }}
       {{ item('almox.localizadores','pin','Localizadores') }}
       {{ item('almox.plantas','turbine','Plantas') }}
-      <div class="sb-subsec">Operacional</div>
+      <div class="sb-subsec">Operacional<span class="chev2">▾</span></div>
       {{ item('admin.atividades','tag','Atividades') }}
-      <div class="sb-subsec">Estoque</div>
+      <div class="sb-subsec">Estoque<span class="chev2">▾</span></div>
       {{ item('admin.tipos','tag','Tipos de material') }}
       {{ item('almox.fabricantes','tag','Fabricantes') }}
 
       <div class="sb-sec">Movimento<span class="chev">▾</span></div>
-      <div class="sb-subsec">Solicitações</div>
+      <div class="sb-subsec">Solicitações<span class="chev2">▾</span></div>
       {% if perm.is_admin %}{{ item('admin.dashboard','doc','Solicitações') }}{% else %}{{ item('solicitante.index','doc','Solicitações') }}{% endif %}
       {{ item('admin.aprovacoes','check','Aprovações', n_aprovacoes) }}
       {{ item('almox.index','box','Chegadas') }}
-      <div class="sb-subsec">Cotação e Fornecimento</div>
+      <div class="sb-subsec">Cotação e Fornecimento<span class="chev2">▾</span></div>
       {{ item('admin.coletas_proprias','truck','Coletas e Envios Próprios') }}
       {{ item('admin.comparativo','scale','Comparativo (menor custo)') }}
       {{ item('admin.enviar_lote','chat','Enviar cotação', n_cotacao) }}
       {{ item('admin.precos','money','Histórico de preços') }}
       {{ item('admin.importar_orcamento','doc','Importar orçamento') }}
-      <div class="sb-subsec">Chaves, Inspeções e checklists</div>
+      <div class="sb-subsec">Chaves, Inspeções e checklists<span class="chev2">▾</span></div>
       {{ item('almox.chaves','key','Chaves') }}
       {{ item('almox.extintores','ext','Extintores') }}
-      <div class="sb-subsec">Estoque &amp; Notinhas</div>
+      <div class="sb-subsec">Estoque &amp; Notinhas<span class="chev2">▾</span></div>
       {{ item('almox.localizadores_gerar','cog','Gerar localizadores') }}
       {{ item('almox.inventario_pendentes','check','Baixas de inventário') }}
       {{ item('notinhas.index','doc','Notinhas') }}
       {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
-      <div class="sb-subsec">Facilities</div>
+      <div class="sb-subsec">Facilities<span class="chev2">▾</span></div>
       {{ item('facilities.programacao','doc','Programação de atividades') }}
       {{ item('facilities.rdo','doc','Relatório Diário de Obra') }}
 
@@ -347,8 +349,19 @@ document.querySelectorAll('#sbNav .sb-sec').forEach(function(sec){
       });
     }
     sec.classList.toggle('collapsed');
-    var n=sec.nextElementSibling;
-    while(n&&!n.classList.contains('sb-sec')){ if(n.classList.contains('sb-item')||n.classList.contains('sb-subsec')) n.style.display=sec.classList.contains('collapsed')?'none':''; n=n.nextElementSibling; }
+    var fechando = sec.classList.contains('collapsed');
+    var n=sec.nextElementSibling, subAtual=null;
+    while(n&&!n.classList.contains('sb-sec')){
+      if(n.classList.contains('sb-subsec')){
+        n.style.display = fechando ? 'none' : '';
+        subAtual = n;
+      } else if(n.classList.contains('sb-item')){
+        if(fechando){ n.style.display='none'; }
+        // reabrindo: item so aparece se NAO houver sub-secao (item solto) OU a sub atual nao estiver collapsed
+        else { n.style.display = (subAtual && subAtual.classList.contains('collapsed')) ? 'none' : ''; }
+      }
+      n=n.nextElementSibling;
+    }
   });
 });
 // 51: abrir o sistema com TODAS as secoes do menu recolhidas
@@ -356,6 +369,57 @@ document.querySelectorAll('#sbNav .sb-sec').forEach(function(sec){
   sec.classList.add('collapsed');
   var n=sec.nextElementSibling;
   while(n&&!n.classList.contains('sb-sec')){ if(n.classList.contains('sb-item')||n.classList.contains('sb-subsec')) n.style.display='none'; n=n.nextElementSibling; }
+});
+// [sub-secoes] Mesmo acordeao, um nivel abaixo: clicar numa sub-secao abre ela e fecha qualquer
+// OUTRA sub-secao da MESMA secao pai (o percurso para no proximo .sb-subsec OU .sb-sec, o que
+// vier primeiro — isso ja restringe o efeito a sub-secoes irmas, sem precisar calcular o pai).
+document.querySelectorAll('#sbNav .sb-subsec').forEach(function(sub){
+  sub.classList.add('collapsed');   // comeca fechada, igual as secoes principais
+  var n=sub.nextElementSibling;
+  while(n&&!n.classList.contains('sb-subsec')&&!n.classList.contains('sb-sec')){
+    if(n.classList.contains('sb-item')) n.style.display='none';
+    n=n.nextElementSibling;
+  }
+  sub.addEventListener('click',function(e){
+    e.stopPropagation();   // nao deixa o clique "vazar" e acionar o acordeao da secao principal
+    var vaiAbrir = sub.classList.contains('collapsed');
+    if(vaiAbrir){
+      // fecha as OUTRAS sub-secoes irmas (entre este .sb-subsec e o proximo .sb-sec pra tras/frente)
+      // percorre TODAS as sub-secoes do menu; o percurso de exibir/esconder ja limita ao trecho certo,
+      // entao so precisamos fechar as que estiverem abertas dentro do MESMO bloco de secao — a forma
+      // mais simples e robusta e' fechar qualquer outra sub-secao cujo trecho de itens esteja visivel
+      // E que fique entre o .sb-sec anterior a "sub" e o proximo .sb-sec.
+      var inicioSec = sub.previousElementSibling;
+      while(inicioSec && !inicioSec.classList.contains('sb-sec')) inicioSec = inicioSec.previousElementSibling;
+      var fimSec = sub.nextElementSibling;
+      while(fimSec && !fimSec.classList.contains('sb-sec')){
+        if(fimSec.classList.contains('sb-subsec')){
+          if(!fimSec.classList.contains('collapsed')){
+            fimSec.classList.add('collapsed');
+            var m=fimSec.nextElementSibling;
+            while(m&&!m.classList.contains('sb-subsec')&&!m.classList.contains('sb-sec')){ if(m.classList.contains('sb-item')) m.style.display='none'; m=m.nextElementSibling; }
+          }
+        }
+        fimSec=fimSec.nextElementSibling;
+      }
+      // tambem varre pra tras, entre inicioSec e sub
+      var p = inicioSec ? inicioSec.nextElementSibling : null;
+      while(p && p!==sub){
+        if(p.classList.contains('sb-subsec') && !p.classList.contains('collapsed')){
+          p.classList.add('collapsed');
+          var m2=p.nextElementSibling;
+          while(m2&&!m2.classList.contains('sb-subsec')&&!m2.classList.contains('sb-sec')){ if(m2.classList.contains('sb-item')) m2.style.display='none'; m2=m2.nextElementSibling; }
+        }
+        p=p.nextElementSibling;
+      }
+    }
+    sub.classList.toggle('collapsed');
+    var n2=sub.nextElementSibling;
+    while(n2&&!n2.classList.contains('sb-subsec')&&!n2.classList.contains('sb-sec')){
+      if(n2.classList.contains('sb-item')) n2.style.display=sub.classList.contains('collapsed')?'none':'';
+      n2=n2.nextElementSibling;
+    }
+  });
 });
 function cadastrarRapido(entidade, selectId, comUF){
   var nome=prompt('Novo(a) '+entidade+':'); if(!nome) return;

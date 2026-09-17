@@ -2802,3 +2802,23 @@ retorna do cache sem precisar da API de novo. UF invalida tratada com erro amiga
 Retirar Cidades do menu (M1, via API IBGE) + mudanca estrutural do checklist para Material (M2) + RDO
 novo (M3) + menu reorganizado por completo (M5) + acordeao (M4). Tudo testado e empacotado. Antonio vai
 subir tudo de uma vez ao final.
+
+### [M4-b] FEITO (17/09) — acordeao tambem nas SUB-secoes do menu
+Antonio pediu: sub-secoes (Checklists, Pessoas e empresas, etc.) tambem precisam recolher entre si —
+mesmo comportamento de acordeao das secoes principais, um nivel abaixo. Confirmado com Antonio: precisa
+CLICAR no nome da sub-secao para ela abrir, e a sub-secao que estava aberta antes fecha sozinha.
+IMPLEMENTADO:
+  - Sub-secoes ganharam seta (chev2) e viraram clicaveis, com CSS .sb-subsec.collapsed .chev2 (rotaciona
+    a seta, mesmo padrao visual das secoes principais).
+  - JS novo: cada sub-secao comeca fechada; ao clicar, abre e fecha qualquer OUTRA sub-secao IRMA (a
+    busca de "irmas" para no proximo .sb-sec pra tras e pra frente, o que naturalmente restringe o
+    efeito as sub-secoes da MESMA secao principal, sem vazar entre secoes diferentes).
+  - CORRIGIDO um bug que o proprio trabalho introduziria: o JS de acordeao da SECAO PRINCIPAL antes
+    forcava display='' em TODOS os itens ao reabrir, ignorando se a sub-secao correspondente estava
+    fechada. Agora, ao reabrir uma secao principal, cada item so aparece se a sub-secao dele NAO
+    estiver collapsed — preserva o estado de qual sub-secao estava aberta antes de fechar a secao toda.
+TESTADO com sequencia real de cliques (jsdom), sem erros de JS: abrir Cadastro -> abrir "Pessoas e
+empresas" -> abrir "Plantas, Armazens e Localizadores" (fecha Pessoas sozinha) -> fechar e REABRIR
+Cadastro (Plantas continua aberta, Pessoas continua fechada — bug corrigido antes de ir pra producao)
+-> trocar para secao Movimento, abrir uma sub-secao diferente, voltar para Cadastro (Pessoas/Plantas
+preservam seu estado, sem interferencia entre secoes). Smoke test geral (9 telas) 200.

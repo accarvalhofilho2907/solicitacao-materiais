@@ -2217,3 +2217,214 @@ INVESTIGAR/CORRIGIR (quando autorizar):
 [120] FEITO — "Coletas Próprias" renomeado para "Coletas e Envios Próprios" (menu e titulo da tela).
 [109] CANCELADO a pedido de Antonio.
 PENDENTES: 106(ja feito bloco anterior),107(ja feito),108(ja feito),112 (Ecofortes - aguarda PDF de exemplo).
+
+### ================== PROJETO SIGA (30/07 noite) — DECISAO DE ARQUITETURA ==================
+Antonio decidiu renomear/expandir o sistema para SIGA (Sistema Integrado de Gerenciamento
+Administrativo). Vai englobar Almoxarifado/Compras (ja existe) + um novo dominio OPERACIONAL
+(checklists, inspecoes, programacao de atividades, relatorio de atividades). NAO inclui financeiro.
+
+ESTRUTURA DE MENU PROPOSTA (dominios):
+1. Almoxarifado & Compras — o que ja existe hoje (Solicitacoes, Cotacao, Material, Extintores, etc.)
+2. Operacional (NOVO) — Checklists/Modelos, Inspecoes, Programacao de atividades, Relatorio de atividades
+3. Cadastros gerais — Colaboradores, Perfis, Empresas/Fornecedores, Plantas, Armazens, Tipos, Cidades
+4. Administrativo — Notas fiscais, Notificacoes (ja existe)
+5. Ajuda — (ja existe)
+
+DECISOES CONFIRMADAS:
+- Extintor: fica COMO ESTA por enquanto (Antonio decide depois se migra p/ o motor novo).
+- Checklist/Inspecao = MOTOR GENERICO (nao mais telas hardcoded por equipamento). So ADMIN cria/edita
+  MODELOS de checklist (nome, tipo de equipamento, itens). Colaborador de campo so RESPONDE.
+- Cadastro de equipamento/ativo: vinculado a um TIPO, que aponta para um MODELO de checklist.
+- Modelo de checklist criado a partir de IMPORTACAO DE PLANILHA EXCEL (facilitar p/ a pessoa de
+  Facilities montar o modelo fora do sistema e importar) — alem de tela manual.
+- Programacao de atividades e CHECKLIST/INSPECAO sao MODULOS SEPARADOS. Programacao = so uma AGENDA
+  (o que deve ser feito, quando), simples por enquanto, SEM recorrencia (recorrencia fica p/ depois).
+  Checklist/Inspecao = o formulario que se responde na hora da execucao.
+- Quem vai cadastrar os PRIMEIROS equipamentos/modelos novos (fora extintor): a PESSOA DE FACILITIES.
+
+REGRA DE REPROVACAO DO CHECKLIST (item por item, definido na criacao do MODELO):
+- IMPEDITIVO: reprovou -> BLOQUEIA gerar/fechar o checklist ate resolver.
+- ATENCAO (nao impeditivo): reprovou -> gera/fecha normalmente; so fica registrado como pendencia p/
+  acompanhar (nao bloqueia).
+- TEMPORARIO: e um item de ATENCAO que tem um PRAZO PROPRIO (em dias), definido item a item na hora de
+  criar o modelo (ex.: item A = 7 dias, item B = 3 dias). Enquanto dentro do prazo, comporta-se como
+  ATENCAO (nao bloqueia). Se o MESMO ITEM continuar marcado como falho (sem ser corrigido) e o prazo
+  VENCER (por TEMPO CORRIDO, nao depende de nova inspecao), o item vira IMPEDITIVO AUTOMATICAMENTE —
+  passa a bloquear o proximo checklist/gerar ate ser resolvido.
+  -> Implica: precisa de uma verificacao PERIODICA (ex.: rotina diaria) que varre os itens temporarios
+     em aberto e promove para impeditivo os que estourarem o prazo, independente de nova inspecao.
+  Exemplo dado por Antonio: farol de um veiculo com falha -> item Temporario 7 dias; se em 7 dias
+  ninguem corrigir, na proxima vez que for gerar o checklist esse item ja aparece IMPEDITIVO.
+
+PROXIMOS PASSOS (quando Antonio autorizar):
+[123] Modelagem de dados: ModeloChecklist (nome, tipo_equipamento, ativo), ItemChecklist (modelo_id,
+      texto, tipo: impeditivo|atencao|temporario, prazo_dias se temporario, ordem), Equipamento/Ativo
+      (nome, tipo, modelo_checklist vinculado), ExecucaoChecklist (equipamento_id, respostas, resultado,
+      quem, quando), ItemFalhaAberta (equipamento_id, item_id, aberto_em, prazo_final, status: atencao|
+      impeditivo, resolvido_em) — para rastrear o "relogio" de cada falha temporaria.
+[124] Rotina periodica (ex.: job diario) que verifica ItemFalhaAberta com prazo_final vencido e ainda nao
+      resolvida -> promove para IMPEDITIVO.
+[125] Tela ADMIN de cadastro de Modelo de Checklist (manual) + IMPORTAR MODELO VIA EXCEL (planilha com
+      colunas: item, tipo (impeditivo/atencao/temporario), prazo_dias).
+[126] Tela de cadastro de Equipamento/Ativo (nome, tipo, localizacao, vinculo com Modelo de Checklist).
+[127] Tela de EXECUCAO do checklist (para quem tem permissao) — responde os itens; se algum IMPEDITIVO
+      (ou temporario ja promovido) estiver marcado, bloqueia gerar/fechar; senao fecha normal e registra
+      pendencias de atencao/temporario.
+[128] Modulo PROGRAMACAO DE ATIVIDADES (separado, simples por ora): agenda (o que, quando, responsavel),
+      sem recorrencia por enquanto.
+[129] Modulo RELATORIO DE ATIVIDADES: o que foi de fato executado (pode reaproveitar padrao do relatorio
+      de carga: fotos, observacoes).
+[130] Reorganizar o MENU nos 5 dominios (Almoxarifado&Compras / Operacional / Cadastros gerais /
+      Administrativo / Ajuda), renomear o sistema para SIGA na marca/titulo.
+--- FIM DA SECAO SIGA — NADA EXECUTADO AINDA, aguardando autorizacao e prioridade dos itens 123-130 ---
+
+### ================== INFRAESTRUTURA SIGA (30/07 noite) — DECISAO ==================
+DECISAO: manter RENDER (hospedagem) + NEON (banco) como estao hoje. NAO migrar para outra plataforma
+(Railway avaliado e descartado por ora — motivo: risco/trabalho de migracao nao compensa agora; Render+Neon
+ja funciona e e barato no uso atual do sistema).
+
+PLANO DE AMBIENTE DE TESTE (para construir o SIGA sem tirar o sistema atual do ar):
+- Criar um SEGUNDO Web Service no Render (Starter, ~$7/mes), branch separada no GitHub (ex.: "siga-dev"),
+  apontando para um CLONE/BRANCH do banco Neon atual (branch do Neon: praticamente gratis, compartilha
+  armazenamento com o original). Producao continua 100% intocada na URL/branch atuais.
+- Quando o SIGA estiver pronto e aprovado por Antonio, faz-se o "corte": aponta o dominio principal para o
+  servico novo (ou troca qual branch e producao). Reversivel.
+
+CUSTO MEDIDO/ESTIMADO (30/07, com o consumo real do Neon informado por Antonio: Compute 5.2 CU-hrs,
+Storage 0.04 GB, History 0 GB, Network 0.03 GB):
+- Render producao (ja existe): $7/mes
+- Render ambiente de teste (novo): +$7/mes
+- Neon (compute+storage, uso atual): ~$1-3/mes (uso muito baixo hoje)
+- Total estimado para comecar: ~$15-17/mes
+
+ARMAZENAMENTO DE FOTOS/PDF DO CHECKLIST (NOVO — decisao):
+- Antonio quer GUARDAR fotos/PDF do checklist PERMANENTEMENTE (auditoria historica) — diferente do padrao
+  atual do sistema (relatorio de carga/notas usam tempfile, nao persiste).
+- Decisao de arquitetura: usar ARMAZENAMENTO DE ARQUIVOS separado do banco (ex.: disco anexado ao Render,
+  ou um object storage), NAO guardar fotos/PDF binario dentro do Postgres/Neon. Banco de dados fica so com
+  os METADADOS (quem, quando, resultado) + o CAMINHO/referencia do arquivo. Motivo: banco e caro e ineficiente
+  para arquivo binario; armazenamento de arquivo e mais barato por GB (~$0.25/GB/mes) e e a pratica correta.
+  Custo exato depende do volume de inspecoes/fotos por mes; calcular quando tivermos a estimativa de uso do
+  Facilities.
+
+PROXIMOS PASSOS (quando Antonio autorizar):
+[131] Antonio cria o 2o Web Service no Render (Starter) + branch nova no GitHub ("siga-dev").
+[132] Antonio cria um branch/clone do banco no Neon para o ambiente de teste (Claude orienta passo a passo).
+[133] Escolher e configurar o servico de armazenamento de arquivos (fotos/PDF) para o modulo Operacional/Facilities.
+--- Infra decidida; falta Antonio executar os passos 131/132 no painel (fora do alcance do Claude) antes de
+    Claude comecar a programar o SIGA no ambiente novo. ---
+
+
+### Decisao final de infra (30/07 noite)
+Antonio reconsiderou: NAO vai criar ambiente de teste separado. Vai usar o MESMO Render/Neon de sempre.
+Motivo: quem usa o sistema (Antonio + pessoa de Facilities) nao mexe nas outras areas, risco aceito.
+CONFIRMADO por Antonio ciente do risco (mudanca com bug afeta todo mundo direto, sem tela de teste antes).
+Fluxo de trabalho segue como sempre: Claude testa localmente (SQLite, dados ficticios) antes de cada bloco,
+entrega zip + roadmap, Antonio sobe no Render/GitHub com BACKUP DO NEON antes de cada deploy (ainda mais
+critico agora, sem ambiente de teste). Itens 131/132 (2o servico Render + branch Neon) CANCELADOS.
+[133] mantido: escolher/configurar armazenamento de arquivos para fotos/PDF do checklist, quando chegar a hora.
+
+### ================== SEPARACAO POR PLANTA (30/07 noite) — DECISAO DE ARQUITETURA ==================
+FATO ATUAL (confirmado no codigo): Planta hoje e so um cadastro de nome (id, nome, ativo). SO o Armazem tem
+planta_id. NADA MAIS no sistema (Solicitacao, Extintor, Colaborador, Notinha, Cotacao, etc.) sabe de qual
+planta e. Ou seja, na pratica NAO EXISTE separacao nenhuma hoje, mesmo com Delta Piaui e Delta Maranhao
+cadastrados.
+
+MODELO DECIDIDO (Antonio, 30/07):
+COMPARTILHADO entre plantas (existe uma vez, uso comum):
+  - Fornecedores/Empresas
+  - Tipos de material
+  - Perfis de acesso (o PAPEL em si — ex. "Colaborador Diverso" e suas permissoes sao iguais nas duas plantas)
+
+PERTENCE A UMA PLANTA especifica (cada registro tem dono, fica separado):
+  - Solicitacoes, Cotacoes, Material/Estoque, Notinhas
+  - Extintores/Equipamentos (Facilities)
+
+PODE PERTENCER A MAIS DE UMA PLANTA AO MESMO TEMPO:
+  - Colaboradores e Usuarios — uma pessoa pode estar vinculada a Delta Piaui E Delta Maranhao ao mesmo
+    tempo (ex.: circula entre as duas). O PERFIL de acesso dela e o mesmo nas duas (compartilhado); so
+    muda em qual planta ela esta atuando/vendo dados no momento.
+
+REGRA DE VISAO / TROCA DE PLANTA:
+  - Usuario comum: ve so a(s) planta(s) a qual esta vinculado. Se vinculado as duas, ALTERNA entre elas
+    (escolha normal, nao e permissao especial — ele so ve o que e dele mesmo alternando).
+  - ADMIN: por padrao ve so a propria planta; pode ALTERNAR para ver outra planta SOMENTE SE o ADMIN MASTER
+    liberar essa permissao para ele (nova permissao granular: "pode alternar de planta" / "ver outras plantas").
+  - ADMIN MASTER: alterna livremente entre todas as plantas, sempre.
+
+IMPACTO TECNICO (AVISO IMPORTANTE — mudanca estrutural grande):
+  - Praticamente TODA tabela operacional (Solicitacao, Extintor, Notinha, ProdutoAlmox/Material, Orcamento,
+    Chave, InspecaoExtintor, etc.) precisa ganhar uma coluna nova: planta_id (dono do registro).
+  - Colaborador/Usuario precisam de uma TABELA DE LIGACAO (pessoa <-> planta), pois podem estar em >1 planta.
+  - Precisa de "PLANTA ATIVA" por sessao (qual planta a pessoa esta vendo AGORA), guardada na sessao/cookie,
+    com um SELETOR no topo da tela (aparece so pra quem tem mais de uma planta ou permissao de alternar).
+  - TODAS as queries/listas do sistema (dashboard, extintores, notinhas, material, etc.) precisam FILTRAR
+    pela planta ativa — e isso e a parte de MAIOR RISCO: esquecer de filtrar uma tela = vazamento de dados
+    entre plantas. Precisa de varredura fina, tela por tela, ao implementar.
+  - Dados HISTORICOS (o que ja existe hoje) vao precisar de uma MIGRACAO: decidir para qual planta cada
+    registro antigo vai (provavelmente tudo vai para Delta Maranhao, ja que e a operacao original, e o
+    Piaui comeca do zero pra frente — A CONFIRMAR com Antonio quando formos executar).
+  - Esta mudanca e MAIOR e MAIS ARRISCADA que qualquer bloco ja feito ate aqui — mexe na espinha dorsal do
+    sistema inteiro (Compras&Estoque E o futuro Facilities dependem dela). Recomendo fazer ISOLADA, bem
+    testada, ANTES ou em paralelo ao inicio do modulo Facilities (ja que Facilities tambem vai precisar
+    do conceito de planta desde o nascimento).
+
+PROXIMOS PASSOS (quando Antonio autorizar; NADA EXECUTADO ainda):
+[134] Modelagem: adicionar planta_id nas tabelas operacionais; tabela ColaboradorPlanta / UsuarioPlanta
+      (relacao N-N); campo/sessao de "planta ativa"; nova permissao "pode alternar de planta" (concedida
+      pelo Admin Master a Admins especificos).
+[135] Migracao de dados historicos: decidir e executar para qual planta vai cada registro ja existente
+      (provavel: tudo Delta Maranhao por padrao — CONFIRMAR com Antonio antes de rodar).
+[136] Seletor de planta ativa na interface (visivel so para quem tem >1 planta ou permissao de alternar).
+[137] Varredura fina: TODAS as rotas/consultas do sistema (dashboard, extintores, material, notinhas,
+      cotacao, coletas, etc.) passam a filtrar pela planta ativa. Alto risco de esquecimento — testar
+      tela por tela.
+[138] Tela de gestao: Admin Master concede/revoga a permissao de "ver outra planta" para Admins especificos.
+--- NADA EXECUTADO. Aguardando definicao de prioridade: fazer isso ANTES do SIGA/Facilities, ou junto? ---
+
+
+### Confirmacoes finais (30/07 noite)
+[135] CONFIRMADO por Antonio: TODO dado ja existente (solicitacoes, extintores, notinhas, cotacoes, material,
+      colaboradores, etc.) migra para DELTA MARANHAO. Delta Piaui comeca vazio, cadastrando do zero.
+PRIORIDADE CONFIRMADA: separacao por planta (134-138) vem ANTES do inicio da construcao do SIGA/Facilities
+(123-130). Ordem de execucao quando Antonio autorizar: 134 -> 135 -> 136 -> 137 -> 138, DEPOIS o Operacional/
+Facilities (123 em diante), ja nascendo com planta_id desde o inicio.
+
+### BLOCO L (30/07 noite) ✓ — 134 (modelagem de dados da separacao por planta)
+[134] FEITO — modelagem:
+  - planta_id adicionado em: Solicitacao, Notinha, Chave, Extintor, ProdutoAlmox (nullable por enquanto,
+    para nao quebrar o banco existente; sera preenchido na migracao do item 135).
+  - Novas tabelas de ligacao N-N: UsuarioPlanta (usuarios_plantas) e ColaboradorPlanta (colaboradores_plantas)
+    — permitem uma pessoa pertencer a mais de uma planta ao mesmo tempo, com constraint de unicidade.
+  - Usuario ganhou: coluna pode_alternar_planta (bool, default False) + property .plantas (lista de Planta
+    vinculadas) + property .pode_ver_outras_plantas (True se is_master, OU se is_admin E pode_alternar_planta).
+  - Colaborador ganhou: property .plantas (mesma logica de vinculo).
+  - Testado: usuario/colaborador em 2 plantas ao mesmo tempo; admin SEM permissao -> False; admin COM
+    permissao liberada -> True; solicitante comum (nao admin/master) mesmo com a flag ligada -> sempre False
+    (regra reforcada: so admin/master alternam).
+IMPORTANTE - AINDA NAO FUNCIONA DE PONTA A PONTA. Faltam (proximos blocos):
+[135] Migracao dos dados existentes (tudo -> Delta Maranhao) + vincular usuarios/colaboradores existentes
+      a Delta Maranhao por padrao.
+[136] Seletor de "planta ativa" na interface (sessao + dropdown no topo, visivel so p/ quem tem >1 planta
+      ou pode_ver_outras_plantas).
+[137] Varredura fina: fazer TODAS as rotas/consultas do sistema filtrarem pela planta ativa (dashboard,
+      extintores, material, notinhas, cotacao, coletas, etc.) — o ponto de MAIOR RISCO, tela por tela.
+[138] Tela do Admin Master para conceder/revogar pode_alternar_planta a Admins especificos.
+Ate o 137 estar pronto, o planta_id existe no banco mas NADA FILTRA por ele ainda — ou seja, no estado atual
+o sistema continua funcionando exatamente como antes (planta_id fica None/ignorado), sem risco de quebrar
+nada em producao. So passa a fazer diferenca quando os proximos blocos (135-137) forem feitos e testados.
+
+### BLOCO M (30/07 noite) ✓ — 135 (migracao de dados para Delta Maranhao)
+[135] FEITO — nova rotina _migrar_planta_padrao() no boot (idempotente, mesmo padrao das migracoes ja
+      existentes no sistema): cria "Delta Maranhao" se nao existir; preenche planta_id (None -> Maranhao)
+      em Solicitacao, Notinha, Chave, Extintor, ProdutoAlmox; vincula TODOS os usuarios e colaboradores
+      existentes a Delta Maranhao (via UsuarioPlanta/ColaboradorPlanta), SOMENTE quem ainda nao tem
+      NENHUM vinculo de planta.
+      Confirmado por Antonio: "todo usuario hoje ve so Delta Maranhao. Vinculado somente aqui, porem no
+      usuario (cadastro) e possivel vincula-lo a mais de uma planta" -> e exatamente esse o comportamento.
+      TESTADO: 1o boot cria Maranhao e vincula tudo; 2o boot (idempotente) nao duplica nada; um usuario ou
+      solicitacao ja vinculados manualmente a outra planta (Piaui) NAO SAO ALTERADOS em bootes seguintes
+      (protegido contra sobrescrever escolha manual).
+FILA 134-135 CONCLUIDA. Restam: 136 (seletor de planta ativa na tela), 137 (varredura fina - todas as
+telas filtrarem pela planta ativa - o item de maior risco), 138 (tela do Master conceder/revogar
+pode_alternar_planta a Admins).

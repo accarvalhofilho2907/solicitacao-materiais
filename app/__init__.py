@@ -389,6 +389,45 @@ def _migrar_estoque_localizador():
         db.session.commit()
 
 
+def _migrar_planta_padrao():
+    """[135] Separação por planta: TODO dado já existente vai para "Delta Maranhão" (decisão de Antonio,
+    30/07 — Delta Piauí começa vazio). Idempotente: só preenche o que ainda está None/sem vínculo.
+    Não remove nem altera registros que já tenham planta_id definido (proteção contra rodar 2x)."""
+    from .models import (Planta, Solicitacao, Notinha, Chave, Extintor, ProdutoAlmox,
+                         Usuario, Colaborador, UsuarioPlanta, ColaboradorPlanta)
+    try:
+        planta_ma = Planta.query.filter(Planta.nome.ilike("%maranh%")).first()
+    except Exception:
+        return  # tabela ainda não existe nesta execução (primeiro boot) — próximo boot resolve
+    if planta_ma is None:
+        planta_ma = Planta(nome="Delta Maranhão", ativo=True)
+        db.session.add(planta_ma)
+        db.session.commit()
+
+    # 1) registros operacionais sem planta -> Delta Maranhão
+    for Modelo in (Solicitacao, Notinha, Chave, Extintor, ProdutoAlmox):
+        try:
+            Modelo.query.filter(Modelo.planta_id.is_(None)).update(
+                {Modelo.planta_id: planta_ma.id}, synchronize_session=False)
+        except Exception:
+            db.session.rollback()
+    db.session.commit()
+
+    # 2) usuarios/colaboradores existentes sem NENHUM vinculo de planta -> vincula a Delta Maranhão
+    try:
+        ids_ja_vinc = {up.usuario_id for up in UsuarioPlanta.query.all()}
+        for u in Usuario.query.all():
+            if u.id not in ids_ja_vinc:
+                db.session.add(UsuarioPlanta(usuario_id=u.id, planta_id=planta_ma.id))
+        ids_ja_vinc_c = {cp.colaborador_id for cp in ColaboradorPlanta.query.all()}
+        for c in Colaborador.query.all():
+            if c.id not in ids_ja_vinc_c:
+                db.session.add(ColaboradorPlanta(colaborador_id=c.id, planta_id=planta_ma.id))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object("config.Config")
@@ -506,5 +545,6 @@ def create_app():
         _seed_perfis_padrao()
         _seed_fabricantes()
         _migrar_estoque_localizador()
+        _migrar_planta_padrao()
 
     return app

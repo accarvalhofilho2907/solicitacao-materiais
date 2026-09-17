@@ -1596,19 +1596,17 @@ PAPEIS_COLAB = [("COLABORADOR DIVERSO", "Colaborador diverso"),
 @almox_bp.route("/colaboradores")
 @_guard("pode_colaboradores")
 def colaboradores():
-    from .models import Fornecedor, ColaboradorPlanta
-    _pid = _planta_ativa_id()
-    q_colab = Colaborador.query.filter_by(ativo=True)
-    if _pid:
-        ids_na_planta = {cp.colaborador_id for cp in ColaboradorPlanta.query.filter_by(planta_id=_pid).all()}
-        ids_com_vinculo = {cp.colaborador_id for cp in ColaboradorPlanta.query.all()}
-        q_colab = q_colab.filter(db.or_(Colaborador.id.in_(ids_na_planta), ~Colaborador.id.in_(ids_com_vinculo)))
-    itens = q_colab.order_by(Colaborador.nome).all()
+    from .models import Fornecedor
+    # [correção] Colaboradores é cadastro-base compartilhado entre plantas — a tela mostra TODOS,
+    # independente da planta ativa, pois é aqui que se DEFINE a quais plantas cada um pertence.
+    itens = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
     empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
+    from .models import Planta
+    todas_plantas = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
     return render_template("almox/colaboradores.html", itens=itens, papeis=papeis, empresas=empresas,
                            papeis_colab=PAPEIS_COLAB, pode_papel=current_user.is_admin,
-                           is_master=current_user.is_master)
+                           is_master=current_user.is_master, todas_plantas=todas_plantas)
 
 
 @almox_bp.route("/colaboradores/novo", methods=["POST"])
@@ -1653,15 +1651,17 @@ def colaborador_novo():
 @almox_bp.route("/colaboradores/<int:cid>", methods=["GET"])
 @_guard("pode_colaboradores")
 def colaborador_perfil(cid):
-    from .models import Fornecedor, HistoricoColaborador
+    from .models import Fornecedor, HistoricoColaborador, Planta
     c = db.session.get(Colaborador, cid) or abort(404)
     empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
     hist = (HistoricoColaborador.query.filter_by(colaborador_id=c.id)
             .order_by(HistoricoColaborador.criado_em.desc()).all())
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
+    todas_plantas = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
     return render_template("almox/colaborador_perfil.html", c=c, empresas=empresas,
                            papeis=papeis, papeis_colab=PAPEIS_COLAB, hist=hist,
-                           pode_papel=current_user.is_admin, is_master=current_user.is_master)
+                           pode_papel=current_user.is_admin, is_master=current_user.is_master,
+                           todas_plantas=todas_plantas)
 
 
 @almox_bp.route("/colaboradores/<int:cid>/editar", methods=["POST"])
@@ -1693,6 +1693,21 @@ def colaborador_editar(cid):
             registrar("papel", c.papel, novo_papel); c.papel = novo_papel
     elif request.form.get("papel") and request.form.get("papel").strip().upper() != (c.papel or "").upper():
         flash("Apenas Admin altera o perfil de acesso. As demais alterações foram salvas.", "warning")
+
+    # Plantas do colaborador: a quais plantas ele tem acesso (só Admin/Master define)
+    if current_user.is_admin and request.form.getlist("plantas_ids"):
+        from .models import Planta, ColaboradorPlanta
+        ids_novos = {int(x) for x in request.form.getlist("plantas_ids") if x.isdigit()}
+        ids_atuais = {cp.planta_id for cp in ColaboradorPlanta.query.filter_by(colaborador_id=c.id).all()}
+        if ids_novos != ids_atuais:
+            nomes_antes = ", ".join(p.nome for p in c.plantas) or "—"
+            ColaboradorPlanta.query.filter_by(colaborador_id=c.id).delete()
+            for pid in ids_novos:
+                if Planta.query.get(pid):
+                    db.session.add(ColaboradorPlanta(colaborador_id=c.id, planta_id=pid))
+            db.session.flush()
+            nomes_depois = ", ".join(p.nome for p in c.plantas) or "—"
+            registrar("plantas", nomes_antes, nomes_depois)
 
     if mudancas:
         _log("Colaborador", f"{c.nome}: alterado ({', '.join(mudancas)}) por {autor}")

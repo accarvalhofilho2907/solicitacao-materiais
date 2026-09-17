@@ -31,7 +31,7 @@
 
 <div class="card mb-4"><div class="table-responsive">
 <table class="table table-hover mb-0 align-middle" id="tabelaColab">
-  <thead class="table-light"><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Cargo</th><th>Perfil de acesso</th><th>Senha</th><th></th></tr></thead>
+  <thead class="table-light"><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Cargo</th><th>Perfil de acesso</th><th>Planta</th><th>Senha</th><th></th></tr></thead>
   <tbody>
     {% for c in itens %}
     <tr>
@@ -40,6 +40,7 @@
       <td class="small">{{ c.empresa or '—' }}</td>
       <td class="small">{{ c.cargo_exib }}</td>
       <td class="small">{{ c.papel or '—' }}</td>
+      <td class="small">{% for p in c.plantas %}<span class="badge bg-secondary me-1">{{ p.nome }}</span>{% else %}<span class="text-muted">—</span>{% endfor %}</td>
       <td>{% if c.tem_senha %}<span class="badge bg-success">definida</span>{% else %}<span class="badge bg-secondary">não definida</span>{% endif %}</td>
       <td class="text-end">
         <div class="d-flex gap-1 justify-content-end flex-wrap">
@@ -57,7 +58,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="text-muted text-center py-3">Nenhum colaborador cadastrado.</td></tr>
+    <tr><td colspan="8" class="text-muted text-center py-3">Nenhum colaborador cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

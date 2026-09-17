@@ -32,6 +32,20 @@
         <div class="form-text">Só o Admin altera o perfil de acesso. Você pode alterar cargo e empresa.</div>
         {% endif %}
       </div>
+      {% if pode_papel %}
+      <div class="mb-2"><label class="form-label small">Plantas (a quais o colaborador tem acesso)</label>
+        <div class="d-flex flex-wrap gap-3">
+          {% for p in todas_plantas %}
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="plantas_ids" value="{{ p.id }}"
+                 {{ 'checked' if p.id in c.plantas|map(attribute='id')|list }}><label class="form-check-label small">{{ p.nome }}</label></div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="mb-2"><label class="form-label small">Plantas</label>
+        <div>{% for p in c.plantas %}<span class="badge bg-secondary me-1">{{ p.nome }}</span>{% else %}<span class="text-muted small">nenhuma</span>{% endfor %}</div>
+      </div>
+      {% endif %}
       <button class="btn btn-primary btn-sm">Salvar alterações</button>
     </form>
   </div></div></div>

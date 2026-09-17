@@ -2180,3 +2180,22 @@ Enviar Cotacao, Coletas Proprias (8 telas). Relatorio de carga fora do escopo (f
 RESTANTE (se houver mais telas que listam dado operacional por planta, ex.: relatorios central, dashboard
 de indicadores, etc.) fica para quando o Antonio identificar/pedir — o padrao (_planta_ativa_id()) ja
 esta pronto para reaproveitar em qualquer rota nova.
+
+### CORRECAO — Colaboradores é cadastro-base, nao filtra por planta (Antonio, 16/09)
+Antonio apontou inconsistencia: a tela de COLABORADORES precisa mostrar TODOS independente da planta
+ativa — e' o cadastro-base onde se DEFINE a quais plantas cada colaborador pertence; filtrar essa lista
+pela planta ativa criava um paradoxo (nao dava pra ver/editar quem estava em outra planta pra dar acesso).
+CORRIGIDO:
+- almox.colaboradores(): REMOVIDO o filtro por planta ativa; lista mostra todos os colaboradores ativos,
+  como era antes da leva de hoje.
+- Nova coluna "Planta" na listagem (badges com as plantas de cada colaborador).
+- Tela de perfil do colaborador (colaborador_perfil.html): novo bloco de checkboxes de plantas (visivel
+  so para quem pode gerir perfil/Admin); colaborador_editar() agora tambem atualiza ColaboradorPlanta e
+  registra no historico do colaborador (de -> para) quando as plantas mudam.
+Testado: com planta ativa = Maranhao, a lista mostra colaborador de Maranhao E de Piaui (nao esconde
+mais); edicao de plantas de um colaborador funciona e reflete no proprio objeto. Smoke test 200 nas
+telas principais.
+NOTA para o mesmo padrao em outros cadastros-base: Fornecedores/Empresas e Tipos de material JA eram
+compartilhados (nunca tiveram filtro de planta aplicado) — nao precisam de correcao. Usuarios (staff)
+ja tem a logica de plantas propria (tela de Usuarios, item 138), que ja funciona no sentido certo
+(Master ve/edita todos, atribui planta por usuario).

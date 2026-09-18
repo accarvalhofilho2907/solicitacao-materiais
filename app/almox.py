@@ -710,34 +710,46 @@ def _plantas_permitidas_ids():
     - Colaborador: TODAS as plantas as quais ele esta vinculado, sempre (nao escolhe uma por vez —
       se esta em Maranhao e Piaui, ve as duas ao mesmo tempo).
     - Usuario (Admin/Master): so a planta ATIVA da sessao (ele escolhe uma por vez no seletor).
-    Devolve None se nao deve filtrar (sem vinculo nenhum — evita esconder tudo por engano)."""
+    Devolve None se nao deve filtrar (sem vinculo nenhum — evita esconder tudo por engano).
+    [fix] Também reconhece Colaborador numa sessão de campo via QR (_colab_sessao) — antes só
+    current_user era checado, então qualquer ação feita a partir do QR (não logado "de verdade")
+    sempre caía como "não autenticado" e via suas plantas como vazio."""
     from flask_login import current_user
     from .models import Colaborador as _Colab
-    if not current_user.is_authenticated:
-        return None
-    if isinstance(current_user, _Colab):
+    if current_user.is_authenticated and isinstance(current_user, _Colab):
         ids = [p.id for p in (getattr(current_user, "plantas", []) or [])]
         return ids or None
-    pid = _planta_ativa_id()
-    return [pid] if pid else None
+    if current_user.is_authenticated:
+        pid = _planta_ativa_id()
+        return [pid] if pid else None
+    colab = _colab_sessao()
+    if colab:
+        ids = [p.id for p in (getattr(colab, "plantas", []) or [])]
+        return ids or None
+    return None
 
 
 def _plantas_para_cadastro():
     """Lista de Planta que o ator pode escolher ao CADASTRAR um item novo (extintor/chave/quadro).
     - Quem pode ver mais de uma planta (Master, ou Admin liberado, ou Colaborador em >1 planta):
       escolhe entre as que tem acesso.
-    - Quem só tem/vê uma planta: essa mesma, sem escolha (select com 1 opção)."""
+    - Quem só tem/vê uma planta: essa mesma, sem escolha (select com 1 opção).
+    [fix] Também reconhece Colaborador numa sessão de campo via QR — mesma razão do fix acima
+    em _plantas_permitidas_ids: sem isso, quem acessa via QR sempre via a lista vazia."""
     from flask_login import current_user
     from .models import Planta, Colaborador as _Colab
-    if not current_user.is_authenticated:
-        return []
-    if isinstance(current_user, _Colab):
+    if current_user.is_authenticated and isinstance(current_user, _Colab):
         plantas = list(getattr(current_user, "plantas", []) or [])
         return plantas
-    if getattr(current_user, "pode_ver_outras_plantas", False):
-        return Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
-    plantas = list(getattr(current_user, "plantas", []) or [])
-    return plantas
+    if current_user.is_authenticated:
+        if getattr(current_user, "pode_ver_outras_plantas", False):
+            return Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
+        plantas = list(getattr(current_user, "plantas", []) or [])
+        return plantas
+    colab = _colab_sessao()
+    if colab:
+        return list(getattr(colab, "plantas", []) or [])
+    return []
 
 
 def _args_list(nome):

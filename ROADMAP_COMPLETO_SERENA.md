@@ -3380,3 +3380,74 @@ atividades so' apos escolher a data, mao de obra pre-preenchida dos colaboradore
 dia, media ponderada da % executada, fluxo de aprovacao Encarregado+Admin com status pendente,
 exportar PDF com fotos/observacoes/cores Serena, Encarregado so' das proprias empresas, campos
 obrigatorios).
+
+### ================== RDO COMPLETO (18/09) — ultimo item da fila grande ==================
+Reescrito por completo: modelo RelatorioDiarioObra, rota rdo(), novo endpoint AJAX
+rdo_atividades_do_dia(), rota rdo_aprovar() (2 etapas), rota rdo_pdf() com o gerador
+app/pdf_rdo.py (layout Serena, mesmo padrao do Relatorio de Carga).
+
+MODELO: RelatorioDiarioObra ganhou planta_id e condicao_climatica OBRIGATORIOS (nullable=False),
+percentual_medio (media ponderada), status (PENDENTE/APROVADO), aprovado_encarregado_em/por e
+aprovado_admin_em/por (separados — precisa dos DOIS pra sair de pendente), property totalmente_aprovado.
+
+[Data errada] CAUSA: a rota antiga usava date.today() direto, sem ler o que o usuario escolhia no
+form. CORRIGIDO: novo endpoint /rdo/atividades-do-dia (AJAX) so' e' chamado DEPOIS que o usuario
+escolhe data (e opcionalmente planta) no modal — nada carrega antes disso.
+
+[Clima em lista suspensa] Trocado o campo livre por <select> com 8 opcoes (Ensolarado, Parcialmente
+nublado, Nublado, Chuva fraca, Chuva forte, Tempestade, Neblina, Vento forte).
+
+[Trava de pendente/atrasada] O endpoint AJAX calcula pode_gerar=False se qualquer AtividadeDia do
+dia estiver PENDENTE (nunca preenchida) ou atrasada — mostra o motivo na tela e desabilita o botao
+Salvar. IMPORTANTE: a MESMA trava foi repetida no SERVIDOR (rota POST), nao so no JS — testado
+tentando forcar via POST direto mesmo com a trava ativa: bloqueado, nenhum RDO criado.
+
+[Nao pedir pra selecionar atividades] Removido o checkbox de selecionar atividades manualmente —
+agora TODAS as atividades do dia (daquela planta) entram automaticamente no RDO
+(atividades_ids_json), sem selecao manual.
+
+[Mao de obra pre-preenchida] O endpoint AJAX devolve mao_de_obra_sugerida = todos os colaboradores
+distintos das atividades do dia, um por linha — o campo do form ja vem preenchido com isso (o
+usuario pode editar).
+
+[Equipamentos livre] Mantido como campo de texto livre, como pedido.
+
+[Media ponderada] Formula: soma(percentual_do_dia * meta_da_atividade) / soma(meta_da_atividade) —
+pondera pelo "peso" de cada atividade. TESTADO com o EXEMPLO EXATO do Antonio: atividade meta 25%
+(fez 25%), meta 50% (fez 25%), meta 100% (fez 50%) -> media calculada = 39.3% ((25*25+25*50+50*100)/
+(25+50+100) = 6875/175 = 39.28...), conferido a mao e batendo com o resultado do sistema.
+
+[Fluxo de aprovacao em 2 etapas] rdo_aprovar(): Encarregado aprova -> fica registrado mas status
+continua PENDENTE (falta Admin); Admin aprova -> status vira APROVADO so quando os DOIS aprovaram.
+TESTADO nessa ordem exata, confirmando cada etapa.
+
+[Export PDF, mesmo pendente] Nova rota rdo_pdf() + app/pdf_rdo.py: layout com cores Serena (Coral
+FF5246, Grafite 4B4B4B, Areia EDE9E5), cabecalho com status (pendente=amber, aprovado=verde), secao
+de dados gerais, mao de obra, equipamentos, observacoes, e uma secao por ATIVIDADE do dia trazendo
+titulo, local (predio), colaboradores, % executada, observacoes da equipe (o que o colaborador
+escreveu ao preencher) e ATE 4 FOTOS embutidas (baixadas da URL do Cloudinary na hora, com fallback
+silencioso se a foto nao carregar). Disponivel tanto pendente quanto aprovado. TESTADO: PDF valido
+gerado (bytes comecando com %PDF) tanto vazio quanto com atividade/observacoes/mao-de-obra completos.
+
+[Encarregado so' das proprias empresas] Antes de criar, checa se pelo menos uma atividade do
+dia+planta e' de uma empresa que o Encarregado supervisiona (EncarregadoEmpresa) — Admin/Master nao
+tem essa restricao. TESTADO com sucesso, mas revelou um BUG MAIS PROFUNDO no caminho:
+
+BUG CRITICO ENCONTRADO E CORRIGIDO: _plantas_permitidas_ids() e _plantas_para_cadastro() (funcoes
+usadas em VARIOS lugares do sistema, nao so Facilities) so reconheciam current_user — quem acessa
+via SESSAO DE CAMPO (QR, colab_ext_id) sempre caia como "nao autenticado" e recebia lista de plantas
+VAZIA. Isso silenciosamente quebrava qualquer fluxo que dependesse de "quais plantas eu posso ver"
+para quem usa o QR de campo (nao so o RDO — reafeta em potencial outras telas que usam essas
+funcoes). CORRIGIDO: as duas funcoes agora tambem checam _colab_sessao() como fallback. Rodado
+SMOKE TEST GERAL completo (17 telas) apos a correcao para confirmar que nada quebrou nos fluxos
+existentes — tudo 200.
+
+[Campos obrigatorios] data, planta_id e condicao_climatica agora sao nullable=False no modelo e
+validados explicitamente na rota (senao Data/Planta/Clima sao obrigatorios).
+
+Smoke test geral final (12 telas, incluindo o fluxo completo de RDO) 200.
+
+=== FILA GRANDE DE MELHORIAS (rodada dos 12 itens) — CONCLUIDA ===
+Todos os itens da lista do Antonio desta rodada foram implementados e testados: cancelar/duplicar
+por dia, cancelar geral com escopo, ferias/ausencia, filtro estilo Excel, resumo diario completo
+(inicio/fim + observacoes/% + ausentes), e agora o RDO completo. Pronto para Antonio revisar e subir.

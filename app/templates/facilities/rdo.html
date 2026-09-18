@@ -5,23 +5,47 @@
   <h4 class="mb-0">Relatório Diário de Obra (RDO)</h4>
   <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNovoRDO">＋ Novo RDO</button>
 </div>
-<div class="alert alert-secondary small py-2">Registro diário de campo: mão de obra, atividades do dia (puxadas da Programação), condições climáticas e equipamentos usados.</div>
+<div class="alert alert-secondary small py-2">Registro diário de campo: mão de obra, atividades já programadas para o dia, condições climáticas e equipamentos.</div>
 
 <div class="card"><div class="card-body">
 <table class="table table-sm align-middle mb-0">
-  <thead class="table-light"><tr><th>Data</th><th>Planta</th><th>Clima</th><th>Atividades do dia</th></tr></thead>
+  <thead class="table-light"><tr><th>Data</th><th>Planta</th><th>Clima</th><th>% média</th><th>Atividades</th><th>Status</th><th></th></tr></thead>
   <tbody>
     {% for r in itens %}
     <tr>
       <td class="small">{{ r.data.strftime('%d/%m/%Y') }}</td>
       <td class="small">{{ r.planta.nome if r.planta else '—' }}</td>
       <td class="small">{{ r.condicao_climatica or '—' }}</td>
+      <td class="small">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</td>
       <td class="small">
         {% for a in r.atividades %}<span class="badge bg-secondary me-1">{{ a.titulo }}</span>{% else %}—{% endfor %}
       </td>
+      <td>
+        {% if r.status == 'APROVADO' %}<span class="badge bg-success">aprovado</span>
+        {% else %}<span class="badge bg-warning text-dark">pendente
+          {% if r.aprovado_encarregado_em %} (falta Admin){% elif r.aprovado_admin_em %} (falta Encarregado){% endif %}
+        </span>{% endif %}
+      </td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo_pdf', rdo_id=r.id) }}" target="_blank">📄 PDF</a>
+        {% if eh_gestor and r.status != 'APROVADO' %}
+        {% if eh_admin and not r.aprovado_admin_em %}
+        <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-success">Aprovar (Admin)</button>
+        </form>
+        {% endif %}
+        {% if not eh_admin and not r.aprovado_encarregado_em %}
+        <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-success">Aprovar (Encarregado)</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </td>
     </tr>
     {% else %}
-    <tr><td colspan="4" class="text-muted text-center py-3">Nenhum RDO registrado ainda.</td></tr>
+    <tr><td colspan="7" class="text-muted text-center py-3">Nenhum RDO registrado ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -29,34 +53,42 @@
 
 <div class="modal fade" id="modalNovoRDO" tabindex="-1">
   <div class="modal-dialog modal-lg"><div class="modal-content">
-    <form method="post">
+    <form method="post" id="formNovoRDO">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="modal-header"><h5 class="modal-title">Novo RDO</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div class="row g-2 mb-2">
-          <div class="col-md-6"><label class="form-label small">Data</label>
-            <input type="date" name="data" class="form-control" value="{{ hoje.strftime('%Y-%m-%d') }}" required></div>
-          <div class="col-md-6"><label class="form-label small">Planta</label>
-            <select name="planta_id" class="form-select">
+          <div class="col-md-6"><label class="form-label small">Data *</label>
+            <input type="date" name="data" id="inpDataRDO" class="form-control" value="{{ hoje.strftime('%Y-%m-%d') }}" required></div>
+          <div class="col-md-6"><label class="form-label small">Planta *</label>
+            <select name="planta_id" id="selPlantaRDO" class="form-select" required>
               <option value="">—</option>
               {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
             </select></div>
         </div>
-        <div class="mb-2"><label class="form-label small">Condição climática</label>
-          <input name="condicao_climatica" class="form-control" placeholder="Ex.: Ensolarado, chuva pela manhã..."></div>
-        <div class="mb-2"><label class="form-label small">Atividades do dia (puxadas da Programação de hoje)</label>
-          <div class="border rounded p-2" style="max-height:160px;overflow:auto">
-            {% for a in atividades_hoje %}
-            <div class="form-check"><input class="form-check-input" type="checkbox" name="atividades_ids" value="{{ a.id }}" id="atv{{ a.id }}">
-              <label class="form-check-label small" for="atv{{ a.id }}">{{ a.titulo }} — {{ a.responsavel.nome if a.responsavel else '—' }}</label></div>
-            {% else %}
-            <p class="text-muted small mb-0">Nenhuma atividade programada para hoje.</p>
-            {% endfor %}
-          </div>
+        <div class="mb-2"><label class="form-label small">Condição climática *</label>
+          <select name="condicao_climatica" class="form-select" required>
+            <option value="">— selecione —</option>
+            <option>Ensolarado</option>
+            <option>Parcialmente nublado</option>
+            <option>Nublado</option>
+            <option>Chuva fraca</option>
+            <option>Chuva forte</option>
+            <option>Tempestade</option>
+            <option>Neblina</option>
+            <option>Vento forte</option>
+          </select></div>
+
+        <div id="areaAtividadesRDO" class="mb-2">
+          <label class="form-label small">Atividades do dia</label>
+          <div class="border rounded p-2 small text-muted" id="listaAtividadesRDO">Escolha a data e a planta para carregar as atividades programadas.</div>
         </div>
-        <div class="mb-2"><label class="form-label small">Mão de obra presente (nome + função, um por linha)</label>
-          <textarea name="mao_de_obra_texto" class="form-control" rows="3" placeholder="Ex.: João Silva — Eletricista"></textarea></div>
+        <div id="avisoBloqueioRDO" class="alert alert-danger small py-2 d-none"></div>
+        <div id="avisoMediaRDO" class="alert alert-secondary small py-2 d-none"></div>
+
+        <div class="mb-2"><label class="form-label small">Mão de obra presente</label>
+          <textarea name="mao_de_obra_texto" id="txtMaoDeObra" class="form-control" rows="3" placeholder="Pré-preenchido com os colaboradores das atividades do dia — edite se precisar"></textarea></div>
         <div class="mb-2"><label class="form-label small">Equipamentos usados no dia</label>
           <textarea name="equipamentos_texto" class="form-control" rows="2"></textarea></div>
         <div class="mb-2"><label class="form-label small">Observações</label>
@@ -64,9 +96,61 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button class="btn btn-primary">Registrar RDO</button>
+        <button class="btn btn-primary" id="btnSalvarRDO" disabled>Registrar RDO</button>
       </div>
     </form>
   </div></div>
 </div>
+
+<script>
+function carregarAtividadesRDO(){
+  var data = document.getElementById('inpDataRDO').value;
+  var planta = document.getElementById('selPlantaRDO').value;
+  var lista = document.getElementById('listaAtividadesRDO');
+  var avisoBloqueio = document.getElementById('avisoBloqueioRDO');
+  var avisoMedia = document.getElementById('avisoMediaRDO');
+  var btnSalvar = document.getElementById('btnSalvarRDO');
+  var txtMaoDeObra = document.getElementById('txtMaoDeObra');
+
+  if (!data) {
+    lista.innerHTML = 'Escolha a data e a planta para carregar as atividades programadas.';
+    btnSalvar.disabled = true;
+    avisoBloqueio.classList.add('d-none');
+    avisoMedia.classList.add('d-none');
+    return;
+  }
+  lista.innerHTML = 'Carregando...';
+  var url = "{{ url_for('facilities.rdo_atividades_do_dia') }}?data=" + data + (planta ? "&planta_id=" + planta : "");
+  fetch(url).then(r => r.json()).then(function(d){
+    if (d.atividades.length === 0) {
+      lista.innerHTML = '<span class="text-muted">' + (d.motivo_bloqueio || 'Nenhuma atividade neste dia.') + '</span>';
+    } else {
+      lista.innerHTML = d.atividades.map(function(a){
+        var badge = a.status === 'APROVADA' ? 'success' : (a.status === 'AGUARDANDO_APROVACAO' ? 'warning text-dark' : (a.atrasada ? 'danger' : 'secondary'));
+        var statusTxt = a.atrasada ? 'atrasada' : a.status.toLowerCase().replace('_',' ');
+        return '<div class="mb-1">' + a.titulo + ' <span class="badge bg-' + badge + '">' + statusTxt + '</span>'
+          + (a.percentual !== null ? ' — ' + a.percentual + '%' : '') + '</div>';
+      }).join('');
+    }
+    if (d.motivo_bloqueio && !d.pode_gerar) {
+      avisoBloqueio.textContent = d.motivo_bloqueio;
+      avisoBloqueio.classList.remove('d-none');
+    } else {
+      avisoBloqueio.classList.add('d-none');
+    }
+    if (d.media_ponderada !== null && d.media_ponderada !== undefined) {
+      avisoMedia.textContent = 'Média ponderada de execução do dia: ' + d.media_ponderada + '%';
+      avisoMedia.classList.remove('d-none');
+    } else {
+      avisoMedia.classList.add('d-none');
+    }
+    if (d.mao_de_obra_sugerida && !txtMaoDeObra.value) {
+      txtMaoDeObra.value = d.mao_de_obra_sugerida;
+    }
+    btnSalvar.disabled = !d.pode_gerar;
+  });
+}
+document.getElementById('inpDataRDO').addEventListener('change', carregarAtividadesRDO);
+document.getElementById('selPlantaRDO').addEventListener('change', carregarAtividadesRDO);
+</script>
 {% endblock %}

@@ -1028,40 +1028,131 @@ def resumo_diario():
 # RELATÓRIO DIÁRIO DE OBRA (RDO)
 # ============================================================================
 
+@facilities_bp.route("/rdo/atividades-do-dia")
+@_rdo_required
+def rdo_atividades_do_dia():
+    """[v4] Endpoint AJAX: dado uma data (e opcionalmente uma planta), devolve as atividades
+    programadas para aquele dia — com status, % e se travam o RDO (pendente/atrasada). O
+    front chama isso DEPOIS que o usuário escolhe a data, não antes (corrige o bug de sempre
+    carregar "hoje")."""
+    from flask import jsonify
+    data_str = request.args.get("data")
+    if not data_str:
+        return jsonify(atividades=[], pode_gerar=False, motivo_bloqueio="Escolha uma data.")
+    try:
+        data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify(atividades=[], pode_gerar=False, motivo_bloqueio="Data inválida.")
+
+    planta_id = request.args.get("planta_id")
+    q = AtividadeDia.query.filter(AtividadeDia.data == data_d, AtividadeDia.status != "CANCELADA")
+    if planta_id and planta_id.isdigit():
+        q = q.join(AtividadeGrupo).filter(AtividadeGrupo.planta_id == int(planta_id))
+    dias = q.all()
+
+    itens = []
+    bloqueia = False
+    for d in dias:
+        # [v4] trava se houver PENDENTE (nunca preenchida), ATRASADA, ou "rascunho" — aqui
+        # tratamos "rascunho" como AGUARDANDO_APROVACAO ainda não aprovado pelo Encarregado,
+        # já que a % ainda pode mudar até lá.
+        status_bloqueia = d.status in ("PENDENTE",) or d.atrasada
+        if status_bloqueia:
+            bloqueia = True
+        itens.append({
+            "grupo_id": d.grupo_id, "titulo": d.grupo.titulo,
+            "status": d.status, "atrasada": d.atrasada, "percentual": d.percentual,
+            "meta": d.meta_percentual,
+            "colaboradores": [{"nome": ac.colaborador.nome} for ac in d.grupo.colaboradores if ac.colaborador]
+        })
+
+    motivo = None
+    if bloqueia:
+        motivo = "Há atividade(s) pendente(s) ou atrasada(s) neste dia — reprograme ou preencha antes de gerar o RDO."
+    elif not itens:
+        motivo = "Nenhuma atividade programada para este dia."
+
+    # média ponderada: soma(percentual * meta) / soma(meta) — pondera pelo "peso" da meta de
+    # cada atividade no dia (uma atividade com meta 100% pesa mais que uma com meta 25%).
+    soma_pond = sum((d.percentual or 0) * d.meta_percentual for d in dias if d.meta_percentual)
+    soma_pesos = sum(d.meta_percentual for d in dias if d.meta_percentual)
+    media_ponderada = round(soma_pond / soma_pesos, 1) if soma_pesos else None
+
+    # mão de obra pré-preenchida: todos os colaboradores distintos das atividades do dia
+    nomes_colab = sorted({ac.colaborador.nome for d in dias for ac in d.grupo.colaboradores if ac.colaborador})
+    mao_de_obra_sugerida = "\n".join(nomes_colab)
+
+    return jsonify(atividades=itens, pode_gerar=(not bloqueia and bool(itens)),
+                   motivo_bloqueio=motivo, media_ponderada=media_ponderada,
+                   mao_de_obra_sugerida=mao_de_obra_sugerida)
+
+
 @facilities_bp.route("/rdo", methods=["GET", "POST"])
 @_rdo_required
 def rdo():
     plantas_disp, ids_permitidas = _plantas_ctx()
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+
     if request.method == "POST":
-        from .almox import _colab_sessao
-        pode_criar = getattr(current_user, "is_admin", False) or getattr(_colab_sessao(), "pode_facilities_inspecionar", False)
+        pode_criar = getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False) \
+                     or getattr(colab_atual, "pode_rdo", False)
         if not pode_criar:
             abort(403)
         data_str = request.form.get("data")
-        if not data_str:
-            flash("Informe a data do RDO.", "danger")
+        planta_id = request.form.get("planta_id")
+        clima = (request.form.get("condicao_climatica") or "").strip()
+        # [item novo] campos obrigatórios: data, planta, clima
+        if not data_str or not planta_id or not clima:
+            flash("Data, Planta e Condição climática são obrigatórios.", "danger")
             return redirect(url_for("facilities.rdo"))
         try:
             data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
         except ValueError:
             flash("Data inválida.", "danger")
             return redirect(url_for("facilities.rdo"))
-        planta_id = request.form.get("planta_id") or None
-        if planta_id:
-            ids_ok = {p.id for p in plantas_disp}
-            if int(planta_id) not in ids_ok:
-                planta_id = None
-        atividades_ids = request.form.getlist("atividades_ids")
-        db.session.add(RelatorioDiarioObra(
-            data=data_d, planta_id=int(planta_id) if planta_id else None,
-            condicao_climatica=(request.form.get("condicao_climatica") or "").strip(),
+        ids_ok = {p.id for p in plantas_disp}
+        if int(planta_id) not in ids_ok:
+            flash("Planta inválida.", "danger")
+            return redirect(url_for("facilities.rdo"))
+
+        # [item novo] Encarregado só pode fazer RDO das PRÓPRIAS empresas — checamos se pelo
+        # menos uma atividade do dia/planta é de uma empresa dele (Admin/Master não têm essa
+        # restrição).
+        eh_admin_ou_master = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                             or getattr(current_user, "is_master", False))
+        dias_do_dia = (AtividadeDia.query.join(AtividadeGrupo)
+                      .filter(AtividadeDia.data == data_d, AtividadeGrupo.planta_id == int(planta_id),
+                             AtividadeDia.status != "CANCELADA").all())
+        if not eh_admin_ou_master and colab_atual:
+            empresas_encarregado = {e.nome_fantasia or e.razao_social for e in colab_atual.empresas_encarregado}
+            empresas_do_dia = {ac.colaborador.empresa for d in dias_do_dia for ac in d.grupo.colaboradores
+                               if ac.colaborador and ac.colaborador.empresa}
+            if empresas_encarregado and not (empresas_encarregado & empresas_do_dia):
+                flash("Você só pode fazer RDO de dias com atividades das empresas que você é Encarregado.", "danger")
+                return redirect(url_for("facilities.rdo"))
+
+        # [item novo] repete a trava de pendente/atrasada também no servidor (não confia só no JS)
+        bloqueia = any((d.status == "PENDENTE" or d.atrasada) for d in dias_do_dia)
+        if bloqueia:
+            flash("Há atividade pendente ou atrasada neste dia — não é possível gerar o RDO ainda.", "danger")
+            return redirect(url_for("facilities.rdo"))
+
+        soma_pond = sum((d.percentual or 0) * d.meta_percentual for d in dias_do_dia if d.meta_percentual)
+        soma_pesos = sum(d.meta_percentual for d in dias_do_dia if d.meta_percentual)
+        media = round(soma_pond / soma_pesos, 1) if soma_pesos else None
+
+        rdo_novo = RelatorioDiarioObra(
+            data=data_d, planta_id=int(planta_id), condicao_climatica=clima,
             mao_de_obra_texto=(request.form.get("mao_de_obra_texto") or "").strip(),
             equipamentos_texto=(request.form.get("equipamentos_texto") or "").strip(),
-            atividades_ids_json=json.dumps([int(x) for x in atividades_ids if x.isdigit()]),
-            observacoes=(request.form.get("observacoes") or "").strip(),
-            criado_por=current_user.id if current_user.is_authenticated else None))
+            atividades_ids_json=json.dumps([d.grupo_id for d in dias_do_dia]),
+            percentual_medio=media, observacoes=(request.form.get("observacoes") or "").strip(),
+            status="PENDENTE",
+            criado_por=current_user.id if current_user.is_authenticated else None)
+        db.session.add(rdo_novo)
         db.session.commit()
-        flash("RDO registrado.", "success")
+        flash("RDO registrado — aguardando aprovação.", "success")
         return redirect(url_for("facilities.rdo"))
 
     q = RelatorioDiarioObra.query
@@ -1069,10 +1160,49 @@ def rdo():
         q = q.filter(db.or_(RelatorioDiarioObra.planta_id.in_(ids_permitidas), RelatorioDiarioObra.planta_id.is_(None)))
     itens = q.order_by(RelatorioDiarioObra.data.desc()).limit(60).all()
 
-    hoje = date.today()
-    atividades_hoje_ids = {d.grupo_id for d in AtividadeDia.query.filter(AtividadeDia.data == hoje).all()}
-    atividades_hoje = AtividadeGrupo.query.filter(AtividadeGrupo.id.in_(atividades_hoje_ids)).all() if atividades_hoje_ids else []
-    if ids_permitidas:
-        atividades_hoje = [a for a in atividades_hoje if a.planta_id in ids_permitidas or a.planta_id is None]
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+
     return render_template("facilities/rdo.html", itens=itens, plantas_disp=plantas_disp,
-                           atividades_hoje=atividades_hoje, hoje=hoje)
+                           hoje=date.today(), eh_gestor=eh_gestor,
+                           eh_admin=(current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                                     or getattr(current_user, "is_master", False))))
+
+
+@facilities_bp.route("/rdo/<int:rdo_id>/aprovar", methods=["POST"])
+@_rdo_required
+def rdo_aprovar(rdo_id):
+    """[item novo] Aprovação em duas etapas: um Encarregado aprova, e um Admin aprova — o RDO
+    só sai de PENDENTE quando os dois tiverem aprovado."""
+    from .almox import _colab_sessao
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))
+    eh_encarregado = eh_admin or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_encarregado:
+        abort(403)
+
+    if eh_admin:
+        r.aprovado_admin_em = datetime.utcnow()
+        r.aprovado_admin_por = current_user.id
+    if colab_atual and getattr(colab_atual, "eh_encarregado_campo", False):
+        r.aprovado_encarregado_em = datetime.utcnow()
+        r.aprovado_encarregado_por = colab_atual.id
+    if r.totalmente_aprovado:
+        r.status = "APROVADO"
+    db.session.commit()
+    flash("RDO aprovado." if r.totalmente_aprovado else "Sua aprovação foi registrada — aguardando a outra parte.", "success")
+    return redirect(url_for("facilities.rdo"))
+
+
+@facilities_bp.route("/rdo/<int:rdo_id>/pdf")
+@_rdo_required
+def rdo_pdf(rdo_id):
+    """[item novo] Exporta o RDO em PDF — disponível mesmo pendente (não só aprovado), com
+    layout Serena, fotos das atividades, observações da equipe e % de execução."""
+    from flask import send_file
+    from .pdf_rdo import gerar_pdf_rdo
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    buf = gerar_pdf_rdo(r)
+    nome_arquivo = f"RDO_{r.data.strftime('%Y%m%d')}_{(r.planta.nome if r.planta else 'planta').replace(' ', '_')}.pdf"
+    return send_file(buf, mimetype="application/pdf", as_attachment=False, download_name=nome_arquivo)

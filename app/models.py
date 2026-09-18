@@ -1529,19 +1529,26 @@ class RegistroPreenchimento(db.Model):
 # ============================================================================
 
 class RelatorioDiarioObra(db.Model):
-    """Registro diário tradicional de campo/obra: mão de obra presente, atividades do dia
-    (alimentadas a partir de AtividadeGrupo com AtividadeDia naquela data), condições
-    climáticas, equipamentos usados. Um RDO por dia por planta (na prática; não é uma
-    constraint dura)."""
+    """[v4] Registro diário de campo/obra: mão de obra presente, atividades do dia (as que já
+    estavam PROGRAMADAS para aquela data — não se escolhe manualmente), condições climáticas,
+    equipamentos usados, e uma MÉDIA PONDERADA da % executada no dia (ponderada pela meta de
+    cada atividade). Sobe para aprovação de um Encarregado E de um Admin — só sai de PENDENTE
+    quando os dois aprovarem."""
     __tablename__ = "sf_rdo"
     id = db.Column(db.Integer, primary_key=True)
     data = db.Column(db.Date, nullable=False)
-    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
-    condicao_climatica = db.Column(db.String(80))
-    mao_de_obra_texto = db.Column(db.Text)      # lista livre (nome + função) por linha
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"), nullable=False)
+    condicao_climatica = db.Column(db.String(80), nullable=False)
+    mao_de_obra_texto = db.Column(db.Text)      # lista livre (nome + função) por linha, pré-preenchida
     equipamentos_texto = db.Column(db.Text)      # equipamentos usados no dia, texto livre
-    atividades_ids_json = db.Column(db.Text)     # ids de AtividadeGrupo puxados daquele dia
+    atividades_ids_json = db.Column(db.Text)     # ids de AtividadeGrupo daquele dia (automático)
+    percentual_medio = db.Column(db.Float)        # média ponderada pela meta de cada atividade do dia
     observacoes = db.Column(db.Text)
+    status = db.Column(db.String(20), default="PENDENTE")  # PENDENTE|APROVADO
+    aprovado_encarregado_em = db.Column(db.DateTime)
+    aprovado_encarregado_por = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    aprovado_admin_em = db.Column(db.DateTime)
+    aprovado_admin_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -1557,6 +1564,10 @@ class RelatorioDiarioObra(db.Model):
         if not ids:
             return []
         return AtividadeGrupo.query.filter(AtividadeGrupo.id.in_(ids)).all()
+
+    @property
+    def totalmente_aprovado(self):
+        return self.aprovado_encarregado_em is not None and self.aprovado_admin_em is not None
 
 
 

@@ -504,6 +504,20 @@ class ColaboradorPlanta(db.Model):
     planta = db.relationship("Planta")
 
 
+class Predio(db.Model):
+    """[v3] Prédio dentro de uma planta (ex.: "D6", "Subestação Central") — cadastro novo,
+    pedido para uso em Programação de Atividades. Distinto de Armazem (que é sobre estoque/
+    localização de material); Prédio é sobre onde a atividade de campo acontece."""
+    __tablename__ = "sf_predios"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(160), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    planta = db.relationship("Planta")
+
+
 class Armazem(db.Model):
     """Galpão dentro de uma planta (ex.: Galpão D6)."""
     __tablename__ = "almox_armazens"
@@ -890,6 +904,8 @@ TAREFAS_PERFIL = [
     ("fac_inspecionar", "Executar checklist / inspecionar equipamento", "Facilities", False),
     ("fac_cadastrar_equipamento", "Cadastrar equipamento", "Facilities", False),
     ("fac_gerir_modelos", "Criar/editar modelos de checklist e tipos (gestão)", "Facilities", False),
+    ("fac_criar_atividade", "Criar atividades programadas (Facilities)", "Facilities", False),
+    ("fac_encarregado_campo", "Encarregado de Campo (aprova/retifica atividades)", "Facilities", False),
 ]
 
 # Compatibilidade: as 4 tarefas antigas continuam válidas (perfis já salvos não quebram)
@@ -1002,6 +1018,10 @@ def perm_from_tasks(perms, prop):
         return ("fac_cadastrar_equipamento" in perms)
     if prop == "pode_facilities_gerir":
         return ("fac_gerir_modelos" in perms)
+    if prop == "pode_criar_atividade":
+        return ("fac_criar_atividade" in perms)
+    if prop == "eh_encarregado_campo":
+        return ("fac_encarregado_campo" in perms)
     if prop == "pode_colaboradores":
         return "perm_colaboradores" in perms
     if prop == "pode_criar_solicitacao":
@@ -1011,6 +1031,19 @@ def perm_from_tasks(perms, prop):
     if prop == "pode_solicitar":
         return bool(perms & {"perm_solicitar", "solicitar_criar", "solicitar_ver_minhas"})
     return prop in perms
+
+
+class EncarregadoEmpresa(db.Model):
+    """[v3] Liga um Colaborador (com papel/tarefa "Encarregado de Campo") às empresas
+    (Fornecedor) pelas quais ele é responsável — usado para filtrar quais atividades ele
+    vê para aprovar."""
+    __tablename__ = "sf_encarregado_empresa"
+    id = db.Column(db.Integer, primary_key=True)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"), nullable=False)
+    fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"), nullable=False)
+    __table_args__ = (db.UniqueConstraint("colaborador_id", "fornecedor_id", name="uq_encarregado_empresa"),)
+
+    fornecedor = db.relationship("Fornecedor")
 
 
 class Colaborador(UserMixin, db.Model):
@@ -1110,6 +1143,14 @@ class Colaborador(UserMixin, db.Model):
     def pode_facilities_cadastrar(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities_cadastrar")
     @property
     def pode_facilities_gerir(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities_gerir")
+    @property
+    def pode_criar_atividade(self): return perm_from_tasks(self._perms_efetivas(), "pode_criar_atividade")
+    @property
+    def eh_encarregado_campo(self): return perm_from_tasks(self._perms_efetivas(), "eh_encarregado_campo")
+    @property
+    def empresas_encarregado(self):
+        """[v3] Fornecedores pelos quais este Colaborador é Encarregado de Campo."""
+        return [e.fornecedor for e in EncarregadoEmpresa.query.filter_by(colaborador_id=self.id).all()]
     @property
     def pode_criar_solicitacao(self): return perm_from_tasks(self._perms_efetivas(), "pode_criar_solicitacao")
     @property
@@ -1273,6 +1314,7 @@ class ExecucaoChecklist(db.Model):
     respostas_json = db.Column(db.Text)     # snapshot das respostas item a item (JSON)
     cabecalho_json = db.Column(db.Text)     # dados livres digitados na hora (marca, série, etc.)
     observacoes = db.Column(db.Text)
+    fotos_json = db.Column(db.Text)         # [v3] fotos do checklist, salvas via storage.salvar_imagem
 
     produto = db.relationship("ProdutoAlmox")
     modelo = db.relationship("ModeloChecklist")
@@ -1313,69 +1355,140 @@ class ItemFalhaAberta(db.Model):
 # Relatório de Atividades = o que de fato aconteceu (pode ou não estar ligado a uma
 # atividade programada), no mesmo espírito do Relatório de Carga já existente.
 
-class AtividadeProgramada(db.Model):
-    """Uma atividade agendada (avulsa, sem recorrência por ora): "trocar filtro do gerador
-    em 05/08", "inspecionar quadro elétrico"). Pode ou não estar ligada a um item de Material."""
-    __tablename__ = "sf_atividades_programadas"
+# ============================================================================
+# PROGRAMAÇÃO DE ATIVIDADES v3 — grupo (planejamento) + dias (execução dia a dia)
+# ============================================================================
+# Decisão (Antonio, especificação v3): a atividade "mãe" (AtividadeGrupo) carrega o
+# planejamento (título, duração em dias ÚTEIS, recorrência, colaboradores, fotos de
+# "antes"). Ao salvar, o sistema gera N AtividadeDia (uma por dia útil, pulando fins de
+# semana e feriados) — cada uma com sua PRÓPRIA % de conclusão, fotos e status de
+# aprovação. Isso separa "o que foi planejado" de "o que aconteceu em cada dia".
+#
+# Duração em dias úteis: 1 semana = 5, 1 mês ≈ 22, 1 ano ≈ 260 (conversão fixa, não
+# civil). Recorrência: intervalo fixo em dias corridos (7/14/30/60/90/180/365/730),
+# restrito a valores >= duração da atividade em dias úteis (trava de bom senso, não
+# múltiplo matemático exato).
+#
+# % de conclusão: UMA por AtividadeDia (não por colaborador) — qualquer colaborador da
+# atividade pode preencher, mas o sistema registra HISTÓRICO de quem preencheu cada vez
+# (RegistroPreenchimento). Se a % cai em relação ao dia anterior da mesma atividade,
+# exige justificativa. Fluxo de aprovação do Encarregado: só Aprovar ou Retificar (sem
+# reprovar — retificar já sai aprovado).
+
+UNIDADES_DURACAO_DIAS_UTEIS = {"dias": None, "semana": 5, "mes": 22, "ano": 260}
+OPCOES_RECORRENCIA = [
+    (7, "Semanal (a cada 7 dias)"), (14, "Quinzenal (a cada 14 dias)"),
+    (30, "Mensal (a cada 30 dias)"), (60, "Bimestral (a cada 60 dias)"),
+    (90, "Trimestral (a cada 90 dias)"), (180, "Semestral (a cada 180 dias)"),
+    (365, "Anual (a cada 365 dias)"), (730, "Bianual (a cada 730 dias)"),
+]
+
+
+class Feriado(db.Model):
+    """Cadastro simples de feriados (nacionais por padrão) — usado para pular esses dias
+    ao gerar as linhas (AtividadeDia) de uma atividade, junto com sábados/domingos."""
+    __tablename__ = "sf_feriados"
+    id = db.Column(db.Integer, primary_key=True)
+    data = db.Column(db.Date, nullable=False, unique=True)
+    nome = db.Column(db.String(160), nullable=False)
+    ativo = db.Column(db.Boolean, default=True)
+
+
+class AtividadeGrupo(db.Model):
+    """A atividade "mãe": o planejamento. Ao salvar, gera N AtividadeDia (dias úteis)."""
+    __tablename__ = "sf_atividades_grupo"
     id = db.Column(db.Integer, primary_key=True)
     titulo = db.Column(db.String(200), nullable=False)
     descricao = db.Column(db.Text)
-    data_prevista = db.Column(db.Date, nullable=False)
-    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
+    data_inicio = db.Column(db.Date, nullable=False)
+    unidade_duracao = db.Column(db.String(10), default="dias")   # dias|semana|mes|ano
+    duracao_dias_uteis = db.Column(db.Integer, nullable=False)
+    recorrencia_dias = db.Column(db.Integer)   # null = não recorrente
     planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
-    responsavel_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
-    responsavel_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
-    responsavel_texto = db.Column(db.String(160))  # nome livre, se o responsável não é usuário do sistema
-    status = db.Column(db.String(20), default="PENDENTE")  # PENDENTE | CONCLUIDA | CANCELADA
+    predio_id = db.Column(db.ForeignKey("sf_predios.id"))   # [v3] Prédio (cadastro novo)
+    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
+    fotos_antes_json = db.Column(db.Text)   # até 4 caminhos de arquivo
+    status_cadastro = db.Column(db.String(20), default="COMPLETO")  # COMPLETO|INCOMPLETO
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
-    produto = db.relationship("ProdutoAlmox")
     planta = db.relationship("Planta")
+    predio = db.relationship("Predio")
+    produto = db.relationship("ProdutoAlmox")
+    dias = db.relationship("AtividadeDia", backref="grupo", order_by="AtividadeDia.data",
+                           cascade="all, delete-orphan")
+    colaboradores = db.relationship("AtividadeColaborador", backref="grupo",
+                                    cascade="all, delete-orphan")
 
     @property
-    def responsavel_nome(self):
-        if self.responsavel_usuario_id:
-            u = db.session.get(Usuario, self.responsavel_usuario_id)
-            return u.nome if u else "—"
-        if self.responsavel_colaborador_id:
-            c = db.session.get(Colaborador, self.responsavel_colaborador_id)
-            return c.nome if c else "—"
-        return self.responsavel_texto or "—"
+    def responsavel(self):
+        r = next((c for c in self.colaboradores if c.eh_responsavel), None)
+        return r.colaborador if r else None
+
+
+class AtividadeColaborador(db.Model):
+    """Um colaborador participante de uma AtividadeGrupo. O PRIMEIRO adicionado é marcado
+    eh_responsavel=True (o titular); os demais são colaboradores normais da atividade."""
+    __tablename__ = "sf_atividade_colaboradores"
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_id = db.Column(db.ForeignKey("sf_atividades_grupo.id"), nullable=False)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"), nullable=False)
+    eh_responsavel = db.Column(db.Boolean, default=False)
+
+    colaborador = db.relationship("Colaborador")
+
+
+class AtividadeDia(db.Model):
+    """Uma linha/dia da atividade (execução). status: PENDENTE (nada preenchido ainda) |
+    AGUARDANDO_APROVACAO | APROVADA | ATRASADA (nada preenchido e a data já passou)."""
+    __tablename__ = "sf_atividade_dias"
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_id = db.Column(db.ForeignKey("sf_atividades_grupo.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    ordem = db.Column(db.Integer, nullable=False)     # 1, 2, 3... dentro do grupo
+    meta_percentual = db.Column(db.Integer, nullable=False)   # ordem/duracao * 100, arredondado
+    percentual = db.Column(db.Integer)                # o que foi de fato reportado
+    descricao_execucao = db.Column(db.Text)
+    justificativa_queda = db.Column(db.Text)          # obrigatório se percentual < dia anterior
+    fotos_json = db.Column(db.Text)                   # até 4 fotos "depois/progresso" do dia
+    status = db.Column(db.String(24), default="PENDENTE")
+    reprogramado_de = db.Column(db.Date)               # data original, se foi reprogramada
+    motivo_reprogramacao = db.Column(db.Text)
+    aprovado_em = db.Column(db.DateTime)
+    aprovado_por = db.Column(db.ForeignKey("usuarios.id"))
+    retificado = db.Column(db.Boolean, default=False)
+
+    preenchimentos = db.relationship("RegistroPreenchimento", backref="dia",
+                                     order_by="RegistroPreenchimento.criado_em",
+                                     cascade="all, delete-orphan")
 
     @property
     def atrasada(self):
-        return self.status == "PENDENTE" and self.data_prevista < date.today()
+        return self.status == "PENDENTE" and self.data < date.today()
 
 
-class RelatorioAtividade(db.Model):
-    """O que foi de fato EXECUTADO — pode estar ligado a uma AtividadeProgramada (fechando
-    o ciclo planejado x executado) ou ser um registro avulso. Fotos ficam em disco, como o
-    Relatório de Carga já faz (não persistem como blob no banco)."""
-    __tablename__ = "sf_relatorios_atividade"
+class RegistroPreenchimento(db.Model):
+    """[v3] Histórico de QUEM preencheu a % de cada AtividadeDia (mais de um colaborador
+    pode preencher a mesma atividade/dia ao longo do tempo — guardamos todos os registros,
+    não só o valor final)."""
+    __tablename__ = "sf_registros_preenchimento"
     id = db.Column(db.Integer, primary_key=True)
-    atividade_programada_id = db.Column(db.ForeignKey("sf_atividades_programadas.id"))
-    produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
-    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
-    titulo = db.Column(db.String(200), nullable=False)
-    descricao = db.Column(db.Text)
-    executado_em = db.Column(db.DateTime, default=datetime.utcnow)
-    executado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
-    executado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
-    fotos_json = db.Column(db.Text)   # lista de caminhos/nomes de arquivo (fotos ficam em disco)
+    dia_id = db.Column(db.ForeignKey("sf_atividade_dias.id"), nullable=False)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    percentual = db.Column(db.Integer, nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
-    atividade_programada = db.relationship("AtividadeProgramada")
-    produto = db.relationship("ProdutoAlmox")
-    planta = db.relationship("Planta")
+    colaborador = db.relationship("Colaborador")
 
     @property
-    def executado_por_nome(self):
-        if self.executado_por_usuario_id:
-            u = db.session.get(Usuario, self.executado_por_usuario_id)
-            return u.nome if u else "—"
-        if self.executado_por_colaborador_id:
-            c = db.session.get(Colaborador, self.executado_por_colaborador_id)
+    def autor_nome(self):
+        if self.colaborador_id:
+            c = db.session.get(Colaborador, self.colaborador_id)
             return c.nome if c else "—"
+        if self.usuario_id:
+            u = db.session.get(Usuario, self.usuario_id)
+            return u.nome if u else "—"
         return "—"
 
 
@@ -1385,8 +1498,9 @@ class RelatorioAtividade(db.Model):
 
 class RelatorioDiarioObra(db.Model):
     """Registro diário tradicional de campo/obra: mão de obra presente, atividades do dia
-    (alimentadas a partir de AtividadeProgramada daquela data), condições climáticas,
-    equipamentos usados. Um RDO por dia por planta (na prática; não é uma constraint dura)."""
+    (alimentadas a partir de AtividadeGrupo com AtividadeDia naquela data), condições
+    climáticas, equipamentos usados. Um RDO por dia por planta (na prática; não é uma
+    constraint dura)."""
     __tablename__ = "sf_rdo"
     id = db.Column(db.Integer, primary_key=True)
     data = db.Column(db.Date, nullable=False)
@@ -1394,7 +1508,7 @@ class RelatorioDiarioObra(db.Model):
     condicao_climatica = db.Column(db.String(80))
     mao_de_obra_texto = db.Column(db.Text)      # lista livre (nome + função) por linha
     equipamentos_texto = db.Column(db.Text)      # equipamentos usados no dia, texto livre
-    atividades_ids_json = db.Column(db.Text)     # ids de AtividadeProgramada puxados daquele dia
+    atividades_ids_json = db.Column(db.Text)     # ids de AtividadeGrupo puxados daquele dia
     observacoes = db.Column(db.Text)
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1410,7 +1524,7 @@ class RelatorioDiarioObra(db.Model):
             ids = []
         if not ids:
             return []
-        return AtividadeProgramada.query.filter(AtividadeProgramada.id.in_(ids)).all()
+        return AtividadeGrupo.query.filter(AtividadeGrupo.id.in_(ids)).all()
 
 
 

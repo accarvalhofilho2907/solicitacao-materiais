@@ -4,7 +4,7 @@
 <h4 class="mb-1">Inspeção — {{ produto.nome }}</h4>
 <p class="text-muted small mb-3">Modelo: {{ modelo.nome }}</p>
 
-<form method="post">
+<form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="produto_id" value="{{ produto.id }}">
   <input type="hidden" name="modelo_id" value="{{ modelo.id }}">
@@ -58,6 +58,9 @@
 
   <div class="mb-3"><label class="form-label small">Observações (opcional)</label>
     <textarea name="observacoes" class="form-control" rows="2"></textarea></div>
+
+  <div class="mb-3"><label class="form-label small">Fotos (opcional, máx. 4)</label>
+    <input type="file" name="fotos" class="form-control" accept="image/*" multiple></div>
 
   <button class="btn btn-primary">Gerar checklist</button>
   <a class="btn btn-outline-secondary" href="{{ url_for('facilities.inspecionar') }}">Cancelar</a>

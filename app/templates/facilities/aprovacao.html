@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Aprovação{% endblock %}
+{% block content %}
+<h4 class="mb-1">Aprovação — Encarregado de Campo</h4>
+<div class="alert alert-warning small py-2"><b>{{ pendentes|length }}</b> atividade(s) aguardando sua aprovação.</div>
+
+{% for d in pendentes %}
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-1">{{ d.grupo.titulo }} — dia {{ d.ordem }}/{{ d.grupo.duracao_dias_uteis }}</h6>
+  <p class="text-muted small mb-2">% informada: {{ d.percentual }}% (meta {{ d.meta_percentual }}%) · {{ d.data.strftime('%d/%m/%Y') }}</p>
+  {% if d.justificativa_queda %}
+  <div class="alert alert-secondary small py-2"><b>Justificativa (% menor que o dia anterior):</b><br>{{ d.justificativa_queda }}</div>
+  {% endif %}
+  {% if d.descricao_execucao %}<p class="small">{{ d.descricao_execucao }}</p>{% endif %}
+
+  <div class="d-flex gap-2 mt-2 flex-wrap">
+    <form method="post" action="{{ url_for('facilities.aprovar_dia', dia_id=d.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-success btn-sm">✓ Aprovar como está</button>
+    </form>
+    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#retif{{ d.id }}">✎ Retificar</button>
+    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#reprog{{ d.id }}">📅 Reprogramar</button>
+  </div>
+
+  <div class="collapse mt-2" id="retif{{ d.id }}">
+    <form method="post" action="{{ url_for('facilities.retificar_dia', dia_id=d.id) }}" class="border rounded p-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-label small">Nova %</label>
+      <input type="number" name="percentual" class="form-control form-control-sm mb-2" value="{{ d.percentual }}">
+      <label class="form-label small">Descrição (opcional)</label>
+      <textarea name="descricao" class="form-control form-control-sm mb-2">{{ d.descricao_execucao or '' }}</textarea>
+      <button class="btn btn-sm btn-primary">Salvar retificação (já sai aprovado)</button>
+    </form>
+  </div>
+
+  <div class="collapse mt-2" id="reprog{{ d.id }}">
+    <form method="post" action="{{ url_for('facilities.reprogramar_dia', dia_id=d.id) }}" class="border rounded p-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-label small">Nova data</label>
+      <input type="date" name="nova_data" class="form-control form-control-sm mb-2">
+      <label class="form-label small">Motivo (obrigatório)</label>
+      <textarea name="motivo" class="form-control form-control-sm mb-2" required></textarea>
+      <button class="btn btn-sm btn-primary">Confirmar reprogramação</button>
+    </form>
+  </div>
+</div></div>
+{% else %}
+<div class="alert alert-secondary">Nada pendente de aprovação.</div>
+{% endfor %}
+{% endblock %}

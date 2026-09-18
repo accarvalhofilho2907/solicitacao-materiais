@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Nova atividade{% endblock %}
+{% block content %}
+<h4 class="mb-3">Nova atividade</h4>
+<p class="text-muted small">Ao salvar, a atividade é dividida em dias úteis (pula fim de semana e feriados); admin pode salvar sem preencher tudo.</p>
+
+<form method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card mb-3"><div class="card-body">
+    <div class="row g-2">
+      <div class="col-md-8"><label class="form-label small">Título</label><input name="titulo" class="form-control"></div>
+      <div class="col-md-4"><label class="form-label small">Data de início</label><input type="date" name="data_inicio" class="form-control"></div>
+    </div>
+    <div class="row g-2 mt-1">
+      <div class="col-md-3"><label class="form-label small">Duração — unidade</label>
+        <select name="unidade_duracao" class="form-select" id="selUnidade" onchange="atualizarUnidade()">
+          <option value="dias">Dias (manual)</option>
+          <option value="semana">1 semana</option>
+          <option value="mes">1 mês</option>
+          <option value="ano">1 ano</option>
+        </select></div>
+      <div class="col-md-3"><label class="form-label small">Duração (dias úteis)</label>
+        <input type="number" name="duracao_dias_uteis" id="inpDuracao" class="form-control" value="1" min="1"></div>
+      <div class="col-md-6"><label class="form-label small">Recorrência (opcional)</label>
+        <select name="recorrencia_dias" id="selRecorrencia" class="form-select">
+          <option value="">— não se repete —</option>
+          {% for v, l in opcoes_recorrencia %}<option value="{{ v }}" data-min="{{ v }}">{{ l }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <div class="alert alert-warning small py-2 mt-2">Os dias informados são <b>dias úteis</b> (não corridos). "1 semana" = 5 dias úteis · "1 mês" ≈ 22 · "1 ano" ≈ 260.</div>
+    <div class="row g-2 mt-1">
+      <div class="col-12"><label class="form-label small">Descrição e detalhamento</label><textarea name="descricao" class="form-control" rows="2"></textarea></div>
+    </div>
+    <div class="row g-2 mt-1">
+      <div class="col-md-4"><label class="form-label small">Planta</label>
+        <select name="planta_id" class="form-select">
+          <option value="">—</option>
+          {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+        </select></div>
+      <div class="col-md-4"><label class="form-label small">Prédio</label>
+        <select name="predio_id" class="form-select">
+          <option value="">—</option>
+          {% for pr in predios_disp %}<option value="{{ pr.id }}">{{ pr.nome }}</option>{% endfor %}
+        </select></div>
+      <div class="col-md-4"><label class="form-label small">Material a retirar (opcional)</label>
+        <select name="produto_id" class="form-select">
+          <option value="">— nenhum —</option>
+          {% for m in materiais %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <label class="form-label small mt-2">Fotos — ANTES (máx. 4)</label>
+    <input type="file" name="fotos_antes" class="form-control" accept="image/*" multiple>
+  </div></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="mb-2">Empresa e responsável</h6>
+    <div id="listaColaboradores">
+      <div class="row g-2 align-items-end mb-2 linha-colab-form">
+        <div class="col-md-1"><span class="badge bg-primary">responsável</span></div>
+        <div class="col-md-5"><label class="form-label small">Empresa</label>
+          <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
+            <option value="">—</option>
+            {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
+          </select></div>
+        <div class="col-md-5"><label class="form-label small">Colaborador</label>
+          <select name="colaborador_id" class="form-select sel-colab"><option value="">— escolha a empresa —</option></select></div>
+      </div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addColaboradorLinha()">＋ Adicionar colaborador</button>
+    <div class="alert alert-secondary small py-2 mt-2" id="avisoDivisao">Ao salvar: a atividade será dividida em dias úteis, cada um valendo uma fração igual da meta.</div>
+  </div></div>
+
+  <button class="btn btn-primary">Salvar atividade</button>
+  <a class="btn btn-outline-secondary" href="{{ url_for('facilities.programacao') }}">Cancelar</a>
+</form>
+
+<template id="templateLinhaColab">
+  <div class="row g-2 align-items-end mb-2 linha-colab-form">
+    <div class="col-md-1"><span class="badge bg-secondary">colaborador</span></div>
+    <div class="col-md-5"><label class="form-label small">Empresa</label>
+      <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
+        <option value="">—</option>
+        {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-5"><label class="form-label small">Colaborador</label>
+      <select name="colaborador_id" class="form-select sel-colab"><option value="">— escolha a empresa —</option></select></div>
+    <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.linha-colab-form').remove()">×</button></div>
+  </div>
+</template>
+
+<script>
+function addColaboradorLinha(){
+  const tpl = document.getElementById('templateLinhaColab').content.cloneNode(true);
+  document.getElementById('listaColaboradores').appendChild(tpl);
+}
+function carregarColaboradores(selEmpresa){
+  const fornecedorId = selEmpresa.value;
+  const selColab = selEmpresa.closest('.linha-colab-form').querySelector('.sel-colab');
+  if(!fornecedorId){ selColab.innerHTML = '<option value="">— escolha a empresa —</option>'; return; }
+  selColab.innerHTML = '<option value="">Carregando...</option>';
+  fetch("{{ url_for('facilities.colaboradores_por_empresa', fornecedor_id=0) }}".replace('0', fornecedorId))
+    .then(r => r.json()).then(function(d){
+      let opts = '<option value="">— selecione —</option>';
+      d.colaboradores.forEach(function(c){ opts += '<option value="'+c.id+'">'+c.nome+'</option>'; });
+      selColab.innerHTML = opts;
+    });
+}
+function atualizarUnidade(){
+  const unidade = document.getElementById('selUnidade').value;
+  const inp = document.getElementById('inpDuracao');
+  const mapa = {dias: null, semana: 5, mes: 22, ano: 260};
+  let dias;
+  if(unidade === 'dias'){ dias = parseInt(inp.value) || 1; inp.readOnly = false; }
+  else { dias = mapa[unidade]; inp.value = dias; inp.readOnly = true; }
+  const sel = document.getElementById('selRecorrencia');
+  Array.from(sel.options).forEach(function(op){
+    if(!op.dataset.min) return;
+    op.hidden = parseInt(op.dataset.min) < dias;
+  });
+  if(sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = '';
+}
+document.getElementById('inpDuracao').addEventListener('input', atualizarUnidade);
+atualizarUnidade();
+</script>
+{% endblock %}

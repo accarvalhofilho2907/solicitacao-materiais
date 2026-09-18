@@ -19,9 +19,12 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from .extensions import db
+from .storage import salvar_imagem
 from .models import (ModeloChecklist, ItemChecklist, ProdutoAlmox, ExecucaoChecklist,
-                     ItemFalhaAberta, Planta, Colaborador, AtividadeProgramada,
-                     RelatorioAtividade, RelatorioDiarioObra)
+                     ItemFalhaAberta, Planta, Colaborador, Fornecedor, Predio, Feriado,
+                     AtividadeGrupo, AtividadeColaborador, AtividadeDia, RegistroPreenchimento,
+                     EncarregadoEmpresa, RelatorioDiarioObra,
+                     UNIDADES_DURACAO_DIAS_UTEIS, OPCOES_RECORRENCIA)
 
 facilities_bp = Blueprint("facilities", __name__, url_prefix="/facilities")
 
@@ -235,6 +238,7 @@ def inspecionar():
     resultado = "OK"
     if any(v == "falha" for v in respostas.values()):
         resultado = "ATENCAO"
+    fotos = _salvar_fotos("fotos", maximo=4)
     execucao = ExecucaoChecklist(produto_id=produto.id, modelo_id=modelo.id,
                                  planta_id=produto.planta_id,
                                  executado_por_usuario_id=usuario_id,
@@ -242,6 +246,7 @@ def inspecionar():
                                  resultado_geral=resultado,
                                  respostas_json=json.dumps(respostas),
                                  cabecalho_json=json.dumps(cabecalho) if cabecalho else None,
+                                 fotos_json=json.dumps(fotos) if fotos else None,
                                  observacoes=(request.form.get("observacoes") or "").strip())
     db.session.add(execucao)
     db.session.commit()
@@ -249,117 +254,461 @@ def inspecionar():
     return redirect(url_for("facilities.inspecionar"))
 
 
-@facilities_bp.route("/programacao", methods=["GET", "POST"])
+def _dia_util(d):
+    """True se d (date) não é sábado, domingo, nem feriado cadastrado ativo."""
+    if d.weekday() >= 5:
+        return False
+    return Feriado.query.filter_by(data=d, ativo=True).first() is None
+
+
+def _gerar_dias_uteis(data_inicio, quantidade):
+    """[v3] Gera `quantidade` datas úteis a partir de data_inicio (inclusive), pulando
+    sábado/domingo/feriados. Retorna lista de date, em ordem."""
+    datas = []
+    d = data_inicio
+    while len(datas) < quantidade:
+        if _dia_util(d):
+            datas.append(d)
+        d = d + timedelta(days=1)
+    return datas
+
+
+def _checar_conflito_colaborador(colaborador_id, data_inicio, datas_novas, ignorar_grupo_id=None):
+    """[v3] Verifica se o colaborador já tem AtividadeDia em qualquer uma das datas da
+    atividade nova (overlap por range). Retorna lista de (grupo, dias_conflitantes)."""
+    ids_dia = {d for d in datas_novas}
+    q = (AtividadeDia.query
+         .join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
+         .filter(AtividadeColaborador.colaborador_id == colaborador_id,
+                 AtividadeDia.data.in_(ids_dia)))
+    if ignorar_grupo_id:
+        q = q.filter(AtividadeDia.grupo_id != ignorar_grupo_id)
+    dias = q.all()
+    if not dias:
+        return None
+    grupo = dias[0].grupo
+    return {"grupo": grupo, "dias": [d.data for d in dias]}
+
+
+def _remover_particulas_sobrenome(nome_completo):
+    """[v3] Formata "Nome Sobrenome" para o resumo diário: pega o primeiro nome + o
+    restante, ignorando que partículas soltas (de/da/do/dos/das) NÃO contam como o
+    "corte" do sobrenome — ex.: "João da Costa Filho" -> "João da Costa" (3 palavras,
+    a partícula "da" fica junto do sobrenome seguinte, não corta ali)."""
+    partes = (nome_completo or "").strip().split()
+    if len(partes) <= 2:
+        return nome_completo
+    particulas = {"de", "da", "do", "das", "dos"}
+    saida = [partes[0]]
+    i = 1
+    while i < len(partes) and len(saida) < 3:
+        saida.append(partes[i])
+        if partes[i].lower() not in particulas:
+            break
+        i += 1
+    return " ".join(saida)
+
+
+def _colaboradores_disp_por_empresa(fornecedor_id):
+    q = Colaborador.query.filter_by(ativo=True)
+    if fornecedor_id:
+        forn = db.session.get(Fornecedor, int(fornecedor_id))
+        if forn:
+            q = q.filter(db.func.upper(Colaborador.empresa) == (forn.nome or "").upper())
+    return q.order_by(Colaborador.nome).all()
+
+
+def _salvar_fotos(campo_form, maximo=4):
+    """[v3] Salva até `maximo` fotos enviadas no campo `campo_form` do request (usa o mesmo
+    salvar_imagem() já usado pelo resto do sistema — Cloudinary se CLOUDINARY_URL estiver
+    configurado, senão cai no disco local do Render, que é volátil). Devolve uma lista de
+    URLs (para gravar como JSON em fotos_json / fotos_antes_json)."""
+    arquivos = request.files.getlist(campo_form)[:maximo]
+    urls = []
+    for arq in arquivos:
+        if not arq or not arq.filename:
+            continue
+        url = salvar_imagem(arq)
+        if url:
+            urls.append(url)
+    return urls
+
+
+def _quem_preencheu():
+    from .almox import _colab_sessao
+    if current_user.is_authenticated:
+        return None, current_user.id
+    colab = _colab_sessao()
+    return (colab.id if colab else None), None
+
+
+# ============================================================================
+# PRÉDIO (cadastro novo — Cadastro > Plantas, Armazéns e Localizadores)
+# ============================================================================
+
+@facilities_bp.route("/predios", methods=["GET", "POST"])
+@_gerir_required
+def predios():
+    plantas_disp, ids_permitidas = _plantas_ctx()
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip()
+        planta_id = request.form.get("planta_id") or None
+        if not nome:
+            flash("Informe o nome do prédio.", "danger")
+        else:
+            db.session.add(Predio(nome=nome, planta_id=int(planta_id) if planta_id else None))
+            db.session.commit()
+            flash("Prédio cadastrado.", "success")
+        return redirect(url_for("facilities.predios"))
+    itens = Predio.query.filter_by(ativo=True).order_by(Predio.nome).all()
+    return render_template("facilities/predios.html", itens=itens, plantas_disp=plantas_disp)
+
+
+# ============================================================================
+# PROGRAMAÇÃO DE ATIVIDADES v3
+# ============================================================================
+
+@facilities_bp.route("/programacao", methods=["GET"])
 @_ver_required
 def programacao():
+    _promover_falhas_vencidas()
     plantas_disp, ids_permitidas = _plantas_ctx()
-    if request.method == "POST":
-        from .almox import _colab_sessao
-        pode_criar = getattr(current_user, "is_admin", False) or getattr(_colab_sessao(), "pode_facilities_inspecionar", False)
-        if not pode_criar:
-            abort(403)
-        titulo = (request.form.get("titulo") or "").strip()
-        data_prevista = request.form.get("data_prevista")
-        if not titulo or not data_prevista:
-            flash("Informe título e data prevista.", "danger")
-            return redirect(url_for("facilities.programacao"))
-        try:
-            data_d = datetime.strptime(data_prevista, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Data inválida.", "danger")
-            return redirect(url_for("facilities.programacao"))
-        planta_id = request.form.get("planta_id") or None
-        if planta_id:
-            ids_ok = {p.id for p in plantas_disp}
-            if int(planta_id) not in ids_ok:
-                planta_id = None
-        produto_id = request.form.get("produto_id") or None
-        responsavel_texto = (request.form.get("responsavel_texto") or "").strip()
-        db.session.add(AtividadeProgramada(
-            titulo=titulo, descricao=(request.form.get("descricao") or "").strip(),
-            data_prevista=data_d, planta_id=int(planta_id) if planta_id else None,
-            produto_id=int(produto_id) if produto_id else None,
-            responsavel_texto=responsavel_texto or None,
-            criado_por=current_user.id if current_user.is_authenticated else None))
-        db.session.commit()
-        flash("Atividade programada.", "success")
-        return redirect(url_for("facilities.programacao"))
+    data_str = request.args.get("data") or date.today().strftime("%Y-%m-%d")
+    try:
+        data_sel = datetime.strptime(data_str, "%Y-%m-%d").date()
+    except ValueError:
+        data_sel = date.today()
 
-    q = AtividadeProgramada.query.filter(AtividadeProgramada.status == "PENDENTE")
+    q = AtividadeDia.query.filter_by(data=data_sel)
     if ids_permitidas:
-        q = q.filter(db.or_(AtividadeProgramada.planta_id.in_(ids_permitidas), AtividadeProgramada.planta_id.is_(None)))
-    itens = q.order_by(AtividadeProgramada.data_prevista).all()
-    materiais_disp = _materiais_disp(ids_permitidas)
-    return render_template("facilities/programacao.html", itens=itens, plantas_disp=plantas_disp,
-                           materiais_disp=materiais_disp, hoje=date.today())
+        q = q.join(AtividadeGrupo).filter(db.or_(AtividadeGrupo.planta_id.in_(ids_permitidas),
+                                                  AtividadeGrupo.planta_id.is_(None)))
+    dias = q.order_by(AtividadeDia.ordem).all()
+
+    n_incompletas = AtividadeGrupo.query.filter_by(status_cadastro="INCOMPLETO").count()
+
+    # contagem de atividades por dia, pras 2 semanas visiveis no calendario (14 dias a partir de hoje)
+    inicio_semana = data_sel - timedelta(days=data_sel.weekday())
+    contagem = {}
+    for i in range(14):
+        d = inicio_semana + timedelta(days=i)
+        qc = AtividadeDia.query.filter_by(data=d)
+        if ids_permitidas:
+            qc = qc.join(AtividadeGrupo).filter(db.or_(AtividadeGrupo.planta_id.in_(ids_permitidas),
+                                                        AtividadeGrupo.planta_id.is_(None)))
+        titulos = [x.grupo.titulo for x in qc.all()]
+        contagem[d.isoformat()] = titulos
+
+    return render_template("facilities/programacao.html", dias=dias, data_sel=data_sel,
+                           n_incompletas=n_incompletas, contagem_json=json.dumps(contagem),
+                           hoje=date.today())
 
 
-@facilities_bp.route("/programacao/<int:aid>/concluir", methods=["POST"])
-@_inspecionar_required
-def programacao_concluir(aid):
-    a = db.session.get(AtividadeProgramada, aid) or abort(404)
-    a.status = "CONCLUIDA"
-    db.session.commit()
-    flash("Atividade marcada como concluída.", "success")
-    return redirect(url_for("facilities.programacao"))
-
-
-@facilities_bp.route("/programacao/<int:aid>/cancelar", methods=["POST"])
-@_gerir_required
-def programacao_cancelar(aid):
-    a = db.session.get(AtividadeProgramada, aid) or abort(404)
-    a.status = "CANCELADA"
-    db.session.commit()
-    flash("Atividade cancelada.", "success")
-    return redirect(url_for("facilities.programacao"))
-
-
-@facilities_bp.route("/relatorio-atividades", methods=["GET", "POST"])
+@facilities_bp.route("/programacao/nova", methods=["GET", "POST"])
 @_ver_required
-def relatorio_atividades():
+def programacao_nova():
+    from .almox import _colab_sessao
+    pode_criar = getattr(current_user, "is_admin", False) or getattr(_colab_sessao(), "pode_criar_atividade", False)
+    if not pode_criar:
+        abort(403)
     plantas_disp, ids_permitidas = _plantas_ctx()
-    if request.method == "POST":
-        from .almox import _colab_sessao
-        pode_criar = getattr(current_user, "is_admin", False) or getattr(_colab_sessao(), "pode_facilities_inspecionar", False)
-        if not pode_criar:
-            abort(403)
-        titulo = (request.form.get("titulo") or "").strip()
-        if not titulo:
-            flash("Informe um título para o relatório.", "danger")
-            return redirect(url_for("facilities.relatorio_atividades"))
-        planta_id = request.form.get("planta_id") or None
-        if planta_id:
-            ids_ok = {p.id for p in plantas_disp}
-            if int(planta_id) not in ids_ok:
-                planta_id = None
-        produto_id = request.form.get("produto_id") or None
-        atividade_id = request.form.get("atividade_programada_id") or None
-        usuario_id, colaborador_id = _quem_executou()
-        rel = RelatorioAtividade(
-            titulo=titulo, descricao=(request.form.get("descricao") or "").strip(),
-            planta_id=int(planta_id) if planta_id else None,
-            produto_id=int(produto_id) if produto_id else None,
-            atividade_programada_id=int(atividade_id) if atividade_id else None,
-            executado_por_usuario_id=usuario_id, executado_por_colaborador_id=colaborador_id)
-        db.session.add(rel)
-        if atividade_id:
-            ap = db.session.get(AtividadeProgramada, int(atividade_id))
-            if ap and ap.status == "PENDENTE":
-                ap.status = "CONCLUIDA"
+
+    if request.method == "GET":
+        materiais = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
+        predios_disp = Predio.query.filter_by(ativo=True).order_by(Predio.nome).all()
+        empresas_disp = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
+        return render_template("facilities/programacao_nova.html", plantas_disp=plantas_disp,
+                               materiais=materiais, predios_disp=predios_disp, empresas_disp=empresas_disp,
+                               opcoes_recorrencia=OPCOES_RECORRENCIA)
+
+    titulo = (request.form.get("titulo") or "").strip()
+    data_inicio_str = request.form.get("data_inicio")
+    unidade = request.form.get("unidade_duracao") or "dias"
+    if not titulo or not data_inicio_str:
+        flash("Informe ao menos título e data de início (pode completar o restante depois).", "warning")
+    try:
+        data_inicio = datetime.strptime(data_inicio_str, "%Y-%m-%d").date() if data_inicio_str else date.today()
+    except ValueError:
+        data_inicio = date.today()
+
+    duracao = UNIDADES_DURACAO_DIAS_UTEIS.get(unidade)
+    if duracao is None:  # "dias" manual
+        try:
+            duracao = max(1, int(request.form.get("duracao_dias_uteis") or 1))
+        except ValueError:
+            duracao = 1
+
+    recorrencia = request.form.get("recorrencia_dias") or None
+    recorrencia = int(recorrencia) if recorrencia and recorrencia.isdigit() else None
+    if recorrencia is not None and recorrencia < duracao:
+        recorrencia = None  # trava de segurança: nunca aceita recorrência menor que a duração
+
+    planta_id = request.form.get("planta_id") or None
+    if planta_id:
+        ids_ok = {p.id for p in plantas_disp}
+        if int(planta_id) not in ids_ok:
+            planta_id = None
+    predio_id = request.form.get("predio_id") or None
+    produto_id = request.form.get("produto_id") or None
+
+    faltando_campo = not (titulo and data_inicio_str and planta_id and predio_id)
+    fotos_antes = _salvar_fotos("fotos_antes", maximo=4)
+
+    grupo = AtividadeGrupo(titulo=titulo or "(sem título)", descricao=(request.form.get("descricao") or "").strip(),
+                           data_inicio=data_inicio, unidade_duracao=unidade, duracao_dias_uteis=duracao,
+                           recorrencia_dias=recorrencia, planta_id=int(planta_id) if planta_id else None,
+                           predio_id=int(predio_id) if predio_id else None,
+                           produto_id=int(produto_id) if produto_id else None,
+                           fotos_antes_json=json.dumps(fotos_antes) if fotos_antes else None,
+                           status_cadastro="INCOMPLETO" if faltando_campo else "COMPLETO",
+                           criado_por=current_user.id if current_user.is_authenticated else None)
+    db.session.add(grupo)
+    db.session.commit()
+
+    # colaboradores: o PRIMEIRO da lista = responsável
+    colaboradores_ids = request.form.getlist("colaborador_id")
+    conflitos = []
+    for i, cid in enumerate(colaboradores_ids):
+        if not cid:
+            continue
+        cid = int(cid)
+        datas_novas = _gerar_dias_uteis(data_inicio, duracao)
+        conflito = _checar_conflito_colaborador(cid, data_inicio, datas_novas, ignorar_grupo_id=grupo.id)
+        if conflito:
+            conflitos.append({"colaborador_id": cid, "grupo_titulo": conflito["grupo"].titulo,
+                              "grupo_id": conflito["grupo"].id, "dias": [d.isoformat() for d in conflito["dias"]]})
+        db.session.add(AtividadeColaborador(grupo_id=grupo.id, colaborador_id=cid, eh_responsavel=(i == 0)))
+    db.session.commit()
+
+    # gera as linhas (AtividadeDia)
+    datas = _gerar_dias_uteis(data_inicio, duracao)
+    for i, d in enumerate(datas, start=1):
+        meta = round(i / duracao * 100)
+        db.session.add(AtividadeDia(grupo_id=grupo.id, data=d, ordem=i, meta_percentual=meta, status="PENDENTE"))
+    db.session.commit()
+
+    if conflitos:
+        flash(f"Atividade criada, mas {len(conflitos)} colaborador(es) já têm outra atividade nesse período — "
+              f"revise na tela de detalhes.", "warning")
+    else:
+        flash("Atividade programada e dividida em {} dia(s).".format(duracao), "success")
+    return redirect(url_for("facilities.programacao"))
+
+
+@facilities_bp.route("/programacao/conflito/<int:grupo_antigo_id>/resolver", methods=["POST"])
+@_ver_required
+def resolver_conflito(grupo_antigo_id):
+    """Aplica a decisão do usuário sobre um conflito de agenda: manter nas duas (nada a
+    fazer), retirar da anterior, ou reprogramar a anterior para outra data (com motivo)."""
+    acao = request.form.get("acao")
+    colaborador_id = int(request.form.get("colaborador_id"))
+    if acao == "retirar_anterior":
+        AtividadeColaborador.query.filter_by(grupo_id=grupo_antigo_id, colaborador_id=colaborador_id).delete()
         db.session.commit()
-        flash("Relatório de atividade registrado.", "success")
-        return redirect(url_for("facilities.relatorio_atividades"))
+        flash("Colaborador removido da atividade anterior.", "success")
+    elif acao == "reprogramar_anterior":
+        nova_data = request.form.get("nova_data")
+        motivo = (request.form.get("motivo") or "").strip()
+        if not nova_data or not motivo:
+            flash("Informe a nova data e o motivo da reprogramação.", "danger")
+            return redirect(url_for("facilities.programacao"))
+        grupo = db.session.get(AtividadeGrupo, grupo_antigo_id) or abort(404)
+        nova_data_d = datetime.strptime(nova_data, "%Y-%m-%d").date()
+        novas_datas = _gerar_dias_uteis(nova_data_d, grupo.duracao_dias_uteis)
+        for dia, nova_d in zip(grupo.dias, novas_datas):
+            dia.reprogramado_de = dia.data
+            dia.motivo_reprogramacao = motivo
+            dia.data = nova_d
+        grupo.data_inicio = nova_data_d
+        db.session.commit()
+        flash("Atividade reprogramada.", "success")
+    else:
+        flash("Mantido nas duas atividades.", "success")
+    return redirect(url_for("facilities.programacao"))
 
-    q = RelatorioAtividade.query
-    if ids_permitidas:
-        q = q.filter(db.or_(RelatorioAtividade.planta_id.in_(ids_permitidas), RelatorioAtividade.planta_id.is_(None)))
-    itens = q.order_by(RelatorioAtividade.executado_em.desc()).limit(100).all()
-    materiais_disp = _materiais_disp(ids_permitidas)
-    pendentes_disp = (AtividadeProgramada.query.filter_by(status="PENDENTE")
-                      .order_by(AtividadeProgramada.data_prevista).all())
-    return render_template("facilities/relatorio_atividades.html", itens=itens, plantas_disp=plantas_disp,
-                           materiais_disp=materiais_disp, pendentes_disp=pendentes_disp)
 
+@facilities_bp.route("/programacao/colaboradores-por-empresa/<int:fornecedor_id>")
+@_ver_required
+def colaboradores_por_empresa(fornecedor_id):
+    from flask import jsonify
+    itens = _colaboradores_disp_por_empresa(fornecedor_id)
+    return jsonify(colaboradores=[{"id": c.id, "nome": c.nome} for c in itens])
+
+
+# ============================================================================
+# PREENCHIMENTO (colaborador) — fluxo obrigatório: escolher HOJE ou OUTRO DIA primeiro
+# ============================================================================
+
+@facilities_bp.route("/preencher")
+@_inspecionar_required
+def preencher_escolher():
+    """Tela 1: escolhe HOJE ou um dos dias em que o colaborador tem atividade."""
+    from .almox import _colab_sessao
+    colab_id, usuario_id = _quem_preencheu()
+    q = AtividadeDia.query.join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
+    if colab_id:
+        q = q.filter(AtividadeColaborador.colaborador_id == colab_id)
+    dias_disponiveis = sorted({d.data for d in q.all() if d.data <= date.today()}, reverse=True)
+    return render_template("facilities/preencher_escolher.html", dias_disponiveis=dias_disponiveis, hoje=date.today())
+
+
+@facilities_bp.route("/preencher/<data_str>", methods=["GET", "POST"])
+@_inspecionar_required
+def preencher_dia(data_str):
+    """Tela 2: mostra (e processa) só as atividades do colaborador NAQUELE dia."""
+    try:
+        data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
+    except ValueError:
+        abort(404)
+    colab_id, usuario_id = _quem_preencheu()
+
+    q = AtividadeDia.query.join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
+    q = q.filter(AtividadeDia.data == data_d)
+    if colab_id:
+        q = q.filter(AtividadeColaborador.colaborador_id == colab_id)
+    minhas_atividades = q.all()
+
+    if request.method == "POST":
+        dia_id = int(request.form.get("dia_id"))
+        dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+        nova_pct = int(request.form.get("percentual") or 0)
+
+        dia_anterior = (AtividadeDia.query.filter(AtividadeDia.grupo_id == dia.grupo_id,
+                        AtividadeDia.ordem < dia.ordem).order_by(AtividadeDia.ordem.desc()).first())
+        justificativa = (request.form.get("justificativa") or "").strip()
+        if dia_anterior and dia_anterior.percentual is not None and nova_pct < dia_anterior.percentual and not justificativa:
+            flash("A % é menor que a do dia anterior — informe uma justificativa.", "danger")
+            return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+        dia.percentual = nova_pct
+        dia.descricao_execucao = (request.form.get("descricao") or "").strip()
+        dia.justificativa_queda = justificativa or None
+        dia.status = "AGUARDANDO_APROVACAO"
+        fotos = _salvar_fotos("fotos", maximo=4)
+        if fotos:
+            dia.fotos_json = json.dumps(fotos)
+        db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id,
+                                             percentual=nova_pct))
+        db.session.commit()
+        flash("Preenchido — aguardando aprovação do Encarregado de Campo.", "success")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str, compartilhar=dia.id))
+
+    return render_template("facilities/preencher_dia.html", data_d=data_d, atividades=minhas_atividades,
+                           compartilhar_id=request.args.get("compartilhar"))
+
+
+# ============================================================================
+# APROVAÇÃO (Encarregado de Campo) — só Aprovar ou Retificar (sem reprovar)
+# ============================================================================
+
+@facilities_bp.route("/aprovacao")
+@_ver_required
+def aprovacao():
+    from .almox import _colab_sessao
+    colab = _colab_sessao()
+    is_encarregado = getattr(current_user, "is_admin", False) or getattr(colab, "eh_encarregado_campo", False)
+    if not is_encarregado:
+        abort(403)
+    q = AtividadeDia.query.filter_by(status="AGUARDANDO_APROVACAO")
+    if colab and not current_user.is_authenticated:
+        empresas_ids = {e.id for e in colab.empresas_encarregado}
+        if empresas_ids:
+            q = (q.join(AtividadeGrupo)
+                 .join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeGrupo.id)
+                 .join(Colaborador, Colaborador.id == AtividadeColaborador.colaborador_id))
+    pendentes = q.order_by(AtividadeDia.data.desc()).all()
+    return render_template("facilities/aprovacao.html", pendentes=pendentes)
+
+
+@facilities_bp.route("/aprovacao/<int:dia_id>/aprovar", methods=["POST"])
+@_ver_required
+def aprovar_dia(dia_id):
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    dia.status = "APROVADA"
+    dia.aprovado_em = datetime.utcnow()
+    dia.aprovado_por = current_user.id if current_user.is_authenticated else None
+    db.session.commit()
+    flash("Aprovado.", "success")
+    return redirect(url_for("facilities.aprovacao"))
+
+
+@facilities_bp.route("/aprovacao/<int:dia_id>/retificar", methods=["POST"])
+@_ver_required
+def retificar_dia(dia_id):
+    """[v3] Não existe mais "reprovar": o Encarregado edita direto e já sai aprovado."""
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    dia.percentual = int(request.form.get("percentual") or dia.percentual or 0)
+    dia.descricao_execucao = (request.form.get("descricao") or dia.descricao_execucao)
+    dia.retificado = True
+    dia.status = "APROVADA"
+    dia.aprovado_em = datetime.utcnow()
+    dia.aprovado_por = current_user.id if current_user.is_authenticated else None
+    db.session.commit()
+    flash("Retificado e aprovado.", "success")
+    return redirect(url_for("facilities.aprovacao"))
+
+
+@facilities_bp.route("/aprovacao/<int:dia_id>/reprogramar", methods=["POST"])
+@_ver_required
+def reprogramar_dia(dia_id):
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    nova_data = request.form.get("nova_data")
+    motivo = (request.form.get("motivo") or "").strip()
+    if not nova_data or not motivo:
+        flash("Informe a nova data e o motivo.", "danger")
+        return redirect(url_for("facilities.aprovacao"))
+    dia.reprogramado_de = dia.data
+    dia.data = datetime.strptime(nova_data, "%Y-%m-%d").date()
+    dia.motivo_reprogramacao = motivo
+    db.session.commit()
+    flash("Atividade reprogramada.", "success")
+    return redirect(url_for("facilities.aprovacao"))
+
+
+# ============================================================================
+# RESUMO DIÁRIO (imagem/PDF) — início/fim, por empresa
+# ============================================================================
+
+@facilities_bp.route("/resumo-diario")
+@_ver_required
+def resumo_diario():
+    data_str = request.args.get("data") or date.today().strftime("%Y-%m-%d")
+    data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
+    tipo = request.args.get("tipo", "inicio")
+
+    agora = datetime.now()
+    fim_liberado = data_d < date.today() or (data_d == date.today() and agora.hour >= 14)
+    if tipo == "fim" and not fim_liberado:
+        flash("O resumo de FIM só fica disponível após as 14h (ou em dias anteriores).", "warning")
+        return redirect(url_for("facilities.programacao", data=data_str))
+
+    dias = AtividadeDia.query.filter_by(data=data_d).all()
+    empresas_ids = set()
+    for d in dias:
+        for ac in d.grupo.colaboradores:
+            if ac.colaborador and ac.colaborador.empresa:
+                empresas_ids.add(ac.colaborador.empresa)
+
+    fornecedor_sel = request.args.get("empresa")
+    linhas = []
+    if fornecedor_sel:
+        for d in dias:
+            colaboradores_da_empresa = [ac.colaborador.nome for ac in d.grupo.colaboradores
+                                        if ac.colaborador and ac.colaborador.empresa == fornecedor_sel]
+            if not colaboradores_da_empresa:
+                continue
+            nomes_fmt = ", ".join(_remover_particulas_sobrenome(n) for n in colaboradores_da_empresa)
+            linhas.append({"local": d.grupo.predio.nome if d.grupo.predio else "—",
+                          "titulo": d.grupo.titulo, "colaboradores": nomes_fmt})
+
+    return render_template("facilities/resumo_diario.html", data_d=data_d, tipo=tipo,
+                           fim_liberado=fim_liberado, empresas=sorted(empresas_ids),
+                           empresa_sel=fornecedor_sel, linhas=linhas)
+
+
+# ============================================================================
+# RELATÓRIO DIÁRIO DE OBRA (RDO)
+# ============================================================================
 
 @facilities_bp.route("/rdo", methods=["GET", "POST"])
 @_ver_required
@@ -403,9 +752,9 @@ def rdo():
     itens = q.order_by(RelatorioDiarioObra.data.desc()).limit(60).all()
 
     hoje = date.today()
-    atividades_hoje = AtividadeProgramada.query.filter(AtividadeProgramada.data_prevista == hoje).all()
+    atividades_hoje_ids = {d.grupo_id for d in AtividadeDia.query.filter(AtividadeDia.data == hoje).all()}
+    atividades_hoje = AtividadeGrupo.query.filter(AtividadeGrupo.id.in_(atividades_hoje_ids)).all() if atividades_hoje_ids else []
     if ids_permitidas:
-        atividades_hoje = [a for a in atividades_hoje
-                           if a.planta_id in ids_permitidas or a.planta_id is None]
+        atividades_hoje = [a for a in atividades_hoje if a.planta_id in ids_permitidas or a.planta_id is None]
     return render_template("facilities/rdo.html", itens=itens, plantas_disp=plantas_disp,
                            atividades_hoje=atividades_hoje, hoje=hoje)

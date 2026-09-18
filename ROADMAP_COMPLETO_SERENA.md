@@ -2822,3 +2822,246 @@ empresas" -> abrir "Plantas, Armazens e Localizadores" (fecha Pessoas sozinha) -
 Cadastro (Plantas continua aberta, Pessoas continua fechada — bug corrigido antes de ir pra producao)
 -> trocar para secao Movimento, abrir uma sub-secao diferente, voltar para Cadastro (Pessoas/Plantas
 preservam seu estado, sem interferencia entre secoes). Smoke test geral (9 telas) 200.
+
+### ================== PROGRAMACAO DE ATIVIDADES v2 (17/09) — ESPECIFICACAO COMPLETA ==================
+Antonio trouxe uma especificacao MUITO mais rica para "Programacao de Atividades" do que a versao
+simples ja implementada (agenda avulsa sem recorrencia). Isso SUBSTITUI o desenho anterior de
+AtividadeProgramada. Registrando tudo antes de implementar (nada executado ainda).
+
+CRIACAO DE ATIVIDADE (Admin, ou quem tiver a tarefa em Perfis de Acesso — NOVA tarefa a criar):
+  Campos: Titulo; Descricao e Detalhamento; Data prevista de INICIO; Duracao em DIAS (apos a data,
+  a pessoa informa quantos dias a atividade vai levar); Planta; PREDIO (campo NOVO a incluir no
+  cadastro de Planta/Armazem/Localizador — hoje nao existe); Material a retirar (do estoque);
+  Fotos "ANTES" (max 4, guardar explicitamente que sao fotos de ANTES).
+  Depois disso, desbloqueia Empresa + Responsavel (lado a lado): escolher empresa filtra os
+  colaboradores DELA no campo Responsavel (select pesquisavel). Botao "+ Adicionar colaborador"
+  repete o par Empresa+Colaborador quantas vezes precisar. CONFIRMADO: o PRIMEIRO colaborador
+  escolhido = RESPONSAVEL (titular) da atividade; os demais adicionados = colaboradores participantes
+  normais (podem ser de empresas diferentes entre si).
+  Ao salvar: sistema REPLICA a atividade em N linhas/dias (um dia por unidade de duracao), cada linha
+  valendo uma fracao igual da meta (ex.: 4 dias -> 25%/50%/75%/100% cumulativo, dia 1/2/3/4).
+  Admin pode criar SEM preencher todos os campos (fica incompleta) — nesse caso vira pendencia para
+  o ENCARREGADO DE CAMPO completar (badge/aviso na entrada da tela + destaque na linha da tabela).
+
+TELA PRINCIPAL: calendario grande de 2 semanas navegavel (Antonio deixou a UI a criterio do Claude);
+clicar num dia filtra as atividades daquele dia; multi-selecao de dias (Ctrl/click ou toggle);
+botao "Limpar" volta pra hoje; hover no dia mostra tooltip com as atividades daquele dia.
+Embaixo: tabela das atividades, mais recente no topo, com filtro e ordenacao por coluna (tipo Excel) —
+aproveitar o padrao "filtro-chips coral" ja usado no resto do sistema (item 83 do historico) sempre
+que fizer sentido.
+
+RESUMO DIARIO (botao, gera imagem ou PDF — o que pesar menos):
+  Ao clicar: escolhe INICIO ou FIM. FIM so fica disponivel apos as 14h (horario Brasil, GMT-3) SE for
+  o dia de hoje; se o dia selecionado no calendario ja passou, FIM fica sempre disponivel.
+  O dia sendo consultado precisa ficar visualmente destacado no calendario enquanto o usuario decide.
+  Depois, lista suspensa (pesquisavel) das EMPRESAS que tem atividade naquele dia — filtrada
+  dinamicamente pelo dia escolhido.
+  Layout do resumo: topo com nome da empresa + data do dia; tabela com colunas Local, Titulo,
+  Colaboradores (todos numa mesma celula, formatados como "Nome Sobrenome" — REGRA ESPECIAL: sobrenome
+  ignora particulas como "de/da/do" isoladas; ex. "Joao da Costa Filho" -> mostrar "Joao da Costa",
+  3 nomes, nao corta em "da").
+
+PREENCHIMENTO (colaborador, fim do dia):
+  So ve as atividades em que ELE esta envolvido (responsavel ou colaborador adicionado). Botao no topo
+  perguntando "Hoje" ou "Outro dia" (outro dia = so datas em que ele de fato tinha atividade agendada).
+  Abre a atividade daquele dia: campo de % de conclusao (CONFIRMADO: livre, o colaborador pode
+  reportar QUALQUER %, a meta de 25%/dia e' so referencia/aviso na tela, nao trava nada) + campo de
+  DESCRICAO (texto livre) + fotos (max 4, essas sao as fotos de "progresso/depois" daquele dia).
+  REGRA NOVA: se a % reportada for MENOR que a % do dia anterior da mesma atividade, o sistema exige
+  uma JUSTIFICATIVA (campo de texto obrigatorio) antes de deixar salvar.
+  Apos salvar: popup oferecendo compartilhar o resumo daquela atividade no WhatsApp.
+  Status muda para AGUARDANDO APROVACAO (do Encarregado de Campo).
+  Se NENHUM preenchimento foi feito para o dia -> status ATRASADO.
+  IMPORTANTE (guardar historico): como varios colaboradores podem estar na mesma atividade e qualquer
+  um pode preencher a % do dia, o sistema precisa registrar QUEM preencheu cada vez (nao so o valor).
+
+APROVACAO (Encarregado de Campo):
+  CONFIRMADO: NAO existe mais "reprovar" como acao separada. So duas opcoes: APROVAR (como esta), ou
+  RETIFICAR (o proprio Encarregado edita os valores/fotos/descricao diretamente) — ao salvar a
+  retificacao, o registro JA SAI COMO APROVADO (nao volta pro colaborador preencher de novo).
+  Pendencia visivel: quando o Encarregado entra na tela, aviso destacado no topo com a quantidade de
+  atividades aguardando aprovacao/completar. Cadastro do Colaborador com papel ENCARREGADO DE CAMPO
+  ganha um campo NOVO: quais empresas ele e' encarregado (pode ser mais de uma).
+
+PERMISSOES: quem pode CRIAR atividades deve ser configuravel em Perfis de Acesso (nova tarefa
+granular a adicionar, no mesmo padrao das tarefas fac_* ja existentes).
+
+PENDENTE: Antonio disse que AINDA HA MAIS UM PONTO sobre atividades a adicionar (nao entrou ainda).
+NAO IMPLEMENTAR / NAO CONSTRUIR O HTML FINAL antes desse ponto adicional ser recebido, para nao ter
+que redesenhar depois. Por ora, Claude vai preparar um PROTOTIPO HTML (mockup, nao funcional) para
+Antonio validar o desenho geral, deixando claro que e' so visual.
+
+ATENCAO: esta especificacao SUBSTITUI o desenho anterior mais simples de AtividadeProgramada
+(implementado numa leva anterior, "agenda simples sem recorrencia"). Quando formos implementar de
+verdade, o modelo de dados anterior (titulo, descricao, data_prevista, produto_id, planta_id,
+responsavel simples) vai precisar ser AMPLIADO/REFEITO para contemplar: duracao em dias com replicacao
+em linhas, multiplos colaboradores por atividade (com um marcado como responsavel), predio (novo
+campo em Planta/Armazem), fotos antes/depois com data, historico de quem preencheu cada %, campo de
+justificativa quando % cai, e o fluxo de aprovacao/retificacao do Encarregado.
+
+### ================== PROGRAMACAO DE ATIVIDADES v3 (17/09) — AJUSTES FINAIS DE ESPECIFICACAO ==================
+Apos revisar o mockup (link publicado), Antonio trouxe 3 ajustes/adicoes. Registrando antes de
+implementar (mockup sera atualizado, codigo ainda nao).
+
+[A] FLUXO DO COLABORADOR CORRIGIDO: a tela de preenchimento NAO pode abrir a atividade direto. O fluxo
+    correto e': colaborador clica em "Preencher" -> sistema pergunta HOJE ou OUTRO DIA -> so DEPOIS
+    mostra a atividade do dia escolhido. (O mockup anterior mostrava a atividade de cara, o que induzia
+    a pessoa a preencher o dia errado sem perceber.)
+
+[B] DURACAO COM UNIDADE + RECORRENCIA (o "ponto adicional" que faltava):
+    Campo de duracao ganha um seletor de UNIDADE ao lado: Dias (manual) | 1 semana | 1 mes | 1 ano.
+    CONFIRMADO: dias sao UTEIS (nao corridos) — conversao FIXA (nao civil): 1 semana = 5 dias uteis,
+    1 mes = 22 dias uteis (aprox.), 1 ano = 260 dias uteis (aprox.). O campo de "quantidade de dias"
+    deve deixar EXPLICITO na tela que a unidade e' dias uteis.
+    Replicacao no calendario (a divisao da atividade em N linhas): PULA sabado/domingo E feriados (se o
+    sistema tiver uma lista de feriados cadastrada — precisa criar um cadastro simples de feriados
+    nacionais, hoje nao existe).
+    RECORRENCIA (nova, condicionada a duracao escolhida): pergunta se a atividade se repete, com opcoes
+    fixas de intervalo: 7, 14, 30, 60, 90, 180, 365, 730 dias — rotuladas de forma amigavel (semanal,
+    quinzenal, mensal, trimestral, semestral, anual, bianual). REGRA DE TRAVA CONFIRMADA: a lista de
+    opcoes de recorrencia mostra SOMENTE os intervalos MAIORES OU IGUAIS a duracao da atividade (nao e'
+    "multiplo exato" — sao aproximacoes uteis do calendario real, ex.: duracao 1 semana (5 dias uteis)
+    pode ter recorrencia 7, 14, 30... mesmo 30 nao sendo multiplo exato de 7; duracao 1 mes bloqueia
+    recorrencia semanal/quinzenal, so libera 30 pra cima). Isso evita o absurdo de "repetir de 7 em 7
+    dias" uma atividade que already dura mais que isso.
+
+[C] REPROGRAMACAO PELO ENCARREGADO: o Encarregado de Campo pode REPROGRAMAR uma atividade (mudar a
+    data) quando necessario. Ao reprogramar, o sistema exige um MOTIVO (campo de texto obrigatorio),
+    guardado no historico da atividade.
+
+[D] CONFLITO DE AGENDA DE COLABORADOR (novo, ao criar/editar atividade):
+    Ao adicionar um colaborador numa atividade nova, o sistema verifica se ele ja esta em OUTRA
+    atividade em QUALQUER dia dentro do periodo da atividade NOVA sendo criada (overlap de datas —
+    nao so o dia exato, o RANGE inteiro da atividade nova contra o range de qualquer atividade
+    existente dele). Se houver sobreposicao, avisa e oferece 3 opcoes:
+      1) MANTER NAS DUAS — CONFIRMADO: e' so um aviso reconhecido, a atividade antiga fica intocada,
+         o colaborador so acumula mais uma (nenhuma acao automatica alem do aviso).
+      2) RETIRAR DA ANTERIOR e colocar so na nova (remove o colaborador da atividade antiga).
+      3) REPROGRAMAR A OUTRA para outro dia — abre um CALENDARIO de selecao de nova data para a
+         atividade ANTIGA, com CADA DIA colorido: VERMELHO se o colaborador ja tem atividade naquele
+         dia, VERDE se esta livre. Ao escolher um dia verde, reprograma a atividade antiga pra la
+         (e passa pelo fluxo do item [C] — motivo da reprogramacao).
+
+IMPACTO NO MODELO DE DADOS (a ser feito na implementacao real, ainda nao codificado):
+  - AtividadeProgramada precisa de: unidade_duracao (dias/semana/mes/ano), duracao_dias_uteis
+    (calculado), recorrencia_dias (nullable — null = nao recorrente), motivo_reprogramacao (historico).
+  - Novo cadastro simples de Feriados (data, nome, nacional/estadual) para o calculo pular corretamente.
+  - Checagem de overlap por colaborador precisa de uma consulta que cruze o periodo (data inicio + N
+    dias uteis, jah descontando fins de semana/feriados) de TODAS as atividades de um colaborador.
+
+PROXIMO PASSO: atualizar o MOCKUP (protótipo visual ja publicado) com esses 4 ajustes antes de
+implementar o codigo de verdade. Nada foi codificado ainda.
+
+### ================== PROGRAMACAO DE ATIVIDADES v3 — IMPLEMENTADA E TESTADA (17/09) ==================
+Implementacao completa da especificacao v3 (que substitui as versoes anteriores mais simples). Modelo
+de dados reescrito, blueprint facilities.py reescrito, 8 templates novos/atualizados, menu atualizado.
+
+MODELAGEM NOVA (app/models.py):
+  - Feriado: cadastro simples (data, nome) usado para pular na geracao de dias.
+  - Predio: NOVO cadastro (distinto de Armazem), ligado a Planta — pedido especifico do Antonio para
+    Cadastro > Plantas, Armazens e Localizadores.
+  - AtividadeGrupo: a atividade-mae (titulo, descricao, data_inicio, unidade_duracao, duracao_dias_uteis,
+    recorrencia_dias, planta, predio, produto, fotos_antes_json, status_cadastro COMPLETO/INCOMPLETO).
+  - AtividadeColaborador: colaboradores da atividade; o PRIMEIRO tem eh_responsavel=True.
+  - AtividadeDia: cada linha/dia (data, ordem, meta_percentual calculada, percentual reportado,
+    descricao_execucao, justificativa_queda, fotos_json, status, campos de reprogramacao).
+  - RegistroPreenchimento: HISTORICO de quem preencheu cada % (colaborador ou usuario + quando).
+  - EncarregadoEmpresa: liga Colaborador (Encarregado) as empresas (Fornecedor) que ele supervisiona.
+  - UNIDADES_DURACAO_DIAS_UTEIS = {dias:None, semana:5, mes:22, ano:260} (conversao FIXA, nao civil).
+  - OPCOES_RECORRENCIA = 7/14/30/60/90/180/365/730 dias, com rotulos amigaveis.
+  - 2 tarefas novas em Perfis de Acesso: fac_criar_atividade, eh_encarregado_campo.
+  - RelatorioDiarioObra e ExecucaoChecklist/ItemFalhaAberta (ja existentes) ajustados/mantidos
+    compativeis com os novos modelos.
+
+REGRAS DE NEGOCIO IMPLEMENTADAS E TESTADAS (10+ cenarios, incluindo os mais delicados):
+  - _gerar_dias_uteis(): pula sabado/domingo E feriados cadastrados. TESTADO: atividade de 4 dias uteis
+    comecando numa sexta -> gera sex/seg/ter/qua, pulando corretamente sab/dom.
+  - Meta por dia = ordem/duracao*100, arredondada (1/4=25%, 2/4=50% etc).
+  - TRAVA DE RECORRENCIA: no backend (nao so no JS do form), se a recorrencia enviada for MENOR que a
+    duracao em dias uteis, e' IGNORADA (vira None) — protege contra tentativa de burlar via requisicao
+    direta. TESTADO: recorrencia 7 numa atividade de 22 dias uteis -> ignorada; recorrencia 30 na mesma
+    atividade -> aceita.
+  - CONFLITO DE AGENDA: _checar_conflito_colaborador() verifica overlap de datas entre a atividade nova
+    e QUALQUER atividade existente do colaborador. Se houver, avisa (flash) e oferece as 3 opcoes via
+    rota /programacao/conflito/<grupo_antigo_id>/resolver: manter nas duas (so' o aviso, nada muda),
+    retirar da anterior (remove o vinculo), reprogramar a anterior (pede nova data + MOTIVO obrigatorio,
+    reescreve as datas de TODOS os dias daquele grupo). TESTADO: criar 2a atividade com o mesmo
+    colaborador em periodo sobreposto -> aviso de conflito aparece corretamente.
+  - JUSTIFICATIVA DE QUEDA: ao preencher um AtividadeDia, se a % informada for MENOR que a % do dia
+    ANTERIOR da mesma atividade (AtividadeDia.ordem-1) E nao vier justificativa -> BLOQUEIA o salvamento
+    (nao grava nada, flash de erro). Com justificativa preenchida -> aceita normalmente. TESTADO: dia 2
+    com % menor sem justificativa -> bloqueado (nada salvo); com justificativa -> aceito.
+  - HISTORICO DE PREENCHIMENTO: cada vez que alguem preenche a % de um AtividadeDia, cria um
+    RegistroPreenchimento (nao sobrescreve, acumula) — TESTADO: autor do registro identificado
+    corretamente (nome do colaborador que preencheu via sessao de campo).
+  - FLUXO CORRIGIDO DO COLABORADOR: /facilities/preencher (tela 1, escolhe Hoje ou Outro Dia) ->
+    /facilities/preencher/<data> (tela 2, so ai mostra a atividade). Colaborador NUNCA ve a atividade
+    sem antes confirmar o dia.
+  - APROVACAO SEM REPROVAR: /aprovacao/<id>/aprovar (aceita como esta) e /aprovacao/<id>/retificar
+    (Encarregado edita % e descricao diretamente; ao salvar JA SAI APROVADO, sem passo intermediario) —
+    nao existe mais opcao de "reprovar". Tambem existe /aprovacao/<id>/reprogramar (Encarregado muda a
+    data de UM dia especifico, com motivo obrigatorio).
+  - RESUMO DIARIO: regra das 14h implementada (fim_liberado = dia ja passou OU (dia de hoje E hora >= 14)).
+    Formatacao de colaboradores usa _remover_particulas_sobrenome() (ex.: "Joao da Costa Filho" vira
+    "Joao da Costa", 3 palavras, particula de/da/do/dos/das nao conta como corte).
+
+BLUEPRINT REESCRITO (app/facilities.py, ~740 linhas): rotas de Predio, Programacao (calendario+lista+
+criar), resolver conflito, colaboradores-por-empresa (endpoint AJAX pro form filtrar por empresa),
+Preencher (2 telas), Aprovacao (aprovar/retificar/reprogramar), Resumo Diario, RDO (ajustado).
+
+TEMPLATES: predios.html (novo), programacao.html (reescrito — calendario via JS + lista do dia),
+programacao_nova.html (novo — form completo com duracao/recorrencia dinamica via JS + colaboradores
+dinamicos por empresa via fetch), preencher_escolher.html e preencher_dia.html (novos — fluxo em 2
+telas), aprovacao.html (novo — aprovar/retificar/reprogramar inline com collapse), resumo_diario.html
+(novo). relatorio_atividades.html REMOVIDO (papel absorvido por aprovacao.html). rdo.html ajustado
+(a.responsavel_nome -> a.responsavel.nome).
+
+MENU: Predios adicionado em Cadastro > Plantas Armazens e Localizadores; "Relatorio de atividades"
+trocado por "Aprovacao de atividades" (Admin, em Relatorio, e no bloco Facilities); "Preencher minha
+atividade" adicionado no menu do Colaborador.
+
+Smoke test geral: 16 telas (incluindo as 8 rotas novas de Facilities) 200. Menu testado com clique real
+(jsdom): 6 secoes, sem erros de JS.
+
+PENDENTE (fora do escopo desta leva, registrar para o futuro): geracao real de IMAGEM/PDF do resumo
+diario (hoje e' so uma pagina HTML formatada, nao gera arquivo para download); geracao do popup real de
+compartilhar WhatsApp (hoje e' um link wa.me simples, sem o texto/imagem do resumo formatado); upload
+real das fotos (os campos de input file existem nos formularios, mas o processamento/armazenamento em
+disco das fotos ainda nao foi implementado nas rotas — hoje elas sao aceitas mas nao salvas).
+
+### FACILITIES — FOTOS AGORA SALVAM DE VERDADE (17/09) — Cloudinary configurado
+Antonio criou conta Cloudinary (gratuita) e configurou CLOUDINARY_URL no Render. Implementado o
+processamento real de upload nos 3 pontos que ate' entao so tinham o campo <input type=file> sem
+nenhum backend processando:
+  - Fotos "ANTES" da atividade (AtividadeGrupo.fotos_antes_json), ao criar em /programacao/nova.
+  - Fotos de PROGRESSO do dia (AtividadeDia.fotos_json), ao preencher em /preencher/<data>.
+  - Fotos do CHECKLIST de inspecao — NOVO campo ExecucaoChecklist.fotos_json (nao existia antes).
+Novo helper _salvar_fotos() em facilities.py: reaproveita o storage.salvar_imagem() JA EXISTENTE no
+sistema (usado hoje pelos anexos de solicitacao) — que usa Cloudinary se CLOUDINARY_URL estiver
+configurada (agora esta), com fallback pra disco local se nao estiver. Limite de 4 fotos por chamada,
+alinhado ao limite ja pedido por Antonio nas telas.
+Templates ajustados para enviar multipart/form-data (programacao_nova.html ja tinha; preencher_dia.html
+e inspecionar.html ganharam enctype="multipart/form-data" + os campos de <input type=file> corretos).
+TESTADO com arquivos de imagem REAIS (nao mock) nos 3 pontos: fotos_antes_json grava a lista de URLs
+corretamente; fotos do checklist idem; fotos de progresso do dia idem (com checagem de permissao —
+colaborador sem fac_inspecionar e' corretamente barrado com 403 antes mesmo de chegar no upload).
+No ambiente de teste (sem CLOUDINARY_URL) cai no fallback local (/uploads/...), confirmando que o
+codigo funciona nos dois caminhos: em producao, com a variavel configurada, vai gerar URLs reais do
+Cloudinary (persistentes, sobrevivem a deploy). Smoke test geral 200.
+
+### COMPRESSAO AUTOMATICA DE FOTOS ANTES DO UPLOAD (17/09) — critico para nao estourar o Cloudinary Free
+Antonio calculou: 40 fotos/dia sem compressao (~4MB cada, tipico de celular sem otimizacao) estouraria
+os 25 creditos (25GB) do plano Free do Cloudinary em pouco mais de 5 MESES so' de armazenamento
+acumulado. CORRIGIDO antes que isso virasse problema real: app/storage.py ganhou _comprimir_imagem()
+(mesma tecnica ja validada no Relatorio de Carga — draft() evita estourar RAM ao decodificar fotos de
+12-48MP, exif_transpose corrige rotacao do celular, redimensiona pra max 1600px no lado maior, salva
+JPEG q78 otimizado). Aplicada DENTRO de salvar_imagem() — ou seja, TODO upload de foto do sistema
+(nao so' Facilities: anexos de solicitacao, etc.) agora e' comprimido automaticamente antes de ir pro
+Cloudinary ou pro disco local. Se a compressao falhar por algum motivo, cai de volta pro arquivo
+original (nunca trava o upload).
+TESTADO com fotos simulando celular real: reducao de 93.7% numa foto de textura simples (387KB ->
+24KB); reducao de 95.9% no PIOR CASO possivel (imagem de puro ruido aleatorio, dificil de comprimir,
+13.6MB -> 572KB) — mesmo nesse extremo a reducao ainda foi enorme.
+NOVA ESTIMATIVA com compressao ativa: ~500KB/foto (conservador) x 40 fotos/dia = ~20MB/dia = ~600MB/mes
+de armazenamento novo. Com 25GB do plano Free, isso da' ~41 MESES (mais de 3 anos) ate precisar se
+preocupar com o limite — bem diferente dos ~5 meses sem compressao. Smoke test geral 200.

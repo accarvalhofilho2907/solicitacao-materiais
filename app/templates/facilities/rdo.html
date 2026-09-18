@@ -49,7 +49,7 @@
           <div class="border rounded p-2" style="max-height:160px;overflow:auto">
             {% for a in atividades_hoje %}
             <div class="form-check"><input class="form-check-input" type="checkbox" name="atividades_ids" value="{{ a.id }}" id="atv{{ a.id }}">
-              <label class="form-check-label small" for="atv{{ a.id }}">{{ a.titulo }} — {{ a.responsavel_nome }}</label></div>
+              <label class="form-check-label small" for="atv{{ a.id }}">{{ a.titulo }} — {{ a.responsavel.nome if a.responsavel else '—' }}</label></div>
             {% else %}
             <p class="text-muted small mb-0">Nenhuma atividade programada para hoje.</p>
             {% endfor %}

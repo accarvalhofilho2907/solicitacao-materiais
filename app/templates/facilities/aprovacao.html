@@ -13,22 +13,42 @@
   {% endif %}
   {% if d.descricao_execucao %}<p class="small">{{ d.descricao_execucao }}</p>{% endif %}
 
+  {% set fotos_do_dia = d.fotos_json|fromjson if d.fotos_json else [] %}
+  {% if fotos_do_dia %}
+  <div class="d-flex gap-2 mb-2">
+    {% for f in fotos_do_dia %}<a href="{{ f }}" target="_blank"><img src="{{ f }}" style="width:70px;height:70px;object-fit:cover;border-radius:6px"></a>{% endfor %}
+  </div>
+  <p class="text-muted small mb-2">{{ fotos_do_dia|length }}/4 fotos anexadas até agora.</p>
+  {% endif %}
+
   <div class="d-flex gap-2 mt-2 flex-wrap">
-    <form method="post" action="{{ url_for('facilities.aprovar_dia', dia_id=d.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-success btn-sm">✓ Aprovar como está</button>
-    </form>
+    <button class="btn btn-success btn-sm" data-bs-toggle="collapse" data-bs-target="#aprov{{ d.id }}">✓ Aprovar como está</button>
     <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#retif{{ d.id }}">✎ Retificar</button>
     <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#reprog{{ d.id }}">📅 Reprogramar</button>
   </div>
 
+  <div class="collapse mt-2" id="aprov{{ d.id }}">
+    <form method="post" action="{{ url_for('facilities.aprovar_dia', dia_id=d.id) }}" enctype="multipart/form-data" class="border rounded p-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if fotos_do_dia|length < 4 %}
+      <label class="form-label small">Anexar foto(s) extra (opcional, até {{ 4 - fotos_do_dia|length }} restante(s))</label>
+      <input type="file" name="fotos" class="form-control form-control-sm mb-2" accept="image/*" multiple>
+      {% endif %}
+      <button class="btn btn-sm btn-success">Confirmar aprovação</button>
+    </form>
+  </div>
+
   <div class="collapse mt-2" id="retif{{ d.id }}">
-    <form method="post" action="{{ url_for('facilities.retificar_dia', dia_id=d.id) }}" class="border rounded p-2">
+    <form method="post" action="{{ url_for('facilities.retificar_dia', dia_id=d.id) }}" enctype="multipart/form-data" class="border rounded p-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="form-label small">Nova %</label>
       <input type="number" name="percentual" class="form-control form-control-sm mb-2" value="{{ d.percentual }}">
       <label class="form-label small">Descrição (opcional)</label>
       <textarea name="descricao" class="form-control form-control-sm mb-2">{{ d.descricao_execucao or '' }}</textarea>
+      {% if fotos_do_dia|length < 4 %}
+      <label class="form-label small">Anexar foto(s) extra (opcional, até {{ 4 - fotos_do_dia|length }} restante(s))</label>
+      <input type="file" name="fotos" class="form-control form-control-sm mb-2" accept="image/*" multiple>
+      {% endif %}
       <button class="btn btn-sm btn-primary">Salvar retificação (já sai aprovado)</button>
     </form>
   </div>

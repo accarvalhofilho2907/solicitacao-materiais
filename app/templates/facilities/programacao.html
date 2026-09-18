@@ -197,6 +197,11 @@ document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diari
 
     var dropdown = document.createElement('div');
     dropdown.className = 'filtro-dropdown';
+    // [fix crítico] sem isso, QUALQUER clique dentro do dropdown (inclusive nos checkboxes de
+    // valor, que são <label> — clicar no texto do label também deveria marcar/desmarcar)
+    // propagava até o listener global no document, que fechava o dropdown ANTES do navegador
+    // terminar de processar o toggle do checkbox. Resultado: parecia que o clique "não pegava".
+    dropdown.addEventListener('click', function(ev){ ev.stopPropagation(); });
     th.appendChild(dropdown);
 
     funil.addEventListener('click', function(ev){
@@ -214,9 +219,11 @@ document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diari
       var listaValores = Object.keys(valores).sort();
       var escondidos = escondidosPorCol[col] || new Set();
 
+      var rotuloAsc = tipo === 'num' ? '1→9' : 'A→Z';
+      var rotuloDesc = tipo === 'num' ? '9→1' : 'Z→A';
       dropdown.innerHTML =
         '<input type="text" class="busca-valores" placeholder="Pesquisar...">' +
-        '<div class="ordenar-btns"><button data-dir="asc">A→Z</button><button data-dir="desc">Z→A</button></div>' +
+        '<div class="ordenar-btns"><button data-dir="asc">' + rotuloAsc + '</button><button data-dir="desc">' + rotuloDesc + '</button></div>' +
         '<div class="lista-valores"></div>' +
         '<div class="rodape-btns"><button class="btn-limpar">Limpar</button><button class="btn-aplicar">Aplicar</button></div>';
 

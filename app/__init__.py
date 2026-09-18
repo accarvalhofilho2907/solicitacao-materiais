@@ -460,6 +460,18 @@ def create_app():
     login_manager.login_view = "auth.login"
     login_manager.login_message = "Faça login para continuar."
 
+    @app.template_filter("fromjson")
+    def _fromjson(valor):
+        """[item 7] Filtro Jinja pra ler campos *_json (fotos, etc.) direto no template,
+        sem precisar passar a lista já decodificada em toda rota que renderiza."""
+        import json as _json
+        if not valor:
+            return []
+        try:
+            return _json.loads(valor)
+        except (ValueError, TypeError):
+            return []
+
     @login_manager.user_loader
     def load_user(uid):
         from .models import Colaborador

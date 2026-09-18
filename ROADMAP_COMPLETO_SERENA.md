@@ -3451,3 +3451,82 @@ Smoke test geral final (12 telas, incluindo o fluxo completo de RDO) 200.
 Todos os itens da lista do Antonio desta rodada foram implementados e testados: cancelar/duplicar
 por dia, cancelar geral com escopo, ferias/ausencia, filtro estilo Excel, resumo diario completo
 (inicio/fim + observacoes/% + ausentes), e agora o RDO completo. Pronto para Antonio revisar e subir.
+
+### ================== QUARTA RODADA (18/09) — CHECKPOINT PARCIAL ==================
+Antonio testou de novo apos a leva anterior. 11 pontos reportados. Progresso ate agora:
+
+10) ERRO 500 ao gerar RDO -> CAUSA CONFIRMADA: o banco de PRODUCAO ainda tem o schema ANTIGO da
+tabela sf_rdo (sem percentual_medio, status, aprovado_encarregado_em, etc — colunas criadas na leva
+anterior do RDO completo). O sistema usa db.create_all() + _light_migrate() (mecanismo JA EXISTENTE
+que adiciona colunas novas sem apagar dados) na inicializacao — TESTADO simulando exatamente esse
+cenario (schema antigo real recriado, subindo o app por cima): confirma que as colunas novas sao
+adicionadas automaticamente. Ou seja, deve resolver sozinho no PROXIMO DEPLOY. Os sintomas relacionados
+no item 8 (planta em branco, sem % media) provavelmente sao porque aquele RDO especifico NUNCA FOI
+SALVO de verdade (o INSERT falhou) — o que Antonio viu depois pode ter sido um estado incompleto.
+
+11) Encarregado com Forbidden ao criar Nova Atividade -> MESMO PADRAO DE BUG ja corrigido em outros
+lugares: a checagem de permissao so olhava _colab_sessao() (QR), nunca current_user quando e' um
+Colaborador logado NORMALMENTE. CORRIGIDO com _tem_acesso_facilities(), que cobre os dois casos; alem
+disso, ser Encarregado de Campo agora TAMBEM libera criar atividade (e' papel de gestao). TESTADO nos
+dois caminhos de login (normal e QR): 200 nos dois.
+
+1) Ordenacao numerica -> na verdade JA FUNCIONAVA corretamente (confirmado com teste real: 5, 45, 80
+em ordem numerica certa, nao "5 > 45" como aconteceria em ordenacao de texto). O que faltava era so'
+o ROTULO dos botoes, que sempre dizia "A->Z"/"Z->A" mesmo pra colunas numericas, causando confusao.
+CORRIGIDO: agora mostra "1->9"/"9->1" quando a coluna e' numerica.
+
+2) Desmarcar filtro nao funcionava -> BUG REAL CONFIRMADO: um clique DENTRO do dropdown (inclusive
+nos checkboxes de valor, que sao <label>) se propagava (bubbles) at o listener GLOBAL no document que
+fecha qualquer dropdown aberto — o dropdown fechava ANTES do navegador terminar de processar o toggle
+do checkbox. CORRIGIDO com stopPropagation() no proprio dropdown. TESTADO com jsdom: clicar no item
+agora MANTEM o dropdown aberto, e o fluxo completo (desmarcar -> Aplicar) funciona.
+
+3) Dois botoes de Reprogramar com escopos diferentes -> Simplificado o botao POR LINHA (recorrencia
+individual) pra reprogramar SO' aquele dia, sem perguntar escopo. Criado um NOVO botao GERAL (ao lado
+de Cancelar/Duplicar, no topo), com a pergunta de escopo (toda a atividade / so de hoje em diante) +
+nova data + motivo — nova acao "reprogramar_geral" no backend, reaproveitando _gerar_dias_uteis.
+TESTADO: escopo "a_partir_hoje" preserva os dias passados intocados e recalcula os futuros
+corretamente (pulando fim de semana).
+
+4) Ferias/Ausencia "NAO FEITO" -> CONFIRMADO QUE O CODIGO EXISTE E FUNCIONA (testado de novo agora,
+aparece corretamente pro Admin Master). Suspeita: Antonio testou antes dessa parte especifica ter
+chegado ao ambiente real, ou revisou uma tela diferente. Sem mudanca de codigo aqui — so'
+reconfirmado.
+
+5) Resumo Diario: % sem contexto da meta -> agora mostra a % junto com "(meta do dia: X%)" ao lado,
+deixando claro se a pessoa bateu a meta cheia daquele dia (evita a leitura errada de "5%" como "so'
+trabalhou 5% do dia"). TESTADO com o EXEMPLO EXATO do Antonio (atividade com meta 5%, colaborador fez
+5%) -> aparece "5% (meta do dia: 5%)".
+
+6) Aprovacao nao aparecia pro Admin Master -> CAUSA REAL: o link estava dentro da secao "Relatorio",
+nao dentro de "Facilities" (onde Antonio provavelmente procurava). MOVIDO pra dentro da sub-secao
+Facilities, ao lado de Preencher/Programacao/RDO. Testado com clique real no menu: "Movimento" (onde
+fica a sub-secao Facilities do Admin) agora tem 18 itens (+1), "Relatorio" caiu pra 5 (-1).
+
+7) Fotos na aprovacao -> IMPLEMENTADO: aprovar_dia() e retificar_dia() agora aceitam upload de fotos
+extra, SOMANDO com as que o colaborador ja tinha enviado (nao substitui), respeitando o limite de 4
+no total. Template mostra as fotos existentes (miniaturas clicaveis, abrem a foto grande numa aba
+nova) + campo de upload SO aparece se ainda houver vaga. Novo filtro Jinja "fromjson" (nao existia)
+pra ler fotos_json direto no template. TESTADO: com 2 fotos existentes + 1 nova = 3 (preservando as
+antigas); com 4 fotos (limite), campo de upload some da tela E o backend recusa qualquer foto extra
+mesmo via requisicao direta.
+
+9) Encarregado como "parte da equipe" em TODAS as atividades da empresa (nao so' as que ele foi
+adicionado como participante) -> Novo helper _colaboradores_ids_visiveis_preencher(): pro Encarregado,
+retorna o proprio ID + todos os colaboradores ATIVOS das empresas que ele supervisiona (via
+EncarregadoEmpresa). Aplicado em preencher_escolher, preencher_dia (GET) e na validacao de seguranca
+do POST. TESTADO: Encarregado ve E PREENCHE atividade de um Colaborador Diverso da mesma empresa,
+mesmo sem estar como participante; um Colaborador comum (sem ser Encarregado) continua SEM ver
+atividades de colegas da mesma empresa (a visao ampliada e' EXCLUSIVA de quem e' Encarregado).
+
+Smoke test geral (9 telas) 200 neste checkpoint.
+
+PENDENTE (fila restante do item 8 - RDO):
+- Confirmar em produção que planta/% média aparecem corretamente após o próximo deploy (depende da
+  migração automática rodar)
+- Fotos das atividades no PDF do RDO — layout especifico pedido: 4 fotos pequenas lado a lado,
+  clicáveis para abrir maior (o código de pdf_rdo.py já tenta baixar fotos, mas ainda não testado
+  com URLs reais de Cloudinary em produção — só testado com lista vazia)
+- Edição do RDO em qualquer etapa (pendente: Encarregado edita direto; aprovado: Admin precisa
+  "reabrir" antes do Encarregado poder editar de novo)
+- Preview do RDO completo depois de salvar, antes de ir pra aprovação

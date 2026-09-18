@@ -79,8 +79,25 @@
 {% if eh_gestor and not grupo.motivo_cancelamento %}
 <div class="card mb-3"><div class="card-body">
   <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#formReprogramarGeral">Reprogramar atividade</button>
     <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#formCancelar">Cancelar atividade</button>
     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#formDuplicar">Duplicar atividade</button>
+  </div>
+  <div class="collapse mt-2" id="formReprogramarGeral">
+    <form method="post" class="border rounded p-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="reprogramar_geral">
+      <label class="form-label small">O que reprogramar?</label>
+      <select name="escopo_reprogramar" class="form-select form-select-sm mb-2">
+        <option value="tudo">Toda a atividade (todos os dias não aprovados)</option>
+        <option value="a_partir_hoje">Somente de hoje ({{ hoje.strftime('%d/%m') }}) em diante</option>
+      </select>
+      <label class="form-label small">Nova data de início (os dias reprogramados são recalculados a partir daqui, em dias úteis)</label>
+      <input type="date" name="nova_data_geral" class="form-control form-control-sm mb-2" required>
+      <label class="form-label small">Motivo (obrigatório)</label>
+      <input name="motivo_reprogramar_geral" class="form-control form-control-sm mb-2" required>
+      <button class="btn btn-sm btn-primary">Confirmar reprogramação</button>
+    </form>
   </div>
   <div class="collapse mt-2" id="formCancelar">
     <form method="post" class="border rounded p-2" onsubmit="return confirm('Cancelar esta atividade?')">
@@ -147,18 +164,14 @@
     <tr class="collapse" id="reprog{{ d.id }}"><td colspan="7">
       <form method="post" action="{{ url_for('facilities.reprogramar_dia', dia_id=d.id) }}" class="border rounded p-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="escopo" value="somente_esta">
         <div class="row g-2 align-items-end">
-          <div class="col-md-3"><label class="form-label small">Nova data</label>
+          <div class="col-md-4"><label class="form-label small">Nova data (somente o dia {{ d.ordem }})</label>
             <input type="date" name="nova_data" class="form-control form-control-sm" required></div>
-          <div class="col-md-4"><label class="form-label small">Escopo</label>
-            <select name="escopo" class="form-select form-select-sm">
-              <option value="somente_esta">Somente este dia (dia {{ d.ordem }})</option>
-              <option value="todas_restantes">Este e todos os dias que faltam (a partir do dia {{ d.ordem }})</option>
-            </select></div>
-          <div class="col-md-5"><label class="form-label small">Motivo (obrigatório)</label>
+          <div class="col-md-8"><label class="form-label small">Motivo (obrigatório)</label>
             <input name="motivo" class="form-control form-control-sm" required></div>
         </div>
-        <button class="btn btn-sm btn-primary mt-2">Confirmar reprogramação</button>
+        <button class="btn btn-sm btn-primary mt-2">Confirmar reprogramação deste dia</button>
       </form>
     </td></tr>
     <tr class="collapse" id="canceldia{{ d.id }}"><td colspan="7">

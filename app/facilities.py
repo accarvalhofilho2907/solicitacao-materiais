@@ -406,6 +406,24 @@ def _quem_preencheu():
     return (colab.id if colab else None), None
 
 
+def _colaboradores_ids_visiveis_preencher(colab_id):
+    """[item 9] Um Encarregado de Campo é "como se fosse parte da equipe" em TODA atividade das
+    empresas que ele supervisiona — não só nas que ele mesmo foi adicionado como participante.
+    Retorna a lista de colaborador_id cujas atividades devem aparecer em Preencher: o próprio
+    colab_id, mais todos os colaboradores ATIVOS das empresas que ele é Encarregado (se houver)."""
+    if not colab_id:
+        return []
+    colab = db.session.get(Colaborador, colab_id)
+    if not colab:
+        return [colab_id]
+    ids = {colab_id}
+    empresas = {e.nome_fantasia or e.razao_social for e in colab.empresas_encarregado}
+    if empresas:
+        outros = Colaborador.query.filter(Colaborador.empresa.in_(empresas), Colaborador.ativo == True).all()
+        ids.update(c.id for c in outros)
+    return list(ids)
+
+
 # ============================================================================
 # PRÉDIO (cadastro novo — Cadastro > Plantas, Armazéns e Localizadores)
 # ============================================================================
@@ -489,8 +507,11 @@ def programacao():
 @facilities_bp.route("/programacao/nova", methods=["GET", "POST"])
 @_ver_required
 def programacao_nova():
-    from .almox import _colab_sessao
-    pode_criar = getattr(current_user, "is_admin", False) or getattr(_colab_sessao(), "pode_criar_atividade", False)
+    # [fix] mesmo padrão de bug corrigido em outras rotas: a checagem só olhava a sessão de
+    # QR (_colab_sessao), nunca current_user quando é um Colaborador logado normalmente pelo
+    # site — por isso o Encarregado (ou qualquer Colaborador) sempre caía em Forbidden aqui.
+    # Além disso, ser Encarregado de Campo já libera criar atividade (é papel de gestão).
+    pode_criar = _tem_acesso_facilities("pode_criar_atividade") or _tem_acesso_facilities("eh_encarregado_campo")
     if not pode_criar:
         abort(403)
     plantas_disp, ids_permitidas = _plantas_ctx()
@@ -601,6 +622,34 @@ def atividade_detalhe(grupo_id):
         if not eh_gestor:
             abort(403)
         acao = request.form.get("acao", "salvar")
+
+        if acao == "reprogramar_geral":
+            # [item 3] Reprogramação GERAL (diferente do botão por linha, que reprograma só
+            # aquele dia): pergunta o escopo (tudo / a partir de hoje) e recalcula as datas dos
+            # dias afetados a partir da nova data, em dias úteis — mesma lógica de
+            # reprogramar_dia(escopo="todas_restantes"), mas disparada do topo da tela.
+            motivo = (request.form.get("motivo_reprogramar_geral") or "").strip()
+            nova_data_str = request.form.get("nova_data_geral")
+            escopo_reprog = request.form.get("escopo_reprogramar", "tudo")
+            if not motivo or not nova_data_str:
+                flash("Informe a nova data e o motivo da reprogramação.", "danger")
+                return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            nova_data_ini = datetime.strptime(nova_data_str, "%Y-%m-%d").date()
+            hoje = date.today()
+            dias_afetados = sorted([d for d in grupo.dias if d.status != "APROVADA"
+                                    and (escopo_reprog == "tudo" or d.data >= hoje)],
+                                   key=lambda d: d.ordem)
+            if not dias_afetados:
+                flash("Não há dias para reprogramar (todos já aprovados ou fora do escopo).", "warning")
+                return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            novas_datas = _gerar_dias_uteis(nova_data_ini, len(dias_afetados))
+            for d, nova_d in zip(dias_afetados, novas_datas):
+                d.reprogramado_de = d.data
+                d.data = nova_d
+                d.motivo_reprogramacao = motivo
+            db.session.commit()
+            flash(f"{len(dias_afetados)} dia(s) reprogramado(s) a partir de {nova_data_ini.strftime('%d/%m/%Y')}.", "success")
+            return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
 
         if acao == "cancelar":
             motivo = (request.form.get("motivo_cancelamento") or "").strip()
@@ -773,12 +822,14 @@ def colaboradores_por_empresa(fornecedor_id):
 @facilities_bp.route("/preencher")
 @_logado_required
 def preencher_escolher():
-    """Tela 1: escolhe HOJE ou um dos dias em que o colaborador tem atividade."""
+    """Tela 1: escolhe HOJE ou um dos dias em que o colaborador (ou, se ele for Encarregado
+    de Campo, algum colaborador da equipe da empresa dele) tem atividade."""
     from .almox import _colab_sessao
     colab_id, usuario_id = _quem_preencheu()
+    ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
     q = AtividadeDia.query.join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
-    if colab_id:
-        q = q.filter(AtividadeColaborador.colaborador_id == colab_id)
+    if ids_visiveis:
+        q = q.filter(AtividadeColaborador.colaborador_id.in_(ids_visiveis))
     dias_disponiveis = sorted({d.data for d in q.all() if d.data <= date.today()}, reverse=True)
     return render_template("facilities/preencher_escolher.html", dias_disponiveis=dias_disponiveis, hoje=date.today())
 
@@ -792,11 +843,12 @@ def preencher_dia(data_str):
     except ValueError:
         abort(404)
     colab_id, usuario_id = _quem_preencheu()
+    ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
 
     q = AtividadeDia.query.join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
     q = q.filter(AtividadeDia.data == data_d, AtividadeDia.status != "CANCELADA")
-    if colab_id:
-        q = q.filter(AtividadeColaborador.colaborador_id == colab_id)
+    if ids_visiveis:
+        q = q.filter(AtividadeColaborador.colaborador_id.in_(ids_visiveis))
     minhas_atividades = q.all()
     # [item 4 fix] % do dia anterior de cada atividade — usado no template pra so' mostrar a
     # caixa de justificativa quando a nova % REALMENTE for menor (antes o JS mostrava sempre).
@@ -812,8 +864,8 @@ def preencher_dia(data_str):
         # [fix CRÍTICO] antes o POST processava qualquer dia_id enviado, sem checar se o dia
         # pertence a uma atividade do colaborador logado — a tela só ESCONDIA os outros dias,
         # mas a rota aceitava preencher qualquer um. Agora valida de verdade: só quem participa
-        # da atividade (ou Admin/Master) pode preencher aquele dia.
-        eh_participante = colab_id and any(ac.colaborador_id == colab_id for ac in dia.grupo.colaboradores)
+        # da atividade (ou é Encarregado da empresa dela, ou Admin/Master) pode preencher.
+        eh_participante = colab_id and any(ac.colaborador_id in ids_visiveis for ac in dia.grupo.colaboradores)
         eh_gestor = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
                     or getattr(current_user, "is_master", False))
         if not eh_participante and not eh_gestor:
@@ -895,6 +947,14 @@ def aprovar_dia(dia_id):
     dia.status = "APROVADA"
     dia.aprovado_em = datetime.utcnow()
     dia.aprovado_por = current_user.id if current_user.is_authenticated else None
+    # [item 7] o Encarregado pode ANEXAR fotos extras na hora de aprovar, somando com as que
+    # o colaborador já tinha enviado — até o limite de 4 no total (não substitui as existentes).
+    fotos_existentes = json.loads(dia.fotos_json) if dia.fotos_json else []
+    vagas = max(0, 4 - len(fotos_existentes))
+    if vagas:
+        novas_fotos = _salvar_fotos("fotos", maximo=vagas)
+        if novas_fotos:
+            dia.fotos_json = json.dumps(fotos_existentes + novas_fotos)
     db.session.commit()
     flash("Aprovado.", "success")
     return redirect(url_for("facilities.aprovacao"))
@@ -911,6 +971,13 @@ def retificar_dia(dia_id):
     dia.status = "APROVADA"
     dia.aprovado_em = datetime.utcnow()
     dia.aprovado_por = current_user.id if current_user.is_authenticated else None
+    # [item 7] mesma regra de soma de fotos até 4, na retificação também
+    fotos_existentes = json.loads(dia.fotos_json) if dia.fotos_json else []
+    vagas = max(0, 4 - len(fotos_existentes))
+    if vagas:
+        novas_fotos = _salvar_fotos("fotos", maximo=vagas)
+        if novas_fotos:
+            dia.fotos_json = json.dumps(fotos_existentes + novas_fotos)
     db.session.commit()
     flash("Retificado e aprovado.", "success")
     return redirect(url_for("facilities.aprovacao"))
@@ -1000,10 +1067,13 @@ def resumo_diario():
             nomes_fmt = ", ".join(_remover_particulas_sobrenome(n) for n in colaboradores_da_empresa)
             linha = {"local": d.grupo.predio.nome if d.grupo.predio else "—",
                     "titulo": d.grupo.titulo, "colaboradores": nomes_fmt}
-            # [item novo] no resumo de FIM, traz o que os colaboradores de fato reportaram:
-            # % de conclusão e as observações/descrição da execução daquele dia.
+            # [item 5] no resumo de FIM, traz o que os colaboradores de fato reportaram: %
+            # de conclusão (JUNTO com a META daquele dia, senão "5%" sozinho dá a entender que
+            # a pessoa só trabalhou 5% do dia, quando na verdade pode ter batido a meta cheia
+            # de 5% daquele dia especifico) e as observações/descrição da execução.
             if tipo == "fim":
                 linha["percentual"] = d.percentual if d.percentual is not None else "—"
+                linha["meta"] = d.meta_percentual
                 linha["observacoes"] = d.descricao_execucao or "—"
             linhas.append(linha)
 

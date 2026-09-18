@@ -14,6 +14,34 @@
 
 {% if grupo.descricao %}<div class="card mb-3"><div class="card-body py-2"><p class="mb-0 small">{{ grupo.descricao }}</p></div></div>{% endif %}
 
+{% if eh_gestor and grupo.status_cadastro == 'INCOMPLETO' %}
+<div class="card mb-3 border-warning"><div class="card-body">
+  <h6 class="mb-2">⚠️ Completar cadastro desta atividade</h6>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-2">
+      <div class="col-md-6"><label class="form-label small">Título</label>
+        <input name="titulo" class="form-control" value="{{ grupo.titulo }}" required></div>
+      <div class="col-md-6"><label class="form-label small">Descrição</label>
+        <input name="descricao" class="form-control" value="{{ grupo.descricao or '' }}"></div>
+    </div>
+    <div class="row g-2 mt-1">
+      <div class="col-md-6"><label class="form-label small">Planta</label>
+        <select name="planta_id" class="form-select" required>
+          <option value="">—</option>
+          {% for p in plantas_disp %}<option value="{{ p.id }}" {{ 'selected' if grupo.planta_id==p.id }}>{{ p.nome }}</option>{% endfor %}
+        </select></div>
+      <div class="col-md-6"><label class="form-label small">Prédio</label>
+        <select name="predio_id" class="form-select" required>
+          <option value="">—</option>
+          {% for pr in predios_disp %}<option value="{{ pr.id }}" {{ 'selected' if grupo.predio_id==pr.id }}>{{ pr.nome }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <button class="btn btn-primary btn-sm mt-2">Salvar</button>
+  </form>
+</div></div>
+{% endif %}
+
 <div class="card mb-3"><div class="card-body">
   <h6 class="mb-2">Colaboradores</h6>
   {% for ac in grupo.colaboradores %}

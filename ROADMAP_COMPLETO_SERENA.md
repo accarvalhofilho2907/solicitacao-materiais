@@ -3141,3 +3141,57 @@ Smoke test geral (16 telas) 200.
 
 AÇÃO PENDENTE DO ANTONIO: corrigir a variavel CLOUDINARY_URL no Render (estava com o valor de exemplo
 "<your_api_key>" em vez da URL real copiada do Dashboard do Cloudinary).
+
+### ================== CORRECAO DE RAIZ: PERMISSOES ASSUMIAM SO LOGIN VIA QR (18/09) ==================
+Antonio reportou de novo: Encarregado logado (login NORMAL do site) recebia "Forbidden" em Programacao
+de Atividades; atividade incompleta nao dava pra editar; botao de preencher sumido pro Colaborador
+Diverso; checkbox de empresas ruim de usar; Master precisa ter acesso a tudo.
+
+CAUSA RAIZ UNICA por tras de varios desses sintomas: TODOS os decoradores de facilities.py
+(_gerir_required, _ver_required, _inspecionar_required) e a checagem manual dentro de aprovacao() e
+atividade_detalhe() SO reconheciam permissao de duas formas: (1) current_user.is_admin, ou (2) a
+sessao de campo via QR (_colab_sessao()). NUNCA checavam as properties do proprio current_user quando
+ele e' um Colaborador logado NORMALMENTE pelo site (Colaborador tambem e' UserMixin — pode logar sem
+QR, current_user vira o proprio Colaborador nesse caso). Isso deixava QUALQUER Encarregado/Colaborador
+que fizesse login pelo site (nao por QR de campo) sempre barrado com 403, mesmo com a tarefa certa.
+
+CORRIGIDO NA RAIZ: novo helper _tem_acesso_facilities(prop) que checa, NESTA ORDEM: (1) current_user
+autenticado com is_admin OU is_master -> sempre libera (RESPOSTA DIRETA ao pedido "Master tem que ter
+acesso a tudo"); (2) current_user autenticado tendo a property pedida (cobre login normal de
+Colaborador); (3) colab de sessao de campo tendo a property (cobre QR). Os 3 decoradores reescritos
+para usar esse helper. aprovacao() e atividade_detalhe() tambem corrigidos manualmente com a mesma
+logica (nao usam decorador generico por terem checagem propria mais especifica).
+
+BUG EXTRA achado no processo: aprovacao() fazia o JOIN com Colaborador/AtividadeGrupo pra filtrar por
+empresa do Encarregado, mas NUNCA aplicava o .filter() de fato — ou seja, um Encarregado com empresa(s)
+vinculada(s) via EncarregadoEmpresa via TODAS as pendencias do sistema, nao so' as da(s) empresa(s)
+dele. CORRIGIDO: agora filtra de verdade por Colaborador.empresa IN (nomes das empresas do encarregado).
+
+[Atividade incompleta sem jeito de editar] atividade_detalhe() virou GET+POST: quando eh_gestor e a
+atividade esta INCOMPLETA, mostra um formulario (titulo, descricao, planta, predio) que ao salvar
+reavalia se ficou completa. Testado: Admin completa uma atividade incompleta -> vira COMPLETO,
+titulo atualizado.
+
+[Botao de preencher sumido pro Colaborador Diverso] CAUSA: o link dependia de perm.pode_facilities
+(que exige tarefa explicita no perfil) E as rotas /preencher exigiam @_inspecionar_required (tarefa
+fac_inspecionar). Um "Colaborador Diverso" comum, so' adicionado como participante de uma atividade,
+pode nao ter NENHUMA tarefa de Facilities no papel — ele so' deveria precisar ESTAR NA ATIVIDADE pra
+poder reportar a propria %, nao ter uma tarefa de perfil configurada. CORRIGIDO: novo decorador
+_logado_required (so exige estar logado de alguma forma, sem exigir tarefa — a query interna ja filtra
+pelo colaborador certo) aplicado em /preencher e /preencher/<data>; link do menu agora SEMPRE visivel
+pra qualquer Colaborador, fora do bloco condicionado a pode_facilities.
+
+[Checkbox de empresas ruim] Trocado por <select multiple size="6"> (lista suspensa nativa com
+selecao multipla, Ctrl+clique) em colaborador_perfil.html — mesmo campo/name, sem mudar o backend.
+
+TESTADO (todos os cenarios criticos, com login NORMAL current_user, nao so QR):
+- Encarregado logado normalmente acessa /programacao (200) e /aprovacao (200, antes 403).
+- Encarregado com empresa vinculada VE atividade da propria empresa e NAO VE atividade de outra empresa
+  (filtro de fato aplicado agora).
+- Colaborador Diverso SEM NENHUMA tarefa de Facilities acessa /preencher via QR E via login normal,
+  ve a propria atividade corretamente.
+- Admin completa uma atividade incompleta pelo formulario novo -> status_cadastro vira COMPLETO.
+- Select multiple de empresas: vincula 2 empresas de uma vez corretamente (antes era checkbox).
+- Admin MASTER acessa TODAS as 9 telas de Facilities (programacao, nova, preencher, aprovacao, resumo,
+  rdo, modelos, inspecionar, predios) - 200 em todas.
+Smoke test geral (16 telas) 200.

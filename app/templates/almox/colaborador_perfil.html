@@ -49,13 +49,12 @@
 
       {% if pode_papel %}
       <div class="mb-2"><label class="form-label small">Empresas que este colaborador é Encarregado de Campo</label>
-        <div class="form-text mb-1">Só faz efeito se o perfil dele também tiver a tarefa "Encarregado de Campo" liberada em Perfis de Acesso.</div>
-        <div class="d-flex flex-wrap gap-3">
+        <div class="form-text mb-1">Só faz efeito se o perfil dele também tiver a tarefa "Encarregado de Campo" liberada em Perfis de Acesso. Segure Ctrl (ou Cmd no Mac) para selecionar mais de uma.</div>
+        <select name="empresas_encarregado_ids" class="form-select" multiple size="6">
           {% for f in empresas %}
-          <div class="form-check"><input class="form-check-input" type="checkbox" name="empresas_encarregado_ids" value="{{ f.id }}"
-                 {{ 'checked' if f.id in c.empresas_encarregado|map(attribute='id')|list }}><label class="form-check-label small">{{ f.nome_fantasia or f.razao_social }}</label></div>
+          <option value="{{ f.id }}" {{ 'selected' if f.id in c.empresas_encarregado|map(attribute='id')|list }}>{{ f.nome_fantasia or f.razao_social }}</option>
           {% endfor %}
-        </div>
+        </select>
       </div>
       {% elif c.empresas_encarregado %}
       <div class="mb-2"><label class="form-label small">Encarregado de Campo em</label>

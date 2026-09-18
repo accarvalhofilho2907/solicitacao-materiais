@@ -245,10 +245,10 @@
       {% endif %}
       {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
       {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
+      {{ item('facilities.preencher_escolher','check','Preencher minha atividade') }}
       {% if perm.pode_facilities %}
       {{ item('facilities.inspecionar','box','Inspecionar (checklist)') }}
       {{ item('facilities.programacao','doc','Programação de atividades') }}
-      {{ item('facilities.preencher_escolher','check','Preencher minha atividade') }}
       {{ item('facilities.aprovacao','check','Aprovação de atividades') }}
       {{ item('facilities.rdo','doc','Relatório Diário de Obra') }}
       {% endif %}

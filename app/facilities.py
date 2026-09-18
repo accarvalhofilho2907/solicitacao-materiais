@@ -45,16 +45,46 @@ def _promover_falhas_vencidas():
         db.session.rollback()
 
 
+def _logado_required(f):
+    """[fix] Para as telas de PREENCHER: não exige nenhuma tarefa de perfil — qualquer
+    Colaborador (mesmo "Colaborador Diverso" sem tarefas de Facilities atribuídas) que esteja
+    de fato participando de uma atividade pode preencher a própria %. A rota em si já filtra
+    pelo colaborador certo; aqui só barra quem não está logado de jeito nenhum."""
+    @wraps(f)
+    def w(*a, **k):
+        from .almox import _colab_sessao
+        if current_user.is_authenticated or _colab_sessao():
+            return f(*a, **k)
+        return redirect(url_for("auth.login"))
+    return w
+
+
+def _tem_acesso_facilities(prop_generica):
+    """[fix] Checa a permissão tanto para quem está logado NORMALMENTE (current_user — que
+    pode ser Usuario OU Colaborador, já que Colaborador também é UserMixin e pode logar pelo
+    site, não só via QR de campo) quanto para quem está numa sessão de campo via QR
+    (_colab_sessao()). Antes só a segunda era checada, deixando qualquer Encarregado/
+    Colaborador logado pelo site normal sempre barrado, mesmo com a tarefa certa.
+    Admin e Master sempre têm acesso a tudo em Facilities."""
+    from .almox import _colab_sessao
+    if current_user.is_authenticated:
+        if getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False):
+            return True
+        if getattr(current_user, prop_generica, False):
+            return True
+    colab = _colab_sessao()
+    if colab and getattr(colab, prop_generica, False):
+        return True
+    return False
+
+
 def _gerir_required(f):
     @wraps(f)
     def w(*a, **k):
         from .almox import _colab_sessao
-        if current_user.is_authenticated and getattr(current_user, "is_admin", False):
+        if _tem_acesso_facilities("pode_facilities_gerir"):
             return f(*a, **k)
-        colab = _colab_sessao()
-        if colab and getattr(colab, "pode_facilities_gerir", False):
-            return f(*a, **k)
-        if not current_user.is_authenticated and not colab:
+        if not current_user.is_authenticated and not _colab_sessao():
             return redirect(url_for("auth.login"))
         abort(403)
     return w
@@ -64,12 +94,9 @@ def _ver_required(f):
     @wraps(f)
     def w(*a, **k):
         from .almox import _colab_sessao
-        if current_user.is_authenticated and getattr(current_user, "is_admin", False):
+        if _tem_acesso_facilities("pode_facilities"):
             return f(*a, **k)
-        colab = _colab_sessao()
-        if colab and getattr(colab, "pode_facilities", False):
-            return f(*a, **k)
-        if not current_user.is_authenticated and not colab:
+        if not current_user.is_authenticated and not _colab_sessao():
             return redirect(url_for("auth.login"))
         abort(403)
     return w
@@ -79,12 +106,9 @@ def _inspecionar_required(f):
     @wraps(f)
     def w(*a, **k):
         from .almox import _colab_sessao
-        if current_user.is_authenticated and getattr(current_user, "is_admin", False):
+        if _tem_acesso_facilities("pode_facilities_inspecionar"):
             return f(*a, **k)
-        colab = _colab_sessao()
-        if colab and getattr(colab, "pode_facilities_inspecionar", False):
-            return f(*a, **k)
-        if not current_user.is_authenticated and not colab:
+        if not current_user.is_authenticated and not _colab_sessao():
             return redirect(url_for("auth.login"))
         abort(403)
     return w
@@ -513,28 +537,57 @@ def programacao_nova():
     return redirect(url_for("facilities.programacao"))
 
 
-@facilities_bp.route("/atividade/<int:grupo_id>")
+@facilities_bp.route("/atividade/<int:grupo_id>", methods=["GET", "POST"])
 @_ver_required
 def atividade_detalhe(grupo_id):
-    """[fix] Tela de detalhe de uma AtividadeGrupo — Admin/Master/Encarregado de Campo veem
-    tudo (todos os dias, quem preencheu, histórico); um Colaborador comum da atividade só
-    vê os próprios dias e o botão de preencher a % (era o que estava faltando)."""
+    """Tela de detalhe de uma AtividadeGrupo — Admin/Master/Encarregado de Campo veem
+    tudo (todos os dias, quem preencheu, histórico) e podem COMPLETAR/EDITAR os campos
+    quando o cadastro estiver incompleto. Um Colaborador comum da atividade só vê os
+    próprios dias e o botão de preencher a %."""
     from .almox import _colab_sessao
     grupo = db.session.get(AtividadeGrupo, grupo_id) or abort(404)
     colab = _colab_sessao()
-    eh_gestor = (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False)
-                or getattr(colab, "eh_encarregado_campo", False))
-    eh_participante = colab and any(ac.colaborador_id == colab.id for ac in grupo.colaboradores)
+    # [fix] eh_gestor precisa reconhecer TAMBÉM quem logou normalmente (current_user pode ser
+    # um Colaborador Encarregado logado pelo site, não só via QR de campo).
+    eh_gestor = (
+        (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+            or getattr(current_user, "is_master", False)
+            or getattr(current_user, "eh_encarregado_campo", False)))
+        or getattr(colab, "eh_encarregado_campo", False)
+    )
+    colab_atual_id = colab.id if colab else (current_user.id if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_participante = colab_atual_id and any(ac.colaborador_id == colab_atual_id for ac in grupo.colaboradores)
     if not eh_gestor and not eh_participante:
         abort(403)
+
+    if request.method == "POST":
+        if not eh_gestor:
+            abort(403)
+        plantas_disp, ids_permitidas = _plantas_ctx()
+        planta_id = request.form.get("planta_id") or None
+        if planta_id:
+            ids_ok = {p.id for p in plantas_disp}
+            if int(planta_id) not in ids_ok:
+                planta_id = None
+        grupo.titulo = (request.form.get("titulo") or grupo.titulo).strip()
+        grupo.descricao = (request.form.get("descricao") or grupo.descricao or "").strip()
+        grupo.planta_id = int(planta_id) if planta_id else None
+        predio_id = request.form.get("predio_id") or None
+        grupo.predio_id = int(predio_id) if predio_id else None
+        # completo só se os campos essenciais estiverem todos preenchidos agora
+        grupo.status_cadastro = "COMPLETO" if (grupo.titulo and grupo.planta_id and grupo.predio_id) else "INCOMPLETO"
+        db.session.commit()
+        flash("Atividade atualizada." + ("" if grupo.status_cadastro == "COMPLETO" else " Ainda falta completar algum campo."), "success")
+        return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+
     dias = sorted(grupo.dias, key=lambda d: d.ordem)
-    if not eh_gestor and colab:
-        # colaborador comum: continua vendo a linha do tempo toda (contexto), mas o botão de
-        # preencher só aparece nos dias que ainda não foram preenchidos por ninguém (fluxo
-        # normal passa por /preencher; aqui é um atalho direto a partir da atividade)
-        pass
+    plantas_disp = predios_disp = None
+    if eh_gestor and grupo.status_cadastro == "INCOMPLETO":
+        plantas_disp, _ids = _plantas_ctx()
+        predios_disp = Predio.query.filter_by(ativo=True).order_by(Predio.nome).all()
     return render_template("facilities/atividade_detalhe.html", grupo=grupo, dias=dias,
-                           eh_gestor=eh_gestor, colab_atual=colab, hoje=date.today())
+                           eh_gestor=eh_gestor, colab_atual=colab, hoje=date.today(),
+                           plantas_disp=plantas_disp, predios_disp=predios_disp)
 
 
 @facilities_bp.route("/programacao/conflito/<int:grupo_antigo_id>/resolver", methods=["POST"])
@@ -582,7 +635,7 @@ def colaboradores_por_empresa(fornecedor_id):
 # ============================================================================
 
 @facilities_bp.route("/preencher")
-@_inspecionar_required
+@_logado_required
 def preencher_escolher():
     """Tela 1: escolhe HOJE ou um dos dias em que o colaborador tem atividade."""
     from .almox import _colab_sessao
@@ -595,7 +648,7 @@ def preencher_escolher():
 
 
 @facilities_bp.route("/preencher/<data_str>", methods=["GET", "POST"])
-@_inspecionar_required
+@_logado_required
 def preencher_dia(data_str):
     """Tela 2: mostra (e processa) só as atividades do colaborador NAQUELE dia."""
     try:
@@ -648,16 +701,27 @@ def preencher_dia(data_str):
 def aprovacao():
     from .almox import _colab_sessao
     colab = _colab_sessao()
-    is_encarregado = getattr(current_user, "is_admin", False) or getattr(colab, "eh_encarregado_campo", False)
+    # [fix] mesma checagem: Encarregado pode estar logado NORMALMENTE (current_user é o
+    # próprio Colaborador) ou via sessão de campo (colab) — antes só a segunda era vista.
+    is_encarregado = (
+        (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+            or getattr(current_user, "is_master", False)
+            or getattr(current_user, "eh_encarregado_campo", False)))
+        or getattr(colab, "eh_encarregado_campo", False)
+    )
     if not is_encarregado:
         abort(403)
+    colab_atual = colab if colab else (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
     q = AtividadeDia.query.filter_by(status="AGUARDANDO_APROVACAO")
-    if colab and not current_user.is_authenticated:
-        empresas_ids = {e.id for e in colab.empresas_encarregado}
+    if colab_atual and not (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False)):
+        empresas_ids = {e.id for e in colab_atual.empresas_encarregado}
         if empresas_ids:
+            nomes_empresas = {db.session.get(Fornecedor, eid).nome_fantasia or db.session.get(Fornecedor, eid).razao_social
+                              for eid in empresas_ids}
             q = (q.join(AtividadeGrupo)
                  .join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeGrupo.id)
-                 .join(Colaborador, Colaborador.id == AtividadeColaborador.colaborador_id))
+                 .join(Colaborador, Colaborador.id == AtividadeColaborador.colaborador_id)
+                 .filter(Colaborador.empresa.in_(nomes_empresas)))
     pendentes = q.order_by(AtividadeDia.data.desc()).all()
     return render_template("facilities/aprovacao.html", pendentes=pendentes)
 

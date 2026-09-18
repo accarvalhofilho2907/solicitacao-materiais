@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}RDO — {{ r.data.strftime('%d/%m/%Y') }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h4 class="mb-0">RDO — {{ r.data.strftime('%d/%m/%Y') }}</h4>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo') }}">← Voltar</a>
+</div>
+
+<div class="alert {{ 'alert-success' if r.status == 'APROVADO' else 'alert-warning' }} small py-2">
+  Status: <b>{{ r.status }}</b>
+  {% if r.status == 'PENDENTE' %}
+    {% if r.aprovado_encarregado_em %} — falta aprovação do Admin{% elif r.aprovado_admin_em %} — falta aprovação do Encarregado{% endif %}
+  {% endif %}
+</div>
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo_pdf', rdo_id=r.id) }}" target="_blank">📄 Ver / baixar PDF</a>
+  {% if pode_editar %}
+  <a class="btn btn-sm btn-primary" href="{{ url_for('facilities.rdo_editar', rdo_id=r.id) }}">✎ Editar</a>
+  {% elif eh_admin and r.status == 'APROVADO' %}
+  <form method="post" action="{{ url_for('facilities.rdo_reabrir', rdo_id=r.id) }}" onsubmit="return confirm('Reabrir este RDO? Isso zera as duas aprovações.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-sm btn-outline-warning">🔓 Reabrir para editar</button>
+  </form>
+  {% endif %}
+  {% if eh_gestor and r.status != 'APROVADO' %}
+  <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-sm btn-success">✓ Aprovar</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card"><div class="card-body">
+  <div class="row g-2 mb-2">
+    <div class="col-md-4"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
+    <div class="col-md-4"><label class="form-label small text-muted">Clima</label><p class="mb-0">{{ r.condicao_climatica or '—' }}</p></div>
+    <div class="col-md-4"><label class="form-label small text-muted">% média executada</label><p class="mb-0">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</p></div>
+  </div>
+  {% if r.mao_de_obra_texto %}<p class="small"><b>Mão de obra:</b><br>{{ r.mao_de_obra_texto|replace('\n', '<br>')|safe }}</p>{% endif %}
+  {% if r.equipamentos_texto %}<p class="small"><b>Equipamentos:</b> {{ r.equipamentos_texto }}</p>{% endif %}
+  {% if r.observacoes %}<p class="small"><b>Observações:</b> {{ r.observacoes }}</p>{% endif %}
+</div></div>
+
+<div class="card mt-3"><div class="card-body">
+  <h6 class="mb-2">Atividades do dia ({{ r.atividades|length }})</h6>
+  {% for grupo in r.atividades %}
+  {% set dia_do_grupo = grupo.dias|selectattr('data', 'equalto', r.data)|first %}
+  <div class="border rounded p-2 mb-2">
+    <div class="d-flex justify-content-between">
+      <b>{{ grupo.titulo }}</b>
+      <span>{% if dia_do_grupo and dia_do_grupo.percentual is not none %}{{ dia_do_grupo.percentual }}%{% else %}—{% endif %}</span>
+    </div>
+    <p class="text-muted small mb-1">Local: {{ grupo.predio.nome if grupo.predio else '—' }} · Colaboradores: {% for ac in grupo.colaboradores %}{{ ac.colaborador.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% if dia_do_grupo and dia_do_grupo.descricao_execucao %}<p class="small mb-1">{{ dia_do_grupo.descricao_execucao }}</p>{% endif %}
+    {% if dia_do_grupo and dia_do_grupo.fotos_json %}
+    {% set fotos = dia_do_grupo.fotos_json|fromjson %}
+    <div class="d-flex gap-2">
+      {% for f in fotos %}<a href="{{ f }}" target="_blank"><img src="{{ f }}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"></a>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-muted small mb-0">Nenhuma atividade vinculada.</p>
+  {% endfor %}
+</div></div>
+{% endblock %}

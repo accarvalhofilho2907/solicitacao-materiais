@@ -1222,8 +1222,10 @@ def rdo():
             criado_por=current_user.id if current_user.is_authenticated else None)
         db.session.add(rdo_novo)
         db.session.commit()
-        flash("RDO registrado — aguardando aprovação.", "success")
-        return redirect(url_for("facilities.rdo"))
+        flash("RDO registrado — confira o preview antes de confirmar o envio para aprovação.", "success")
+        # [item 8] Preview: em vez de já cair na lista geral, mostra o RDO completo primeiro
+        # (a pessoa pode ver se está tudo certo antes de considerar "pronto").
+        return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_novo.id))
 
     q = RelatorioDiarioObra.query
     if ids_permitidas:
@@ -1276,3 +1278,80 @@ def rdo_pdf(rdo_id):
     buf = gerar_pdf_rdo(r)
     nome_arquivo = f"RDO_{r.data.strftime('%Y%m%d')}_{(r.planta.nome if r.planta else 'planta').replace(' ', '_')}.pdf"
     return send_file(buf, mimetype="application/pdf", as_attachment=False, download_name=nome_arquivo)
+
+
+def _pode_editar_rdo(r, colab_atual):
+    """[item 8] Regra de edição do RDO: se está PENDENTE, o Encarregado ou Admin já pode
+    editar direto. Se está APROVADO, precisa que um Admin "reabra" primeiro (rdo_reabrir) —
+    isso zera as duas aprovações e volta pra PENDENTE — só depois o Encarregado (ou o
+    próprio Admin) consegue editar de novo."""
+    eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+              or getattr(current_user, "is_master", False))
+    eh_encarregado = eh_admin or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_encarregado:
+        return False
+    return r.status == "PENDENTE"
+
+
+@facilities_bp.route("/rdo/<int:rdo_id>/preview")
+@_rdo_required
+def rdo_preview(rdo_id):
+    """[item 8] Preview completo do RDO — igual ao que vai pro PDF, mas na tela, pra pessoa
+    confirmar antes de considerar pronto pra aprovação. Mostra também o botão de editar (se
+    permitido) e de aprovar (se for gestor)."""
+    from .almox import _colab_sessao
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))
+    return render_template("facilities/rdo_preview.html", r=r, pode_editar=_pode_editar_rdo(r, colab_atual),
+                           eh_gestor=eh_gestor, eh_admin=eh_admin)
+
+
+@facilities_bp.route("/rdo/<int:rdo_id>/editar", methods=["GET", "POST"])
+@_rdo_required
+def rdo_editar(rdo_id):
+    """[item 8] Edita um RDO existente — só permitido enquanto PENDENTE (ver _pode_editar_rdo).
+    Recalcula a % média se as atividades vinculadas ainda existirem."""
+    from .almox import _colab_sessao
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    if not _pode_editar_rdo(r, colab_atual):
+        flash("Este RDO já foi aprovado — um Admin precisa reabri-lo antes de editar.", "danger")
+        return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))
+
+    plantas_disp, ids_permitidas = _plantas_ctx()
+    if request.method == "POST":
+        clima = (request.form.get("condicao_climatica") or "").strip()
+        if not clima:
+            flash("Condição climática é obrigatória.", "danger")
+            return redirect(url_for("facilities.rdo_editar", rdo_id=rdo_id))
+        r.condicao_climatica = clima
+        r.mao_de_obra_texto = (request.form.get("mao_de_obra_texto") or "").strip()
+        r.equipamentos_texto = (request.form.get("equipamentos_texto") or "").strip()
+        r.observacoes = (request.form.get("observacoes") or "").strip()
+        db.session.commit()
+        flash("RDO atualizado.", "success")
+        return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))
+
+    return render_template("facilities/rdo_editar.html", r=r, plantas_disp=plantas_disp)
+
+
+@facilities_bp.route("/rdo/<int:rdo_id>/reabrir", methods=["POST"])
+@_rdo_required
+def rdo_reabrir(rdo_id):
+    """[item 8] Só Admin/Master pode reabrir um RDO já aprovado — zera as duas aprovações e
+    volta pra PENDENTE, liberando o Encarregado pra editar de novo."""
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))
+    if not eh_admin:
+        abort(403)
+    r.status = "PENDENTE"
+    r.aprovado_encarregado_em = None
+    r.aprovado_encarregado_por = None
+    r.aprovado_admin_em = None
+    r.aprovado_admin_por = None
+    db.session.commit()
+    flash("RDO reaberto — agora pode ser editado novamente.", "success")
+    return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))

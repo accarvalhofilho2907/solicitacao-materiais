@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Editar RDO{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h4 class="mb-0">Editar RDO — {{ r.data.strftime('%d/%m/%Y') }}</h4>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo_preview', rdo_id=r.id) }}">← Voltar ao preview</a>
+</div>
+<p class="text-muted small">Data, planta e atividades vinculadas não podem ser alteradas aqui — só os campos de registro do dia.</p>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card"><div class="card-body">
+    <div class="row g-2 mb-2">
+      <div class="col-md-6"><label class="form-label small text-muted">Data</label><p class="mb-0">{{ r.data.strftime('%d/%m/%Y') }}</p></div>
+      <div class="col-md-6"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
+    </div>
+    <label class="form-label small">Condição climática *</label>
+    <select name="condicao_climatica" class="form-select mb-2" required>
+      {% for opt in ['Ensolarado','Parcialmente nublado','Nublado','Chuva fraca','Chuva forte','Tempestade','Neblina','Vento forte'] %}
+      <option {{ 'selected' if r.condicao_climatica == opt }}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+    <label class="form-label small">Mão de obra presente</label>
+    <textarea name="mao_de_obra_texto" class="form-control mb-2" rows="3">{{ r.mao_de_obra_texto or '' }}</textarea>
+    <label class="form-label small">Equipamentos usados no dia</label>
+    <textarea name="equipamentos_texto" class="form-control mb-2" rows="2">{{ r.equipamentos_texto or '' }}</textarea>
+    <label class="form-label small">Observações</label>
+    <textarea name="observacoes" class="form-control mb-2" rows="2">{{ r.observacoes or '' }}</textarea>
+  </div></div>
+  <button class="btn btn-primary mt-3">Salvar edição</button>
+  <a class="btn btn-outline-secondary mt-3" href="{{ url_for('facilities.rdo_preview', rdo_id=r.id) }}">Cancelar</a>
+</form>
+{% endblock %}

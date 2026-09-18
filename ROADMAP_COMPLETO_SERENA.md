@@ -3530,3 +3530,38 @@ PENDENTE (fila restante do item 8 - RDO):
 - Edição do RDO em qualquer etapa (pendente: Encarregado edita direto; aprovado: Admin precisa
   "reabrir" antes do Encarregado poder editar de novo)
 - Preview do RDO completo depois de salvar, antes de ir pra aprovação
+
+### ================== ITEM 8 (RDO) FINALIZADO (18/09) ==================
+Ultimos 3 pontos do item 8 que faltavam:
+
+[Fotos no PDF, clicaveis] Corrigido bug real no Flowable customizado _FotoClicavel
+(app/pdf_rdo.py): canv.linkURL() estava usando relative=0 sem ajustar as coordenadas pra posicao
+absoluta na pagina, entao o link NUNCA aparecia no PDF final (a imagem aparecia, mas sem area
+clicavel). Corrigido pra relative=1 (coordenadas relativas ao proprio ponto de desenho do Flowable
+— e assim que a documentacao oficial do reportlab recomenda). TESTADO isoladamente (sem depender de
+download de rede, que nao e' estavel neste ambiente sandbox): PDF gerado com _FotoClicavel contem
+/URI e a URL real do link — confirmado que o clique abre a foto original.
+
+[Edicao do RDO em qualquer etapa] Novas rotas: rdo_preview (mostra o RDO completo, com os mesmos
+dados que vao pro PDF, antes/depois de salvar), rdo_editar (GET+POST, só permite editar enquanto
+PENDENTE), rdo_reabrir (so' Admin/Master; zera as DUAS aprovacoes e volta pra PENDENTE). Regra
+implementada em _pode_editar_rdo(): PENDENTE -> Encarregado ou Admin editam direto; APROVADO -> so'
+depois do Admin reabrir. TESTADO o fluxo completo e real (Encarregado != Admin, sessoes separadas):
+Encarregado aprova (continua pendente, falta Admin) -> Admin aprova (fica APROVADO) -> Encarregado
+tenta editar -> bloqueado com a mensagem certa -> Admin reabre -> Encarregado edita com sucesso.
+Todos os 5 passos confirmados.
+
+[Preview apos salvar] Ao criar um RDO novo, o POST agora redireciona pra /rdo/<id>/preview (nao mais
+pra lista geral) — a pessoa ve o RDO completo (dados gerais, atividades, fotos, colaboradores) antes
+de considerar "pronto", com botoes de Editar (se permitido) e Aprovar (se for gestor) direto ali.
+TESTADO: criar RDO -> redirect confirmado indo pro preview, nao pra lista.
+
+Novos templates: rdo_preview.html, rdo_editar.html. rdo.html ganhou o link "Ver" (preview) em cada
+linha da lista.
+
+Smoke test geral (9 telas) 200.
+
+=== ITEM 8 (RDO) E TODA A RODADA DE 11 ITENS: CONCLUIDOS ===
+Todos os pontos reportados pelo Antonio nesta rodada foram investigados, corrigidos (quando eram
+bugs reais) ou confirmados como ja funcionando (item 4 — ferias/ausencia). Pronto para revisao e
+deploy.

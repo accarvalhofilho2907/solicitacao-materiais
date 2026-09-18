@@ -55,6 +55,29 @@ _ATV_TIT = ParagraphStyle("at", parent=_ST["Normal"], fontName="Helvetica-Bold",
                           fontSize=9.5, textColor=GRAFITE, leading=12)
 
 
+from reportlab.platypus import Flowable
+
+
+class _FotoClicavel(Flowable):
+    """[item 8] Flowable customizado: desenha a imagem no tamanho pedido e sobrepõe uma área
+    de link clicável (canvas.linkURL) apontando pra URL original da foto — o reportlab não
+    tem link embutido em Image por padrão."""
+    def __init__(self, img_data, largura, altura, url):
+        Flowable.__init__(self)
+        self.img_data = img_data
+        self.width = largura
+        self.height = altura
+        self.url = url
+
+    def draw(self):
+        self.canv.drawImage(ImageReader(self.img_data), 0, 0, width=self.width, height=self.height,
+                            preserveAspectRatio=True, mask="auto")
+        # relative=1: as coordenadas são relativas ao ponto onde ESTE Flowable está sendo
+        # desenhado (o framework já posiciona (0,0) certo na página) — usar relative=0 aqui
+        # gravava a coordenada errada no PDF final e o link não aparecia de verdade.
+        self.canv.linkURL(self.url, (0, 0, self.width, self.height), relative=1, thickness=0)
+
+
 def _campo(label, valor):
     return [Paragraph(label.upper(), _LABEL), Paragraph(str(valor or "—"), _VALOR)]
 
@@ -207,7 +230,9 @@ def gerar_pdf_rdo(rdo):
         story.append(Paragraph(detalhes, _OBS))
         story.append(Spacer(1, 4))
 
-        # fotos do dia (se houver)
+        # [item 8] fotos do dia: 4 pequenas lado a lado, CLICÁVEIS (abre a URL original,
+        # sem compressão adicional, ao clicar em cima — usa um Flowable customizado porque o
+        # reportlab não tem link embutido em Image "de fábrica").
         if dia_do_grupo and dia_do_grupo.fotos_json:
             try:
                 urls = _json.loads(dia_do_grupo.fotos_json)
@@ -217,19 +242,20 @@ def gerar_pdf_rdo(rdo):
             for u in urls[:4]:
                 foto_bytes = _baixar_foto(u)
                 if foto_bytes:
-                    imgs_ok.append(foto_bytes)
+                    imgs_ok.append((foto_bytes, u))
             if imgs_ok:
                 cel_imgs = []
-                for fb in imgs_ok:
+                for fb, url_original in imgs_ok:
                     img_reader = ImageReader(BytesIO(fb))
                     iw, ih = img_reader.getSize()
                     largura = 42 * mm
                     altura = largura * ih / iw
-                    cel_imgs.append(Image(BytesIO(fb), width=largura, height=altura))
+                    cel_imgs.append(_FotoClicavel(BytesIO(fb), largura, altura, url_original))
                 linha_fotos = Table([cel_imgs], colWidths=[44 * mm] * len(cel_imgs))
                 linha_fotos.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 2),
                                                  ("RIGHTPADDING", (0, 0), (-1, -1), 2)]))
                 story.append(linha_fotos)
+                story.append(Paragraph("Clique numa foto para abrir em tamanho grande.", _LABEL))
         story.append(Spacer(1, 10))
 
     if not rdo.atividades:

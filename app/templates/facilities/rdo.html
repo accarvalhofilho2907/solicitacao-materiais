@@ -27,6 +27,7 @@
         </span>{% endif %}
       </td>
       <td class="text-end">
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('facilities.rdo_preview', rdo_id=r.id) }}">👁 Ver</a>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo_pdf', rdo_id=r.id) }}" target="_blank">📄 PDF</a>
         {% if eh_gestor and r.status != 'APROVADO' %}
         {% if eh_admin and not r.aprovado_admin_em %}

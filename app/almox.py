@@ -4048,6 +4048,6 @@ def _inject_ver_como():
                  "pode_colaboradores", "pode_solicitar",
                  "ext_cadastrar", "ext_desativar", "chave_desativar",
                  "pode_facilities", "pode_facilities_inspecionar", "pode_facilities_cadastrar",
-                 "pode_facilities_gerir", "pode_criar_atividade", "eh_encarregado_campo"):
+                 "pode_facilities_gerir", "pode_criar_atividade", "pode_ver_programacao", "eh_encarregado_campo"):
         setattr(p, prop, _efetivo(prop))
     return {"perm": p, "ver_como_nome": nome}

@@ -14,11 +14,16 @@
 
 {% if grupo.descricao %}<div class="card mb-3"><div class="card-body py-2"><p class="mb-0 small">{{ grupo.descricao }}</p></div></div>{% endif %}
 
-{% if eh_gestor and grupo.status_cadastro == 'INCOMPLETO' %}
-<div class="card mb-3 border-warning"><div class="card-body">
-  <h6 class="mb-2">⚠️ Completar cadastro desta atividade</h6>
+{% if grupo.motivo_cancelamento %}
+<div class="alert alert-secondary small py-2"><b>Atividade cancelada.</b> Motivo: {{ grupo.motivo_cancelamento }}</div>
+{% endif %}
+
+{% if eh_gestor %}
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">{{ '⚠️ Completar cadastro' if grupo.status_cadastro == 'INCOMPLETO' else 'Editar atividade' }}</h6>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="acao" value="salvar">
     <div class="row g-2">
       <div class="col-md-6"><label class="form-label small">Título</label>
         <input name="titulo" class="form-control" value="{{ grupo.titulo }}" required></div>
@@ -47,9 +52,44 @@
   {% for ac in grupo.colaboradores %}
   <span class="badge {{ 'bg-primary' if ac.eh_responsavel else 'bg-secondary' }} me-1">
     {{ ac.colaborador.nome }}{% if ac.eh_responsavel %} (responsável){% endif %}
+    {% if eh_gestor %}
+    <form method="post" style="display:inline" onsubmit="return confirm('Remover {{ ac.colaborador.nome }} desta atividade?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="remover_colaborador">
+      <input type="hidden" name="ac_id" value="{{ ac.id }}">
+      <button type="submit" class="btn btn-sm btn-link text-white p-0 ms-1" style="text-decoration:none">×</button>
+    </form>
+    {% endif %}
   </span>
   {% else %}<span class="text-muted small">Nenhum colaborador atribuído ainda.</span>{% endfor %}
+
+  {% if eh_gestor %}
+  <form method="post" class="d-flex gap-2 mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="acao" value="adicionar_colaborador">
+    <select name="novo_colaborador_id" class="form-select form-select-sm" style="max-width:280px" required>
+      <option value="">— adicionar colaborador —</option>
+      {% for c in colaboradores_disp %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-sm btn-outline-secondary">＋ Adicionar</button>
+  </form>
+  {% endif %}
 </div></div>
+
+{% if eh_gestor and not grupo.motivo_cancelamento %}
+<div class="card mb-3"><div class="card-body">
+  <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#formCancelar">Cancelar atividade</button>
+  <div class="collapse mt-2" id="formCancelar">
+    <form method="post" class="border rounded p-2" onsubmit="return confirm('Cancelar esta atividade inteira?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="cancelar">
+      <label class="form-label small">Motivo do cancelamento (obrigatório)</label>
+      <textarea name="motivo_cancelamento" class="form-control form-control-sm mb-2" required></textarea>
+      <button class="btn btn-sm btn-danger">Confirmar cancelamento</button>
+    </form>
+  </div>
+</div></div>
+{% endif %}
 
 <div class="card"><div class="card-body">
 <table class="table table-sm align-middle mb-0">
@@ -76,8 +116,30 @@
         {% elif eh_gestor and d.status == 'AGUARDANDO_APROVACAO' %}
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('facilities.aprovacao') }}">Ver aprovação</a>
         {% endif %}
+        {% if eh_gestor and d.status not in ('APROVADA', 'CANCELADA') %}
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#reprog{{ d.id }}">Reprogramar</button>
+        {% endif %}
       </td>
     </tr>
+    {% if eh_gestor and d.status not in ('APROVADA', 'CANCELADA') %}
+    <tr class="collapse" id="reprog{{ d.id }}"><td colspan="7">
+      <form method="post" action="{{ url_for('facilities.reprogramar_dia', dia_id=d.id) }}" class="border rounded p-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3"><label class="form-label small">Nova data</label>
+            <input type="date" name="nova_data" class="form-control form-control-sm" required></div>
+          <div class="col-md-4"><label class="form-label small">Escopo</label>
+            <select name="escopo" class="form-select form-select-sm">
+              <option value="somente_esta">Somente este dia (dia {{ d.ordem }})</option>
+              <option value="todas_restantes">Este e todos os dias que faltam (a partir do dia {{ d.ordem }})</option>
+            </select></div>
+          <div class="col-md-5"><label class="form-label small">Motivo (obrigatório)</label>
+            <input name="motivo" class="form-control form-control-sm" required></div>
+        </div>
+        <button class="btn btn-sm btn-primary mt-2">Confirmar reprogramação</button>
+      </form>
+    </td></tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>

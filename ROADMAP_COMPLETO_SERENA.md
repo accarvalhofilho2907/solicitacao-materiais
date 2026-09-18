@@ -3195,3 +3195,73 @@ TESTADO (todos os cenarios criticos, com login NORMAL current_user, nao so QR):
 - Admin MASTER acessa TODAS as 9 telas de Facilities (programacao, nova, preencher, aprovacao, resumo,
   rdo, modelos, inspecionar, predios) - 200 em todas.
 Smoke test geral (16 telas) 200.
+
+### ================== SEGUNDA RODADA DE CORRECOES (18/09) — 10 ITENS ==================
+Antonio testou de novo e reportou 10 problemas. Investigados e corrigidos.
+
+1-2-3) SEPARACAO "VER PROGRAMACAO GERAL" x "PREENCHER MINHA ATIVIDADE" (varredura de Perfis de Acesso,
+   como pedido): confirmado que um Colaborador Diverso comum, so por ter pode_facilities (generico),
+   enxergava a agenda INTEIRA de todo mundo (Programacao) e podia navegar por atividades futuras — isso
+   e' uma visao de GESTAO, nao devia estar aberta a qualquer colaborador. CORRIGIDO: nova tarefa
+   fac_ver_programacao em Perfis de Acesso (Encarregado de Campo ja' ganha isso automaticamente, faz
+   sentido pra aprovar/reprogramar). Novo decorador _ver_programacao_required aplicado em /programacao
+   e /resumo-diario — agora exige essa tarefa especifica, nao mais so' "ver telas de Facilities" generico.
+   Menu corrigido: cada link agora e' condicionado a permissao EXATA que a rota exige (antes um so'
+   "pode_facilities" liberava varios links que na pratica davam Forbidden — item 3 do pedido, "nao pode
+   nem aparecer" —, corrigido escondendo cada item pela permissao certa).
+
+2-CRITICO) SEGURANCA: colaborador conseguia reportar % em atividade que NAO participava. Achado: a
+   ROTA de preencher_dia (POST) processava qualquer dia_id enviado no formulario SEM checar se o dia
+   pertencia a uma atividade do colaborador logado — so' a EXIBICAO (GET) filtrava, a acao (POST) nao.
+   CORRIGIDO: POST agora valida de verdade (eh_participante ou eh_gestor) antes de processar, com 403
+   se nao for. TESTADO: colaborador de fora enviando o dia_id de uma atividade alheia -> bloqueado
+   (403), % NAO sobrescrita.
+
+4) FALSO POSITIVO de "% menor que a anterior": o JS mostrava a caixa de justificativa SEMPRE ao
+   digitar, mesmo sem nenhum preenchimento anterior (o proprio comentario no codigo dizia
+   "simplificado"). CORRIGIDO: rota agora calcula e passa a % REAL do dia anterior pro template; JS
+   corrigido pra so mostrar a caixa quando ha valor anterior E a nova % e' de fato menor. TESTADO com
+   jsdom: primeira vez preenchendo (sem anterior) -> caixa NAO aparece; com anterior=60 e nova=40 ->
+   aparece; com anterior=60 e nova=80 -> nao aparece.
+   Sobre o "erro ao salvar sem foto" do log enviado: a validacao de segurana do item 2-CRITICO tambem
+   deve ter corrigido isso indiretamente (o log mostrava responseBytes=374, tipico de um redirect
+   apos erro de validacao) — Antonio deve retestar apos essa correcao.
+
+5) Admin Master nao via "Preencher minha atividade"/"Aprovacao de atividades" -> "Preencher minha
+   atividade" NUNCA tinha sido colocado no bloco de menu do Admin (so existia no bloco Colaborador).
+   CORRIGIDO: adicionado tambem no bloco Admin/Master.
+
+6) Atividade incompleta/pendente sem jeito de editar tudo, incluindo colaboradores -> atividade_detalhe
+   reescrita: formulario de editar titulo/planta/predio agora SEMPRE disponivel pro gestor (nao so'
+   quando incompleta); NOVO: bloco de gerenciar colaboradores (adicionar via select + botao remover
+   por colaborador), com as acoes "adicionar_colaborador"/"remover_colaborador" na mesma rota.
+
+7) Filtro/ordenacao na tabela de atividades (Excel-like) -> adicionado: campo de busca livre
+   (client-side, filtra por qualquer texto visivel na linha) + cabecalhos clicaveis pra ordenar
+   (ascendente/descendente, com seta indicando a direcao), nas colunas Data/Titulo/Planta/
+   Responsavel/Progresso/Status.
+
+8) Botao CANCELAR atividade (com justificativa obrigatoria) -> novo campo AtividadeGrupo.
+   motivo_cancelamento; nova acao "cancelar" na rota atividade_detalhe: exige motivo, marca todos os
+   dias NAO aprovados como status=CANCELADA (os ja aprovados ficam intocados, preserva historico).
+
+9) Botao VOLTAR no Resumo Diario -> adicionado, leva de volta pra Programacao.
+
+10) BOTAO REPROGRAMAR com a logica de "todas as que faltam" vs "somente esta" -> reprogramar_dia()
+    reescrita com o parametro escopo: "somente_esta" move so' aquele dia; "todas_restantes" recalcula
+    TODOS os dias do grupo a partir da ordem clicada (inclusive) que AINDA NAO foram aprovados, usando
+    a MESMA _gerar_dias_uteis() da criacao (pula fim de semana/feriados), preservando a sequencia entre
+    eles. Dias ja aprovados nunca sao tocados (preserva historico de aprovacao). Motivo obrigatorio nos
+    dois casos. Botao "Reprogramar" adicionado tambem na tela de detalhe da atividade (antes so existia
+    na tela de Aprovacao), com um mini-form inline por linha (collapse) escolhendo data + escopo +
+    motivo.
+    TESTADO REPLICANDO O EXEMPLO EXATO do Antonio: atividade de 5 dias uteis (16,17,18,21,22 set,
+    pulando fds), dias 1-2 ja aprovados, reprogramando o dia 3 pra 24/09 com escopo "todas_restantes"
+    -> resultado EXATO: dia 3->24/09(qui), dia4->25/09(sex), dia5->28/09(seg, pulando 26-27 fds) —
+    bate com o "24, 25 e 28" que o Antonio deu como exemplo. Dias 1 e 2 (ja aprovados) NAO foram
+    tocados. Escopo "somente_esta" testado separadamente: so' o dia clicado muda, os demais mantem
+    a data original.
+
+Smoke test geral (15 telas) 200. Menu testado com clique real (jsdom, script correto que abre
+sub-secoes tambem): sem erros de JS, "Movimento" com 17 itens (Preencher minha atividade adicionado
+no bloco Admin).

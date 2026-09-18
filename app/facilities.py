@@ -102,6 +102,22 @@ def _ver_required(f):
     return w
 
 
+def _ver_programacao_required(f):
+    """[fix] A tela de PROGRAMAÇÃO GERAL (calendário/lista de TODAS as atividades) é uma
+    visão de GESTÃO — não é o mesmo que "preencher a minha atividade". Um Colaborador comum
+    não deveria enxergar a agenda inteira da empresa, só a própria (via /preencher). Só
+    Admin/Master/Encarregado de Campo ou quem tiver a tarefa fac_ver_programacao acessam aqui."""
+    @wraps(f)
+    def w(*a, **k):
+        from .almox import _colab_sessao
+        if _tem_acesso_facilities("pode_ver_programacao"):
+            return f(*a, **k)
+        if not current_user.is_authenticated and not _colab_sessao():
+            return redirect(url_for("auth.login"))
+        abort(403)
+    return w
+
+
 def _inspecionar_required(f):
     @wraps(f)
     def w(*a, **k):
@@ -393,7 +409,7 @@ def predios():
 # ============================================================================
 
 @facilities_bp.route("/programacao", methods=["GET"])
-@_ver_required
+@_ver_programacao_required
 def programacao():
     _promover_falhas_vencidas()
     plantas_disp, ids_permitidas = _plantas_ctx()
@@ -540,15 +556,12 @@ def programacao_nova():
 @facilities_bp.route("/atividade/<int:grupo_id>", methods=["GET", "POST"])
 @_ver_required
 def atividade_detalhe(grupo_id):
-    """Tela de detalhe de uma AtividadeGrupo — Admin/Master/Encarregado de Campo veem
-    tudo (todos os dias, quem preencheu, histórico) e podem COMPLETAR/EDITAR os campos
-    quando o cadastro estiver incompleto. Um Colaborador comum da atividade só vê os
-    próprios dias e o botão de preencher a %."""
+    """Tela de detalhe de uma AtividadeGrupo — Admin/Master/Encarregado de Campo veem tudo e
+    podem editar QUALQUER campo (não só quando incompleta) e gerenciar colaboradores. Um
+    Colaborador comum participante só vê os próprios dias e o botão de preencher a %."""
     from .almox import _colab_sessao
     grupo = db.session.get(AtividadeGrupo, grupo_id) or abort(404)
     colab = _colab_sessao()
-    # [fix] eh_gestor precisa reconhecer TAMBÉM quem logou normalmente (current_user pode ser
-    # um Colaborador Encarregado logado pelo site, não só via QR de campo).
     eh_gestor = (
         (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
             or getattr(current_user, "is_master", False)
@@ -563,6 +576,43 @@ def atividade_detalhe(grupo_id):
     if request.method == "POST":
         if not eh_gestor:
             abort(403)
+        acao = request.form.get("acao", "salvar")
+
+        if acao == "cancelar":
+            motivo = (request.form.get("motivo_cancelamento") or "").strip()
+            if not motivo:
+                flash("Informe o motivo do cancelamento.", "danger")
+                return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            for d in grupo.dias:
+                if d.status not in ("APROVADA",):
+                    d.status = "CANCELADA"
+            grupo.motivo_cancelamento = motivo
+            grupo.status_cadastro = grupo.status_cadastro  # mantém, só os dias mudam de status
+            db.session.commit()
+            flash("Atividade cancelada.", "success")
+            return redirect(url_for("facilities.programacao"))
+
+        if acao == "adicionar_colaborador":
+            colaborador_id = request.form.get("novo_colaborador_id")
+            if colaborador_id:
+                ja_existe = any(ac.colaborador_id == int(colaborador_id) for ac in grupo.colaboradores)
+                if not ja_existe:
+                    db.session.add(AtividadeColaborador(grupo_id=grupo.id, colaborador_id=int(colaborador_id),
+                                                        eh_responsavel=not grupo.colaboradores))
+                    db.session.commit()
+                    flash("Colaborador adicionado.", "success")
+            return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+
+        if acao == "remover_colaborador":
+            ac_id = request.form.get("ac_id")
+            if ac_id:
+                AtividadeColaborador.query.filter_by(id=int(ac_id), grupo_id=grupo.id).delete()
+                db.session.commit()
+                flash("Colaborador removido.", "success")
+            return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+
+        # acao == "salvar" (completar/editar os campos principais) — [fix] agora disponível
+        # SEMPRE para o gestor, não só quando o cadastro está incompleto.
         plantas_disp, ids_permitidas = _plantas_ctx()
         planta_id = request.form.get("planta_id") or None
         if planta_id:
@@ -581,13 +631,18 @@ def atividade_detalhe(grupo_id):
         return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
 
     dias = sorted(grupo.dias, key=lambda d: d.ordem)
-    plantas_disp = predios_disp = None
-    if eh_gestor and grupo.status_cadastro == "INCOMPLETO":
+    plantas_disp = predios_disp = colaboradores_disp = None
+    if eh_gestor:
         plantas_disp, _ids = _plantas_ctx()
         predios_disp = Predio.query.filter_by(ativo=True).order_by(Predio.nome).all()
+        ja_na_atividade = {ac.colaborador_id for ac in grupo.colaboradores}
+        colaboradores_disp = (Colaborador.query.filter_by(ativo=True)
+                              .filter(~Colaborador.id.in_(ja_na_atividade) if ja_na_atividade else True)
+                              .order_by(Colaborador.nome).all())
     return render_template("facilities/atividade_detalhe.html", grupo=grupo, dias=dias,
                            eh_gestor=eh_gestor, colab_atual=colab, hoje=date.today(),
-                           plantas_disp=plantas_disp, predios_disp=predios_disp)
+                           plantas_disp=plantas_disp, predios_disp=predios_disp,
+                           colaboradores_disp=colaboradores_disp)
 
 
 @facilities_bp.route("/programacao/conflito/<int:grupo_antigo_id>/resolver", methods=["POST"])
@@ -662,16 +717,36 @@ def preencher_dia(data_str):
     if colab_id:
         q = q.filter(AtividadeColaborador.colaborador_id == colab_id)
     minhas_atividades = q.all()
+    # [item 4 fix] % do dia anterior de cada atividade — usado no template pra so' mostrar a
+    # caixa de justificativa quando a nova % REALMENTE for menor (antes o JS mostrava sempre).
+    pct_anterior_por_dia = {}
+    for at in minhas_atividades:
+        anterior = (AtividadeDia.query.filter(AtividadeDia.grupo_id == at.grupo_id,
+                    AtividadeDia.ordem < at.ordem).order_by(AtividadeDia.ordem.desc()).first())
+        pct_anterior_por_dia[at.id] = anterior.percentual if anterior else None
 
     if request.method == "POST":
         dia_id = int(request.form.get("dia_id"))
         dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+        # [fix CRÍTICO] antes o POST processava qualquer dia_id enviado, sem checar se o dia
+        # pertence a uma atividade do colaborador logado — a tela só ESCONDIA os outros dias,
+        # mas a rota aceitava preencher qualquer um. Agora valida de verdade: só quem participa
+        # da atividade (ou Admin/Master) pode preencher aquele dia.
+        eh_participante = colab_id and any(ac.colaborador_id == colab_id for ac in dia.grupo.colaboradores)
+        eh_gestor = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                    or getattr(current_user, "is_master", False))
+        if not eh_participante and not eh_gestor:
+            abort(403)
         nova_pct = int(request.form.get("percentual") or 0)
 
         dia_anterior = (AtividadeDia.query.filter(AtividadeDia.grupo_id == dia.grupo_id,
                         AtividadeDia.ordem < dia.ordem).order_by(AtividadeDia.ordem.desc()).first())
         justificativa = (request.form.get("justificativa") or "").strip()
-        if dia_anterior and dia_anterior.percentual is not None and nova_pct < dia_anterior.percentual and not justificativa:
+        # [fix] só exige justificativa se o dia anterior REALMENTE tem uma % registrada (not None
+        # e diferente de vazio) — antes de qualquer preenchimento, dia_anterior.percentual é None,
+        # e comparar "nova_pct < None" nunca deveria disparar o aviso.
+        if (dia_anterior and dia_anterior.percentual is not None
+                and nova_pct < dia_anterior.percentual and not justificativa):
             flash("A % é menor que a do dia anterior — informe uma justificativa.", "danger")
             return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
@@ -689,6 +764,7 @@ def preencher_dia(data_str):
         return redirect(url_for("facilities.preencher_dia", data_str=data_str, compartilhar=dia.id))
 
     return render_template("facilities/preencher_dia.html", data_d=data_d, atividades=minhas_atividades,
+                           pct_anterior_por_dia=pct_anterior_por_dia,
                            compartilhar_id=request.args.get("compartilhar"))
 
 
@@ -757,18 +833,43 @@ def retificar_dia(dia_id):
 @facilities_bp.route("/aprovacao/<int:dia_id>/reprogramar", methods=["POST"])
 @_ver_required
 def reprogramar_dia(dia_id):
+    """[item 10] Reprograma um dia de atividade. Duas opções:
+    - "somente_esta": só o dia clicado muda de data; os demais dias pendentes (se houver)
+      continuam nas datas originais.
+    - "todas_restantes": TODOS os dias ainda não aprovados a partir deste (inclusive) são
+      recalculados a partir da nova data informada, pulando fim de semana/feriados (mesma
+      lógica de _gerar_dias_uteis usada na criação da atividade) — preserva a ordem/sequência
+      entre eles, só desloca o "início" da parte que falta.
+    Em ambos os casos, exige motivo (histórico de por que foi reprogramado)."""
     dia = db.session.get(AtividadeDia, dia_id) or abort(404)
     nova_data = request.form.get("nova_data")
     motivo = (request.form.get("motivo") or "").strip()
+    escopo = request.form.get("escopo", "somente_esta")
     if not nova_data or not motivo:
         flash("Informe a nova data e o motivo.", "danger")
-        return redirect(url_for("facilities.aprovacao"))
-    dia.reprogramado_de = dia.data
-    dia.data = datetime.strptime(nova_data, "%Y-%m-%d").date()
-    dia.motivo_reprogramacao = motivo
-    db.session.commit()
-    flash("Atividade reprogramada.", "success")
-    return redirect(url_for("facilities.aprovacao"))
+        return redirect(request.referrer or url_for("facilities.aprovacao"))
+    nova_data_d = datetime.strptime(nova_data, "%Y-%m-%d").date()
+
+    if escopo == "todas_restantes":
+        # todos os dias do MESMO grupo, a partir deste (por ordem), que ainda não foram
+        # aprovados — os já aprovados ficam intocados, o histórico deles não deve mudar.
+        restantes = (AtividadeDia.query.filter(AtividadeDia.grupo_id == dia.grupo_id,
+                     AtividadeDia.ordem >= dia.ordem, AtividadeDia.status != "APROVADA")
+                     .order_by(AtividadeDia.ordem).all())
+        novas_datas = _gerar_dias_uteis(nova_data_d, len(restantes))
+        for d, nova_d in zip(restantes, novas_datas):
+            d.reprogramado_de = d.data
+            d.data = nova_d
+            d.motivo_reprogramacao = motivo
+        db.session.commit()
+        flash(f"{len(restantes)} dia(s) reprogramado(s) a partir de {nova_data_d.strftime('%d/%m/%Y')}.", "success")
+    else:
+        dia.reprogramado_de = dia.data
+        dia.data = nova_data_d
+        dia.motivo_reprogramacao = motivo
+        db.session.commit()
+        flash("Dia reprogramado.", "success")
+    return redirect(request.referrer or url_for("facilities.aprovacao"))
 
 
 # ============================================================================
@@ -776,7 +877,7 @@ def reprogramar_dia(dia_id):
 # ============================================================================
 
 @facilities_bp.route("/resumo-diario")
-@_ver_required
+@_ver_programacao_required
 def resumo_diario():
     data_str = request.args.get("data") or date.today().strftime("%Y-%m-%d")
     data_d = datetime.strptime(data_str, "%Y-%m-%d").date()

@@ -900,10 +900,11 @@ TAREFAS_PERFIL = [
     ("adm_usuarios_antigo", "Gerenciar Usuários - Antigo (Master)", "Ajuda / Administração", False),
     ("adm_backup", "Backup do banco", "Ajuda / Administração", True),
     # Facilities (SIGA — motor de checklist/inspeção de equipamentos)
-    ("fac_ver", "Ver telas de Facilities (checklist, atividades)", "Facilities", False),
+    ("fac_ver", "Ver telas de Facilities (checklist)", "Facilities", False),
     ("fac_inspecionar", "Executar checklist de inspeção sobre um material", "Facilities", False),
     ("fac_gerir_modelos", "Criar/editar modelos de checklist (gestão)", "Facilities", False),
     ("fac_criar_atividade", "Criar atividades programadas (Facilities)", "Facilities", False),
+    ("fac_ver_programacao", "Ver a programação/calendário de TODAS as atividades (gestão)", "Facilities", False),
     ("fac_encarregado_campo", "Encarregado de Campo (aprova/retifica atividades)", "Facilities", False),
 ]
 
@@ -980,7 +981,8 @@ _GRUPO_MAT = {"mat_ver", "mat_cadastrar", "mat_entrada", "mat_saida", "mat_ajust
               "mat_devolucao_forcada", "mat_kit", "mat_unidades"}
 _GRUPO_LOC = {"perm_cadastros", "loc_planta", "loc_armazem", "loc_localizador", "loc_gerar"}
 _GRUPO_COLETOR = {"col_chaves", "col_material", "col_movimentacao", "col_inventario"}
-_GRUPO_FAC = {"fac_ver", "fac_inspecionar", "fac_gerir_modelos", "fac_criar_atividade", "fac_encarregado_campo"}
+_GRUPO_FAC = {"fac_ver", "fac_inspecionar", "fac_gerir_modelos", "fac_criar_atividade",
+              "fac_ver_programacao", "fac_encarregado_campo"}
 _GRUPO_ALMOX = (_GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | _GRUPO_COLETOR
                 | {"perm_modulo_almox"})
 
@@ -1019,6 +1021,8 @@ def perm_from_tasks(perms, prop):
         return ("fac_gerir_modelos" in perms)
     if prop == "pode_criar_atividade":
         return ("fac_criar_atividade" in perms)
+    if prop == "pode_ver_programacao":
+        return ("fac_ver_programacao" in perms) or ("fac_encarregado_campo" in perms)
     if prop == "eh_encarregado_campo":
         return ("fac_encarregado_campo" in perms)
     if prop == "pode_colaboradores":
@@ -1144,6 +1148,8 @@ class Colaborador(UserMixin, db.Model):
     def pode_facilities_gerir(self): return perm_from_tasks(self._perms_efetivas(), "pode_facilities_gerir")
     @property
     def pode_criar_atividade(self): return perm_from_tasks(self._perms_efetivas(), "pode_criar_atividade")
+    @property
+    def pode_ver_programacao(self): return perm_from_tasks(self._perms_efetivas(), "pode_ver_programacao")
     @property
     def eh_encarregado_campo(self): return perm_from_tasks(self._perms_efetivas(), "eh_encarregado_campo")
     @property
@@ -1408,6 +1414,7 @@ class AtividadeGrupo(db.Model):
     produto_id = db.Column(db.ForeignKey("almox_produtos.id"))
     fotos_antes_json = db.Column(db.Text)   # até 4 caminhos de arquivo
     status_cadastro = db.Column(db.String(20), default="COMPLETO")  # COMPLETO|INCOMPLETO
+    motivo_cancelamento = db.Column(db.Text)
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

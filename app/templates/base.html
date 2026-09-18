@@ -206,6 +206,7 @@
       {{ item('notinhas.index','doc','Notinhas') }}
       {% if perm.pode_coletor %}{{ item('almox.coletor','box','Coletor') }}{% endif %}
       <div class="sb-subsec">Facilities<span class="chev2">▾</span></div>
+      {{ item('facilities.preencher_escolher','check','Preencher minha atividade') }}
       {{ item('facilities.programacao','doc','Programação de atividades') }}
       {{ item('facilities.rdo','doc','Relatório Diário de Obra') }}
 
@@ -246,12 +247,10 @@
       {% if perm.pode_chaves %}{{ item('almox.chaves','key','Chaves') }}{% endif %}
       {% if perm.pode_extintores %}{{ item('almox.extintores','ext','Extintores') }}{% endif %}
       {{ item('facilities.preencher_escolher','check','Preencher minha atividade') }}
-      {% if perm.pode_facilities %}
-      {{ item('facilities.inspecionar','box','Inspecionar (checklist)') }}
-      {{ item('facilities.programacao','doc','Programação de atividades') }}
-      {{ item('facilities.aprovacao','check','Aprovação de atividades') }}
-      {{ item('facilities.rdo','doc','Relatório Diário de Obra') }}
-      {% endif %}
+      {% if perm.pode_facilities %}{{ item('facilities.inspecionar','box','Inspecionar (checklist)') }}{% endif %}
+      {% if perm.pode_ver_programacao %}{{ item('facilities.programacao','doc','Programação de atividades') }}{% endif %}
+      {% if perm.eh_encarregado_campo %}{{ item('facilities.aprovacao','check','Aprovação de atividades') }}{% endif %}
+      {% if perm.pode_facilities %}{{ item('facilities.rdo','doc','Relatório Diário de Obra') }}{% endif %}
 
       {% if perm.pode_relatorios or perm.is_almox %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>

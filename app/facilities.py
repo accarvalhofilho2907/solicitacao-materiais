@@ -373,25 +373,40 @@ def predios():
 def programacao():
     _promover_falhas_vencidas()
     plantas_disp, ids_permitidas = _plantas_ctx()
-    data_str = request.args.get("data") or date.today().strftime("%Y-%m-%d")
-    try:
-        data_sel = datetime.strptime(data_str, "%Y-%m-%d").date()
-    except ValueError:
-        data_sel = date.today()
 
-    q = AtividadeDia.query.filter_by(data=data_sel)
+    # [fix] datas selecionadas: agora aceita MULTIPLAS (?datas=2026-09-17&datas=2026-09-18),
+    # acumulando ao clicar em vez de substituir a selecao anterior.
+    datas_sel_str = request.args.getlist("datas") or [request.args.get("data") or date.today().strftime("%Y-%m-%d")]
+    datas_sel = []
+    for s in datas_sel_str:
+        try:
+            datas_sel.append(datetime.strptime(s, "%Y-%m-%d").date())
+        except ValueError:
+            continue
+    if not datas_sel:
+        datas_sel = [date.today()]
+
+    # [fix] navegação de semana INDEPENDENTE da data selecionada — offset explícito (?semana=N),
+    # não mais calculado a partir do dia clicado (senão clicar num dia "pulava" a janela do calendário).
+    try:
+        offset_semanas = int(request.args.get("semana") or 0)
+    except ValueError:
+        offset_semanas = 0
+    hoje = date.today()
+    inicio_janela = hoje - timedelta(days=hoje.weekday()) + timedelta(weeks=offset_semanas)
+
+    q = AtividadeDia.query.filter(AtividadeDia.data.in_(datas_sel))
     if ids_permitidas:
         q = q.join(AtividadeGrupo).filter(db.or_(AtividadeGrupo.planta_id.in_(ids_permitidas),
                                                   AtividadeGrupo.planta_id.is_(None)))
-    dias = q.order_by(AtividadeDia.ordem).all()
+    dias = q.order_by(AtividadeDia.data, AtividadeDia.ordem).all()
 
     n_incompletas = AtividadeGrupo.query.filter_by(status_cadastro="INCOMPLETO").count()
 
-    # contagem de atividades por dia, pras 2 semanas visiveis no calendario (14 dias a partir de hoje)
-    inicio_semana = data_sel - timedelta(days=data_sel.weekday())
+    # contagem + TÍTULOS de atividades por dia, pra tooltip customizado (14 dias a partir da janela)
     contagem = {}
     for i in range(14):
-        d = inicio_semana + timedelta(days=i)
+        d = inicio_janela + timedelta(days=i)
         qc = AtividadeDia.query.filter_by(data=d)
         if ids_permitidas:
             qc = qc.join(AtividadeGrupo).filter(db.or_(AtividadeGrupo.planta_id.in_(ids_permitidas),
@@ -399,7 +414,10 @@ def programacao():
         titulos = [x.grupo.titulo for x in qc.all()]
         contagem[d.isoformat()] = titulos
 
-    return render_template("facilities/programacao.html", dias=dias, data_sel=data_sel,
+    return render_template("facilities/programacao.html", dias=dias,
+                           datas_sel=[d.isoformat() for d in datas_sel],
+                           offset_semanas=offset_semanas, inicio_janela=inicio_janela,
+                           fim_janela=inicio_janela + timedelta(days=13),
                            n_incompletas=n_incompletas, contagem_json=json.dumps(contagem),
                            hoje=date.today())
 
@@ -493,6 +511,30 @@ def programacao_nova():
     else:
         flash("Atividade programada e dividida em {} dia(s).".format(duracao), "success")
     return redirect(url_for("facilities.programacao"))
+
+
+@facilities_bp.route("/atividade/<int:grupo_id>")
+@_ver_required
+def atividade_detalhe(grupo_id):
+    """[fix] Tela de detalhe de uma AtividadeGrupo — Admin/Master/Encarregado de Campo veem
+    tudo (todos os dias, quem preencheu, histórico); um Colaborador comum da atividade só
+    vê os próprios dias e o botão de preencher a % (era o que estava faltando)."""
+    from .almox import _colab_sessao
+    grupo = db.session.get(AtividadeGrupo, grupo_id) or abort(404)
+    colab = _colab_sessao()
+    eh_gestor = (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False)
+                or getattr(colab, "eh_encarregado_campo", False))
+    eh_participante = colab and any(ac.colaborador_id == colab.id for ac in grupo.colaboradores)
+    if not eh_gestor and not eh_participante:
+        abort(403)
+    dias = sorted(grupo.dias, key=lambda d: d.ordem)
+    if not eh_gestor and colab:
+        # colaborador comum: continua vendo a linha do tempo toda (contexto), mas o botão de
+        # preencher só aparece nos dias que ainda não foram preenchidos por ninguém (fluxo
+        # normal passa por /preencher; aqui é um atalho direto a partir da atividade)
+        pass
+    return render_template("facilities/atividade_detalhe.html", grupo=grupo, dias=dias,
+                           eh_gestor=eh_gestor, colab_atual=colab, hoje=date.today())
 
 
 @facilities_bp.route("/programacao/conflito/<int:grupo_antigo_id>/resolver", methods=["POST"])
@@ -683,6 +725,12 @@ def resumo_diario():
         return redirect(url_for("facilities.programacao", data=data_str))
 
     dias = AtividadeDia.query.filter_by(data=data_d).all()
+    # [fix] atividades com cadastro incompleto (falta planta/prédio/data) NÃO entram no resumo —
+    # o resumo é um documento formal pra empresa, não faz sentido sair com dado faltando.
+    dias_completos = [d for d in dias if d.grupo.status_cadastro != "INCOMPLETO"]
+    n_incompletas_no_dia = len(dias) - len(dias_completos)
+    dias = dias_completos
+
     empresas_ids = set()
     for d in dias:
         for ac in d.grupo.colaboradores:
@@ -703,7 +751,8 @@ def resumo_diario():
 
     return render_template("facilities/resumo_diario.html", data_d=data_d, tipo=tipo,
                            fim_liberado=fim_liberado, empresas=sorted(empresas_ids),
-                           empresa_sel=fornecedor_sel, linhas=linhas)
+                           empresa_sel=fornecedor_sel, linhas=linhas,
+                           n_incompletas_no_dia=n_incompletas_no_dia)
 
 
 # ============================================================================

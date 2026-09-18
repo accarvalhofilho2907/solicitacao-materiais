@@ -37,15 +37,10 @@
           <option value="">—</option>
           {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
         </select></div>
-      <div class="col-md-4"><label class="form-label small">Prédio</label>
+      <div class="col-md-6"><label class="form-label small">Prédio</label>
         <select name="predio_id" class="form-select">
           <option value="">—</option>
           {% for pr in predios_disp %}<option value="{{ pr.id }}">{{ pr.nome }}</option>{% endfor %}
-        </select></div>
-      <div class="col-md-4"><label class="form-label small">Material a retirar (opcional)</label>
-        <select name="produto_id" class="form-select">
-          <option value="">— nenhum —</option>
-          {% for m in materiais %}<option value="{{ m.id }}">{{ m.nome }}</option>{% endfor %}
         </select></div>
     </div>
     <label class="form-label small mt-2">Fotos — ANTES (máx. 4)</label>

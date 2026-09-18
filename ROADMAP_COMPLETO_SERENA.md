@@ -3065,3 +3065,79 @@ TESTADO com fotos simulando celular real: reducao de 93.7% numa foto de textura 
 NOVA ESTIMATIVA com compressao ativa: ~500KB/foto (conservador) x 40 fotos/dia = ~20MB/dia = ~600MB/mes
 de armazenamento novo. Com 25GB do plano Free, isso da' ~41 MESES (mais de 3 anos) ate precisar se
 preocupar com o limite — bem diferente dos ~5 meses sem compressao. Smoke test geral 200.
+
+### ================== CORRECOES APOS TESTE REAL EM PRODUCAO (18/09) ==================
+Antonio testou a leva anterior e reportou 10 problemas. Investigados e corrigidos um a um.
+
+1) ERRO "Invalid api_key <your_api_key>" ao salvar foto -> CAUSA: variavel CLOUDINARY_URL no Render
+   estava com o TEXTO DE EXEMPLO, nao a URL real da conta (Antonio precisa corrigir no painel do
+   Render). CORRIGIDO no codigo tambem: salvar_imagem() agora tem try/except em volta da chamada ao
+   Cloudinary — se falhar por qualquer motivo (chave invalida, servico fora do ar), cai pro fallback
+   de disco local em vez de estourar 500 e quebrar a pagina inteira.
+
+2) Calendario com fundo branco/numeros claros (ilegivel) -> CAUSA: JS usava a variavel CSS
+   --bs-tertiary-bg (Bootstrap, nao existe no tema do sistema), caindo no branco padrao do navegador.
+   CORRIGIDO: reescrito para usar as variaveis reais do tema (--card-bg, --texto, --texto-2, --linha).
+
+3) Calendario mostrando so' 1 semana, sem botoes de navegar -> CAUSA: a janela de 14 dias era
+   calculada a partir da DATA SELECIONADA (mudava toda vez que clicava num dia). CORRIGIDO: rota
+   programacao() agora usa um offset de semana INDEPENDENTE (?semana=N), com botoes "Semana
+   anterior"/"Semana seguinte"/"Limpar" — sempre mostra 14 dias fixos a partir da semana atual + offset.
+
+4) "Nao consegui entrar na atividade depois de lancar" -> CAUSA RAIZ: a rota de detalhe da atividade
+   (facilities.atividade_detalhe) NUNCA TINHA SIDO CRIADA — o link no template apontava pra uma rota
+   inexistente (esquecimento da leva anterior). CRIADA agora, com acesso para Admin/Master/Encarregado
+   de Campo (todos veem tudo) e Colaborador participante (ve so' os proprios dias + botao de
+   preencher). Colaborador de FORA da atividade e' bloqueado (403).
+
+5) Icone do calendario preto (dificil de ver no tema escuro) -> CORRIGIDO GLOBALMENTE: adicionado
+   color-scheme:dark no CSS compartilhado .form-control/.form-select em base.html — corrige o icone
+   nativo de <input type=date> (e outros controles nativos) em QUALQUER tela do sistema, nao so' Facilities.
+
+6) Campo Material no form de nova atividade -> REMOVIDO, como pedido.
+
+7) Perfil de Encarregado de Campo com "alocacoes erradas" -> Investigado a fundo, achados 2 problemas
+   REAIS:
+   a) BUG CRITICO: o mecanismo que expoe as permissoes do usuario pros templates (_inject_ver_como,
+      variavel "perm" usada em todo o menu) tinha uma LISTA FIXA de propriedades que NAO incluia
+      NENHUMA das novas permissoes de Facilities (pode_facilities, eh_encarregado_campo,
+      pode_criar_atividade, etc.) — isso fazia com que o menu e as checagens de acesso baseadas em
+      "perm.X" sempre retornassem falso/vazio pra essas permissoes, mesmo com a tarefa certa no
+      papel. CORRIGIDO: lista de propriedades expandida com as 6 permissoes de Facilities.
+   b) Rotulos desatualizados em Perfis de Acesso: "Ver equipamentos", "Cadastrar equipamento" —
+      resquicio do modelo antigo (Equipamento foi removido no M2, virou Material). CORRIGIDO os
+      textos, e REMOVIDA a tarefa fac_cadastrar_equipamento (obsoleta, duplicava fac_criar_atividade).
+   c) LACUNA REAL: o campo "empresas que o colaborador e Encarregado" (EncarregadoEmpresa, criado no
+      modelo de dados da v3) NUNCA tinha sido exposto em NENHUMA TELA — so existia no banco, sem
+      jeito de o Admin vincular. CORRIGIDO: novo bloco na tela de perfil do colaborador
+      (colaborador_perfil.html), com checkboxes de empresa, salvando via colaborador_editar().
+
+8) "Nao permitir gerar resumo sem finalizar todos os campos" -> resumo_diario() agora FILTRA fora
+   qualquer AtividadeDia cujo grupo esteja com status_cadastro=INCOMPLETO, com aviso explicito na tela
+   avisando quantas atividades foram excluidas por esse motivo.
+
+9) Balõezinhos do calendario nao aparecendo ao passar o mouse -> CAUSA: usava o atributo HTML nativo
+   "title" (tooltip do navegador, pouco confiavel e sem estilo). CORRIGIDO: tooltip customizado em CSS
+   puro (.cal2-tip), sempre visivel no hover, com a lista de titulos das atividades daquele dia.
+
+10) Selecao de dias no calendario perdia a selecao anterior -> CAUSA: cada clique fazia
+    window.location.href pra uma URL com SO' aquele dia, substituindo a selecao. CORRIGIDO: agora o
+    clique ACUMULA — toggle do dia clicado numa lista de datas selecionadas (query string ?datas=...
+    repetida), preservando os demais dias ja marcados. Rota programacao() aceita multiplas ?datas=.
+
+11) "Nao vi o botao do colaborador diverso preencher %" -> Resolvido pelo item 4 (a rota de detalhe
+    da atividade nao existia) — agora o botao "Preencher %" aparece na tela de detalhe pros dias
+    ainda pendentes do proprio colaborador.
+
+TESTADO (varios cenarios, incluindo os que geraram os proprios bugs no processo de corrigir):
+Encarregado de Campo com a tarefa certa acessa detalhe da atividade e a tela de aprovacao; Colaborador
+participante ve o botao de preencher; Colaborador DE FORA da atividade e bloqueado com 403; Admin
+acessa tudo; vinculo Encarregado<->Empresa criado e refletido corretamente na property; resumo diario
+exclui atividades incompletas com aviso; calendario com selecao multipla e navegacao de semana
+funcionando (testado com sequencia real de cliques via jsdom); acordeao de secoes E sub-secoes
+reconfirmado funcionando em conjunto (script de teste anterior estava desatualizado, gerando falso
+alarme — comportamento real confirmado correto em teste refeito do zero).
+Smoke test geral (16 telas) 200.
+
+AÇÃO PENDENTE DO ANTONIO: corrigir a variavel CLOUDINARY_URL no Render (estava com o valor de exemplo
+"<your_api_key>" em vez da URL real copiada do Dashboard do Cloudinary).

@@ -1,10 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Programação de atividades{% endblock %}
 {% block content %}
+<style>
+  .cal2-dia{background:var(--card-bg);border-radius:10px;padding:8px 10px;text-align:center;min-width:70px;
+    cursor:pointer;border:2px solid transparent;position:relative;color:var(--texto)}
+  .cal2-dia:hover{border-color:var(--linha)}
+  .cal2-dia.sel{border-color:#FF5246;background:rgba(255,82,70,.14)}
+  .cal2-dia.hoje{outline:1px dashed #32CAA0;outline-offset:1px}
+  .cal2-dia .dow{font-size:10px;opacity:.65;color:var(--texto-2)}
+  .cal2-dia .num{font-size:15px;font-weight:600;color:var(--texto)}
+  .cal2-dia .qtd{font-size:10px;color:#FF5246;margin-top:2px}
+  .cal2-tip{position:absolute;bottom:105%;left:50%;transform:translateX(-50%);background:var(--topbar-bg,#141414);
+    color:var(--texto);border:1px solid var(--linha);border-radius:8px;padding:8px 10px;font-size:11px;
+    white-space:nowrap;display:none;z-index:20;text-align:left;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+  .cal2-dia:hover .cal2-tip{display:block}
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-  <div><h4 class="mb-0">Programação de atividades</h4><p class="text-muted small mb-0">Clique num dia para ver as atividades dele</p></div>
+  <div><h4 class="mb-0">Programação de atividades</h4><p class="text-muted small mb-0">Clique num dia para filtrar; clique em vários para acumular</p></div>
   <div class="d-flex gap-2">
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.resumo_diario', data=data_sel.strftime('%Y-%m-%d')) }}">📄 Resumo diário</a>
+    <a class="btn btn-sm btn-outline-secondary" id="btnResumo" href="#">📄 Resumo diário</a>
     <a class="btn btn-sm btn-primary" href="{{ url_for('facilities.programacao_nova') }}">＋ Nova atividade</a>
   </div>
 </div>
@@ -16,16 +31,23 @@
 {% endif %}
 
 <div class="card mb-3"><div class="card-body">
+  <div class="d-flex align-items-center gap-2 mb-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao', semana=offset_semanas-1, datas=datas_sel) }}">‹ Semana anterior</a>
+    <span class="text-muted small flex-grow-1 text-center">{{ inicio_janela.strftime('%d/%m') }} a {{ fim_janela.strftime('%d/%m/%Y') }}</span>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao', semana=offset_semanas+1, datas=datas_sel) }}">Semana seguinte ›</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao') }}">Limpar</a>
+  </div>
   <div id="calGrid" class="d-flex gap-2 flex-wrap"></div>
 </div></div>
 
 <div class="card"><div class="card-body">
-  <h6 class="mb-2">Atividades — {{ data_sel.strftime('%d/%m/%Y') }}</h6>
+  <h6 class="mb-2">Atividades {% if datas_sel|length == 1 %}— {{ datas_sel[0][8:10] }}/{{ datas_sel[0][5:7] }}/{{ datas_sel[0][0:4] }}{% else %}— {{ datas_sel|length }} dias selecionados{% endif %}</h6>
   <table class="table table-sm align-middle mb-0">
-    <thead class="table-light"><tr><th>Título</th><th>Planta / Prédio</th><th>Responsável</th><th>Progresso</th><th>Status</th></tr></thead>
+    <thead class="table-light"><tr><th>Data</th><th>Título</th><th>Planta / Prédio</th><th>Responsável</th><th>Progresso</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for d in dias %}
       <tr>
+        <td class="small">{{ d.data.strftime('%d/%m') }}</td>
         <td>{{ d.grupo.titulo }} <span class="text-muted small">(dia {{ d.ordem }}/{{ d.grupo.duracao_dias_uteis }})</span></td>
         <td class="small">{{ d.grupo.planta.nome if d.grupo.planta else '—' }}{% if d.grupo.predio %} · {{ d.grupo.predio.nome }}{% endif %}</td>
         <td class="small">{{ d.grupo.responsavel.nome if d.grupo.responsavel else '—' }}</td>
@@ -37,9 +59,14 @@
           {% elif d.atrasada %}<span class="badge bg-danger">atrasada</span>
           {% else %}<span class="badge bg-secondary">pendente</span>{% endif %}
         </td>
+        <td class="text-end">
+          {% if current_user.is_admin or current_user.is_master or (perm.eh_encarregado_campo if perm else false) %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('facilities.atividade_detalhe', grupo_id=d.grupo_id) }}">Abrir</a>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center py-3">Nenhuma atividade neste dia.</td></tr>
+      <tr><td colspan="7" class="text-muted text-center py-3">Nenhuma atividade nos dias selecionados.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -48,22 +75,38 @@
 <script>
 const contagem = {{ contagem_json|safe }};
 const hoje = "{{ hoje.strftime('%Y-%m-%d') }}";
-const dataSel = "{{ data_sel.strftime('%Y-%m-%d') }}";
+const datasSel = {{ datas_sel|tojson }};
 const grid = document.getElementById('calGrid');
+
 Object.keys(contagem).sort().forEach(function(iso){
   const d = new Date(iso + 'T00:00:00');
   const div = document.createElement('div');
-  const sel = iso === dataSel;
+  const sel = datasSel.indexOf(iso) !== -1;
   const isHoje = iso === hoje;
-  div.style.cssText = 'background:var(--bs-tertiary-bg,#2c2c2c);border-radius:10px;padding:8px 10px;text-align:center;min-width:70px;cursor:pointer;'
-    + (sel ? 'border:2px solid #FF5246;' : 'border:2px solid transparent;')
-    + (isHoje ? 'outline:1px dashed #32CAA0;' : '');
-  div.title = contagem[iso].join('\n') || 'sem atividades';
-  div.innerHTML = '<div style="font-size:10px;opacity:.7">' + d.toLocaleDateString('pt-BR',{weekday:'short'}) + '</div>'
-    + '<div style="font-size:15px;font-weight:600">' + d.getDate() + '</div>'
-    + '<div style="font-size:10px;color:#FF5246">' + (contagem[iso].length || '—') + '</div>';
-  div.onclick = function(){ window.location.href = "{{ url_for('facilities.programacao') }}?data=" + iso; };
+  div.className = 'cal2-dia' + (sel ? ' sel' : '') + (isHoje ? ' hoje' : '');
+  const titulos = contagem[iso];
+  const tipTexto = titulos.length ? titulos.map(t => '• ' + t).join('<br>') : 'Sem atividades';
+  div.innerHTML = '<div class="dow">' + d.toLocaleDateString('pt-BR',{weekday:'short'}) + '</div>'
+    + '<div class="num">' + d.getDate() + '</div>'
+    + '<div class="qtd">' + (titulos.length || '—') + '</div>'
+    + '<div class="cal2-tip">' + tipTexto + '</div>';
+  div.onclick = function(ev){
+    // [fix] ACUMULA selecao: toggle deste dia na lista de datas, sem perder as outras já marcadas.
+    const params = new URLSearchParams(window.location.search);
+    let atuais = params.getAll('datas');
+    if (atuais.length === 0) atuais = datasSel.slice();
+    const idx = atuais.indexOf(iso);
+    if (idx === -1) atuais.push(iso); else atuais.splice(idx, 1);
+    if (atuais.length === 0) atuais = [hoje];
+    const novosParams = new URLSearchParams();
+    atuais.forEach(dt => novosParams.append('datas', dt));
+    novosParams.set('semana', '{{ offset_semanas }}');
+    window.location.href = "{{ url_for('facilities.programacao') }}?" + novosParams.toString();
+  };
   grid.appendChild(div);
 });
+
+// Resumo diário: usa o primeiro dia selecionado
+document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diario') }}?data=" + (datasSel[0] || hoje);
 </script>
 {% endblock %}

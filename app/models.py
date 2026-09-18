@@ -900,10 +900,9 @@ TAREFAS_PERFIL = [
     ("adm_usuarios_antigo", "Gerenciar Usuários - Antigo (Master)", "Ajuda / Administração", False),
     ("adm_backup", "Backup do banco", "Ajuda / Administração", True),
     # Facilities (SIGA — motor de checklist/inspeção de equipamentos)
-    ("fac_ver", "Ver equipamentos", "Facilities", False),
-    ("fac_inspecionar", "Executar checklist / inspecionar equipamento", "Facilities", False),
-    ("fac_cadastrar_equipamento", "Cadastrar equipamento", "Facilities", False),
-    ("fac_gerir_modelos", "Criar/editar modelos de checklist e tipos (gestão)", "Facilities", False),
+    ("fac_ver", "Ver telas de Facilities (checklist, atividades)", "Facilities", False),
+    ("fac_inspecionar", "Executar checklist de inspeção sobre um material", "Facilities", False),
+    ("fac_gerir_modelos", "Criar/editar modelos de checklist (gestão)", "Facilities", False),
     ("fac_criar_atividade", "Criar atividades programadas (Facilities)", "Facilities", False),
     ("fac_encarregado_campo", "Encarregado de Campo (aprova/retifica atividades)", "Facilities", False),
 ]
@@ -981,7 +980,7 @@ _GRUPO_MAT = {"mat_ver", "mat_cadastrar", "mat_entrada", "mat_saida", "mat_ajust
               "mat_devolucao_forcada", "mat_kit", "mat_unidades"}
 _GRUPO_LOC = {"perm_cadastros", "loc_planta", "loc_armazem", "loc_localizador", "loc_gerar"}
 _GRUPO_COLETOR = {"col_chaves", "col_material", "col_movimentacao", "col_inventario"}
-_GRUPO_FAC = {"fac_ver", "fac_inspecionar", "fac_cadastrar_equipamento", "fac_gerir_modelos"}
+_GRUPO_FAC = {"fac_ver", "fac_inspecionar", "fac_gerir_modelos", "fac_criar_atividade", "fac_encarregado_campo"}
 _GRUPO_ALMOX = (_GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | _GRUPO_COLETOR
                 | {"perm_modulo_almox"})
 

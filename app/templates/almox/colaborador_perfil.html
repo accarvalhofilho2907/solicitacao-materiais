@@ -46,6 +46,22 @@
         <div>{% for p in c.plantas %}<span class="badge bg-secondary me-1">{{ p.nome }}</span>{% else %}<span class="text-muted small">nenhuma</span>{% endfor %}</div>
       </div>
       {% endif %}
+
+      {% if pode_papel %}
+      <div class="mb-2"><label class="form-label small">Empresas que este colaborador é Encarregado de Campo</label>
+        <div class="form-text mb-1">Só faz efeito se o perfil dele também tiver a tarefa "Encarregado de Campo" liberada em Perfis de Acesso.</div>
+        <div class="d-flex flex-wrap gap-3">
+          {% for f in empresas %}
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="empresas_encarregado_ids" value="{{ f.id }}"
+                 {{ 'checked' if f.id in c.empresas_encarregado|map(attribute='id')|list }}><label class="form-check-label small">{{ f.nome_fantasia or f.razao_social }}</label></div>
+          {% endfor %}
+        </div>
+      </div>
+      {% elif c.empresas_encarregado %}
+      <div class="mb-2"><label class="form-label small">Encarregado de Campo em</label>
+        <div>{% for f in c.empresas_encarregado %}<span class="badge bg-secondary me-1">{{ f.nome_fantasia or f.razao_social }}</span>{% endfor %}</div>
+      </div>
+      {% endif %}
       <button class="btn btn-primary btn-sm">Salvar alterações</button>
     </form>
   </div></div></div>

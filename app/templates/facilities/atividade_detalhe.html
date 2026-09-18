@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ grupo.titulo }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <h4 class="mb-0">{{ grupo.titulo }}</h4>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao') }}">← Voltar</a>
+</div>
+<p class="text-muted small mb-3">
+  {{ grupo.planta.nome if grupo.planta else '—' }}{% if grupo.predio %} · {{ grupo.predio.nome }}{% endif %}
+  · Responsável: {{ grupo.responsavel.nome if grupo.responsavel else '—' }}
+  · Duração: {{ grupo.duracao_dias_uteis }} dia(s) útil(eis)
+  {% if grupo.status_cadastro == 'INCOMPLETO' %}<span class="badge bg-secondary ms-1">cadastro incompleto</span>{% endif %}
+</p>
+
+{% if grupo.descricao %}<div class="card mb-3"><div class="card-body py-2"><p class="mb-0 small">{{ grupo.descricao }}</p></div></div>{% endif %}
+
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">Colaboradores</h6>
+  {% for ac in grupo.colaboradores %}
+  <span class="badge {{ 'bg-primary' if ac.eh_responsavel else 'bg-secondary' }} me-1">
+    {{ ac.colaborador.nome }}{% if ac.eh_responsavel %} (responsável){% endif %}
+  </span>
+  {% else %}<span class="text-muted small">Nenhum colaborador atribuído ainda.</span>{% endfor %}
+</div></div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Data</th><th>Meta</th><th>% reportada</th><th>Status</th><th>Preenchido por</th><th></th></tr></thead>
+  <tbody>
+    {% for d in dias %}
+    <tr {{ 'class=table-danger' if d.atrasada }}>
+      <td class="small">{{ d.data.strftime('%d/%m/%Y') }} <span class="text-muted">(dia {{ d.ordem }})</span></td>
+      <td>{{ d.meta_percentual }}%</td>
+      <td>{% if d.percentual is not none %}{{ d.percentual }}%{% else %}—{% endif %}</td>
+      <td>
+        {% if d.status == 'APROVADA' %}<span class="badge bg-success">aprovada</span>
+        {% elif d.status == 'AGUARDANDO_APROVACAO' %}<span class="badge bg-warning text-dark">aguard. aprovação</span>
+        {% elif d.atrasada %}<span class="badge bg-danger">atrasada</span>
+        {% else %}<span class="badge bg-secondary">pendente</span>{% endif %}
+      </td>
+      <td class="small">
+        {% for pr in d.preenchimentos %}{{ pr.autor_nome }}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% if not d.preenchimentos %}—{% endif %}
+      </td>
+      <td class="text-end">
+        {% if colab_atual and d.status == 'PENDENTE' and d.data <= hoje %}
+        <a class="btn btn-sm btn-primary" href="{{ url_for('facilities.preencher_dia', data_str=d.data.strftime('%Y-%m-%d')) }}">Preencher %</a>
+        {% elif eh_gestor and d.status == 'AGUARDANDO_APROVACAO' %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('facilities.aprovacao') }}">Ver aprovação</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

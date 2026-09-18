@@ -18,6 +18,13 @@
   <div class="col-md-2"><button class="btn btn-primary w-100">Gerar</button></div>
 </div></form>
 
+{% if n_incompletas_no_dia %}
+<div class="alert alert-warning small py-2">
+  <b>{{ n_incompletas_no_dia }}</b> atividade(s) deste dia estão com o cadastro incompleto e por isso
+  não entram no resumo. Complete os campos (planta, prédio, etc.) antes de gerar.
+</div>
+{% endif %}
+
 {% if empresa_sel %}
 <div class="card"><div class="card-body">
   <div style="background:#fff;color:#111;border-radius:10px;padding:18px;max-width:520px">

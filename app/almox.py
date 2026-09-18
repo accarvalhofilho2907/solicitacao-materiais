@@ -1872,6 +1872,23 @@ def colaborador_editar(cid):
             nomes_depois = ", ".join(p.nome for p in c.plantas) or "—"
             registrar("plantas", nomes_antes, nomes_depois)
 
+    # [v3] Empresas que o colaborador é ENCARREGADO DE CAMPO (só Admin define; só faz sentido
+    # se o colaborador tiver a tarefa fac_encarregado_campo, mas não travamos aqui — o Admin
+    # pode preparar o vínculo antes de dar a tarefa, ou tirar a tarefa sem perder o vínculo).
+    if current_user.is_admin and "empresas_encarregado_ids" in request.form:
+        from .models import EncarregadoEmpresa, Fornecedor
+        ids_novos = {int(x) for x in request.form.getlist("empresas_encarregado_ids") if x.isdigit()}
+        ids_atuais = {e.fornecedor_id for e in EncarregadoEmpresa.query.filter_by(colaborador_id=c.id).all()}
+        if ids_novos != ids_atuais:
+            nomes_antes = ", ".join(f.nome_fantasia or f.razao_social for f in c.empresas_encarregado) or "—"
+            EncarregadoEmpresa.query.filter_by(colaborador_id=c.id).delete()
+            for fid in ids_novos:
+                if db.session.get(Fornecedor, fid):
+                    db.session.add(EncarregadoEmpresa(colaborador_id=c.id, fornecedor_id=fid))
+            db.session.flush()
+            nomes_depois = ", ".join(f.nome_fantasia or f.razao_social for f in c.empresas_encarregado) or "—"
+            registrar("empresas_encarregado", nomes_antes, nomes_depois)
+
     if mudancas:
         _log("Colaborador", f"{c.nome}: alterado ({', '.join(mudancas)}) por {autor}")
     db.session.commit()
@@ -4029,6 +4046,8 @@ def _inject_ver_como():
                  "pode_extintores", "pode_material", "pode_locais", "pode_relatorios",
                  "pode_coletor", "pode_criar_solicitacao", "pode_ver_solicitacoes",
                  "pode_colaboradores", "pode_solicitar",
-                 "ext_cadastrar", "ext_desativar", "chave_desativar"):
+                 "ext_cadastrar", "ext_desativar", "chave_desativar",
+                 "pode_facilities", "pode_facilities_inspecionar", "pode_facilities_cadastrar",
+                 "pode_facilities_gerir", "pode_criar_atividade", "eh_encarregado_campo"):
         setattr(p, prop, _efetivo(prop))
     return {"perm": p, "ver_como_nome": nome}

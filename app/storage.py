@@ -77,12 +77,20 @@ def salvar_imagem(file_storage):
     nome_final = nome_comprimido if comprimido is not None else file_storage.filename
 
     if current_app.config.get("CLOUDINARY_URL"):
-        import cloudinary
-        import cloudinary.uploader
+        try:
+            import cloudinary
+            import cloudinary.uploader
 
-        cloudinary.config(secure=True)  # lê CLOUDINARY_URL do ambiente
-        res = cloudinary.uploader.upload(usar_arquivo, folder="solicitacoes")
-        return res["secure_url"]
+            cloudinary.config(secure=True)  # lê CLOUDINARY_URL do ambiente
+            res = cloudinary.uploader.upload(usar_arquivo, folder="solicitacoes")
+            return res["secure_url"]
+        except Exception:
+            # [fix] CLOUDINARY_URL configurada errada (ex.: valor de exemplo "<your_api_key>"
+            # colado por engano) ou serviço fora do ar não pode derrubar a página inteira com
+            # 500 — cai para o disco local (mesmo sendo volátil, é melhor que quebrar o salvar).
+            current_app.logger.exception("Falha ao enviar imagem pro Cloudinary; usando fallback local.")
+            if hasattr(usar_arquivo, "seek"):
+                usar_arquivo.seek(0)
 
     # Fallback local
     pasta = current_app.config["UPLOAD_FOLDER"]

@@ -905,6 +905,7 @@ TAREFAS_PERFIL = [
     ("fac_gerir_modelos", "Criar/editar modelos de checklist (gestão)", "Facilities", False),
     ("fac_criar_atividade", "Criar atividades programadas (Facilities)", "Facilities", False),
     ("fac_ver_programacao", "Ver a programação/calendário de TODAS as atividades (gestão)", "Facilities", False),
+    ("fac_rdo", "Criar/ver Relatório Diário de Obra (RDO)", "Facilities", False),
     ("fac_encarregado_campo", "Encarregado de Campo (aprova/retifica atividades)", "Facilities", False),
 ]
 
@@ -982,7 +983,7 @@ _GRUPO_MAT = {"mat_ver", "mat_cadastrar", "mat_entrada", "mat_saida", "mat_ajust
 _GRUPO_LOC = {"perm_cadastros", "loc_planta", "loc_armazem", "loc_localizador", "loc_gerar"}
 _GRUPO_COLETOR = {"col_chaves", "col_material", "col_movimentacao", "col_inventario"}
 _GRUPO_FAC = {"fac_ver", "fac_inspecionar", "fac_gerir_modelos", "fac_criar_atividade",
-              "fac_ver_programacao", "fac_encarregado_campo"}
+              "fac_ver_programacao", "fac_rdo", "fac_encarregado_campo"}
 _GRUPO_ALMOX = (_GRUPO_CHAVES | _GRUPO_EXT | _GRUPO_MAT | _GRUPO_LOC | _GRUPO_COLETOR
                 | {"perm_modulo_almox"})
 
@@ -1023,6 +1024,8 @@ def perm_from_tasks(perms, prop):
         return ("fac_criar_atividade" in perms)
     if prop == "pode_ver_programacao":
         return ("fac_ver_programacao" in perms) or ("fac_encarregado_campo" in perms)
+    if prop == "pode_rdo":
+        return ("fac_rdo" in perms) or ("fac_encarregado_campo" in perms)
     if prop == "eh_encarregado_campo":
         return ("fac_encarregado_campo" in perms)
     if prop == "pode_colaboradores":
@@ -1034,6 +1037,27 @@ def perm_from_tasks(perms, prop):
     if prop == "pode_solicitar":
         return bool(perms & {"perm_solicitar", "solicitar_criar", "solicitar_ver_minhas"})
     return prop in perms
+
+
+class AusenciaColaborador(db.Model):
+    """[item novo] Registro de férias/ausência de um Colaborador — motivo, período (em dias
+    úteis, calculado a partir da data de início) e data de retorno. Usado para: (1) avisar
+    no Resumo Diário quem está ausente naquele dia; (2) no futuro, pode alimentar a checagem
+    de conflito de agenda (ainda não conectado a isso nesta leva)."""
+    __tablename__ = "sf_ausencias_colaborador"
+    id = db.Column(db.Integer, primary_key=True)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"), nullable=False)
+    motivo = db.Column(db.String(200), nullable=False)   # "Férias", "Atestado médico", etc.
+    data_inicio = db.Column(db.Date, nullable=False)
+    dias_uteis = db.Column(db.Integer, nullable=False)
+    data_retorno = db.Column(db.Date, nullable=False)     # calculada (próximo dia útil após o período)
+    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    colaborador = db.relationship("Colaborador", foreign_keys=[colaborador_id])
+
+    def esta_ausente_em(self, data_ref):
+        return self.data_inicio <= data_ref < self.data_retorno
 
 
 class EncarregadoEmpresa(db.Model):
@@ -1150,6 +1174,8 @@ class Colaborador(UserMixin, db.Model):
     def pode_criar_atividade(self): return perm_from_tasks(self._perms_efetivas(), "pode_criar_atividade")
     @property
     def pode_ver_programacao(self): return perm_from_tasks(self._perms_efetivas(), "pode_ver_programacao")
+    @property
+    def pode_rdo(self): return perm_from_tasks(self._perms_efetivas(), "pode_rdo")
     @property
     def eh_encarregado_campo(self): return perm_from_tasks(self._perms_efetivas(), "eh_encarregado_campo")
     @property

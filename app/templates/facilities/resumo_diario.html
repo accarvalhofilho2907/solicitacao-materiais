@@ -30,18 +30,36 @@
 
 {% if empresa_sel %}
 <div class="card"><div class="card-body">
-  <div style="background:#fff;color:#111;border-radius:10px;padding:18px;max-width:520px">
-    <div style="display:flex;justify-content:space-between;border-bottom:3px solid #FF5246;padding-bottom:8px;margin-bottom:10px">
-      <b>{{ empresa_sel }}</b><span>{{ data_d.strftime('%d/%m/%Y') }}</span>
+  <div style="background:#fff;color:#111;border-radius:10px;padding:18px;max-width:640px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:3px solid #FF5246;padding-bottom:8px;margin-bottom:10px">
+      <div><b>{{ empresa_sel }}</b> <span style="background:#FF5246;color:#fff;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700">{{ 'INÍCIO DO DIA' if tipo == 'inicio' else 'FIM DO DIA' }}</span></div>
+      <span>{{ data_d.strftime('%d/%m/%Y') }}</span>
     </div>
     <table style="width:100%;font-size:12px">
-      <tr style="background:#FF5246;color:#fff"><th style="padding:6px">Local</th><th style="padding:6px">Título</th><th style="padding:6px">Colaboradores</th></tr>
+      <tr style="background:#FF5246;color:#fff">
+        <th style="padding:6px">Local</th><th style="padding:6px">Título</th><th style="padding:6px">Colaboradores</th>
+        {% if tipo == 'fim' %}<th style="padding:6px">%</th><th style="padding:6px">Observações</th>{% endif %}
+      </tr>
       {% for l in linhas %}
-      <tr><td style="padding:6px;border-bottom:1px solid #eee">{{ l.local }}</td><td style="padding:6px;border-bottom:1px solid #eee">{{ l.titulo }}</td><td style="padding:6px;border-bottom:1px solid #eee">{{ l.colaboradores }}</td></tr>
+      <tr>
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.local }}</td>
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.titulo }}</td>
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.colaboradores }}</td>
+        {% if tipo == 'fim' %}
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.percentual }}{% if l.percentual != '—' %}%{% endif %}</td>
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.observacoes }}</td>
+        {% endif %}
+      </tr>
       {% else %}
-      <tr><td colspan="3" style="padding:10px;text-align:center;color:#999">Sem atividades dessa empresa neste dia.</td></tr>
+      <tr><td colspan="{{ 5 if tipo=='fim' else 3 }}" style="padding:10px;text-align:center;color:#999">Sem atividades dessa empresa neste dia.</td></tr>
       {% endfor %}
     </table>
+    {% if ausentes_da_empresa %}
+    <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #ccc;font-size:11px;color:#555">
+      <b>Ausentes hoje:</b>
+      {% for a in ausentes_da_empresa %}{{ a.nome }} ({{ a.motivo }}){% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% endif %}
   </div>
 </div></div>
 {% endif %}

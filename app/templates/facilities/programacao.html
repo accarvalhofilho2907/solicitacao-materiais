@@ -14,6 +14,29 @@
     color:var(--texto);border:1px solid var(--linha);border-radius:8px;padding:8px 10px;font-size:11px;
     white-space:nowrap;display:none;z-index:20;text-align:left;box-shadow:0 4px 12px rgba(0,0,0,.4)}
   .cal2-dia:hover .cal2-tip{display:block}
+
+  /* [item novo] Filtro estilo Excel no cabeçalho da tabela */
+  .th-filtro{display:flex;align-items:center;justify-content:space-between;gap:4px;user-select:none}
+  .th-filtro .funil{cursor:pointer;opacity:.6;padding:2px 4px;border-radius:4px}
+  .th-filtro .funil:hover{opacity:1;background:rgba(255,255,255,.08)}
+  .th-filtro .funil.ativo{opacity:1;color:#FF5246}
+  .filtro-dropdown{position:absolute;background:var(--card-bg,#232323);border:1px solid var(--linha,#333);
+    border-radius:8px;padding:8px;z-index:50;min-width:200px;max-width:260px;box-shadow:0 6px 18px rgba(0,0,0,.5);
+    display:none}
+  .filtro-dropdown.aberto{display:block}
+  .filtro-dropdown .busca-valores{width:100%;margin-bottom:6px;font-size:12px;padding:4px 6px;
+    background:var(--input-bg);border:1px solid var(--linha);color:var(--texto);border-radius:6px}
+  .filtro-dropdown .ordenar-btns{display:flex;gap:4px;margin-bottom:6px}
+  .filtro-dropdown .ordenar-btns button{flex:1;font-size:11px;padding:3px;background:var(--input-bg);
+    border:1px solid var(--linha);color:var(--texto);border-radius:5px;cursor:pointer}
+  .filtro-dropdown .lista-valores{max-height:180px;overflow-y:auto;border-top:1px solid var(--linha);
+    padding-top:6px;margin-bottom:6px}
+  .filtro-dropdown .valor-item{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;color:var(--texto)}
+  .filtro-dropdown .rodape-btns{display:flex;gap:4px}
+  .filtro-dropdown .rodape-btns button{flex:1;font-size:11px;padding:4px;border-radius:5px;cursor:pointer}
+  .filtro-dropdown .btn-aplicar{background:#FF5246;color:#fff;border:none}
+  .filtro-dropdown .btn-limpar{background:var(--input-bg);color:var(--texto);border:1px solid var(--linha)}
+  th[data-col].tem-filtro-ativo{color:#FF5246}
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -41,18 +64,16 @@
 </div></div>
 
 <div class="card"><div class="card-body">
-  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-    <h6 class="mb-0">Atividades {% if datas_sel|length == 1 %}— {{ datas_sel[0][8:10] }}/{{ datas_sel[0][5:7] }}/{{ datas_sel[0][0:4] }}{% else %}— {{ datas_sel|length }} dias selecionados{% endif %}</h6>
-    <input type="text" id="filtroTabela" class="form-control form-control-sm" style="max-width:260px" placeholder="🔎 Pesquisar título, planta, responsável...">
-  </div>
+  <h6 class="mb-2">Atividades {% if datas_sel|length == 1 %}— {{ datas_sel[0][8:10] }}/{{ datas_sel[0][5:7] }}/{{ datas_sel[0][0:4] }}{% else %}— {{ datas_sel|length }} dias selecionados{% endif %}</h6>
+  <div style="position:relative">
   <table class="table table-sm align-middle mb-0" id="tabelaAtividades">
     <thead class="table-light"><tr>
-      <th data-col="0" data-tipo="data" style="cursor:pointer">Data <span class="arrow"></span></th>
-      <th data-col="1" style="cursor:pointer">Título <span class="arrow"></span></th>
-      <th data-col="2" style="cursor:pointer">Planta / Prédio <span class="arrow"></span></th>
-      <th data-col="3" style="cursor:pointer">Responsável <span class="arrow"></span></th>
-      <th data-col="4" data-tipo="num" style="cursor:pointer">Progresso <span class="arrow"></span></th>
-      <th data-col="5" style="cursor:pointer">Status <span class="arrow"></span></th>
+      <th data-col="0" data-tipo="data">Data</th>
+      <th data-col="1">Título</th>
+      <th data-col="2">Planta / Prédio</th>
+      <th data-col="3">Responsável</th>
+      <th data-col="4" data-tipo="num">Progresso</th>
+      <th data-col="5">Status</th>
       <th></th>
     </tr></thead>
     <tbody>
@@ -63,7 +84,7 @@
         <td class="small">{{ d.grupo.planta.nome if d.grupo.planta else '—' }}{% if d.grupo.predio %} · {{ d.grupo.predio.nome }}{% endif %}</td>
         <td class="small">{{ d.grupo.responsavel.nome if d.grupo.responsavel else '—' }}</td>
         <td data-sort="{{ d.percentual if d.percentual is not none else -1 }}">{% if d.percentual is not none %}{{ d.percentual }}% (meta {{ d.meta_percentual }}%){% else %}—{% endif %}</td>
-        <td>
+        <td data-valor="{% if d.grupo.status_cadastro == 'INCOMPLETO' %}Incompleto{% elif d.status == 'APROVADA' %}Aprovada{% elif d.status == 'AGUARDANDO_APROVACAO' %}Aguard. aprovação{% elif d.status == 'CANCELADA' %}Cancelada{% elif d.atrasada %}Atrasada{% else %}Pendente{% endif %}">
           {% if d.grupo.status_cadastro == 'INCOMPLETO' %}<span class="badge bg-secondary">incompleto</span>
           {% elif d.status == 'APROVADA' %}<span class="badge bg-success">aprovada</span>
           {% elif d.status == 'AGUARDANDO_APROVACAO' %}<span class="badge bg-warning text-dark">aguard. aprovação</span>
@@ -82,6 +103,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div></div>
 
 <script>
@@ -121,44 +143,150 @@ Object.keys(contagem).sort().forEach(function(iso){
 // Resumo diário: usa o primeiro dia selecionado
 document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diario') }}?data=" + (datasSel[0] || hoje);
 
-// [item 7] Filtro de busca livre + ordenação por coluna (client-side, tabela já carregada)
+// [item novo] Filtro estilo Excel: cada coluna tem um funil que abre um dropdown com os
+// valores DISTINTOS daquela coluna (checkboxes marcar/desmarcar), busca dentro do dropdown,
+// e ordenar A-Z/Z-A. Estado de filtro por coluna fica em memória (Map de índice -> Set de
+// valores ESCONDIDOS); uma linha só aparece se NENHUMA das suas colunas estiver escondida.
 (function(){
   var tabela = document.getElementById('tabelaAtividades');
   if (!tabela) return;
+  var thead = tabela.querySelector('thead');
   var tbody = tabela.querySelector('tbody');
-  var linhasOriginais = Array.from(tbody.querySelectorAll('tr'));
+  var linhas = Array.from(tbody.querySelectorAll('tr')).filter(function(tr){ return tr.children.length > 1; });
+  var escondidosPorCol = {}; // {colIndex: Set(valoresEscondidos)}
 
-  document.getElementById('filtroTabela').addEventListener('input', function(e){
-    var termo = e.target.value.trim().toLowerCase();
-    linhasOriginais.forEach(function(tr){
-      var texto = tr.textContent.toLowerCase();
-      tr.style.display = !termo || texto.indexOf(termo) !== -1 ? '' : 'none';
-    });
-  });
+  function valorDaCelula(td){
+    return td.dataset.valor !== undefined ? td.dataset.valor : td.textContent.trim();
+  }
 
-  var colAtual = null, ascendente = true;
-  tabela.querySelectorAll('thead th[data-col]').forEach(function(th){
-    th.addEventListener('click', function(){
-      var col = parseInt(th.dataset.col);
-      var tipo = th.dataset.tipo || 'texto';
-      ascendente = (colAtual === col) ? !ascendente : true;
-      colAtual = col;
-      tabela.querySelectorAll('thead .arrow').forEach(function(a){ a.textContent = ''; });
-      th.querySelector('.arrow').textContent = ascendente ? '▲' : '▼';
-
-      var linhas = Array.from(tbody.querySelectorAll('tr'));
-      linhas.sort(function(a, b){
-        var ta = a.children[col], tb = b.children[col];
-        var va = ta.dataset.sort !== undefined ? ta.dataset.sort : ta.textContent.trim().toLowerCase();
-        var vb = tb.dataset.sort !== undefined ? tb.dataset.sort : tb.textContent.trim().toLowerCase();
-        if (tipo === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
-        if (va < vb) return ascendente ? -1 : 1;
-        if (va > vb) return ascendente ? 1 : -1;
-        return 0;
+  function aplicarFiltros(){
+    linhas.forEach(function(tr){
+      var mostrar = true;
+      Object.keys(escondidosPorCol).forEach(function(col){
+        if (!mostrar) return;
+        var td = tr.children[parseInt(col)];
+        if (!td) return;
+        var v = valorDaCelula(td);
+        if (escondidosPorCol[col].has(v)) mostrar = false;
       });
-      linhas.forEach(function(tr){ tbody.appendChild(tr); });
+      tr.style.display = mostrar ? '' : 'none';
+    });
+  }
+
+  function fecharTodosDropdowns(){
+    document.querySelectorAll('.filtro-dropdown').forEach(function(dd){ dd.classList.remove('aberto'); });
+  }
+
+  thead.querySelectorAll('th[data-col]').forEach(function(th){
+    var col = th.dataset.col;
+    var tipo = th.dataset.tipo || 'texto';
+    var textoOriginal = th.textContent.trim();
+
+    var wrap = document.createElement('div');
+    wrap.className = 'th-filtro';
+    var span = document.createElement('span');
+    span.textContent = textoOriginal;
+    var funil = document.createElement('span');
+    funil.className = 'funil';
+    funil.textContent = '▾';
+    wrap.appendChild(span);
+    wrap.appendChild(funil);
+    th.textContent = '';
+    th.appendChild(wrap);
+    th.style.position = 'relative';
+
+    var dropdown = document.createElement('div');
+    dropdown.className = 'filtro-dropdown';
+    th.appendChild(dropdown);
+
+    funil.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var jaAberto = dropdown.classList.contains('aberto');
+      fecharTodosDropdowns();
+      if (jaAberto) return;
+
+      // monta a lista de valores distintos desta coluna, a partir das linhas atuais
+      var valores = {};
+      linhas.forEach(function(tr){
+        var td = tr.children[parseInt(col)];
+        if (td) valores[valorDaCelula(td)] = true;
+      });
+      var listaValores = Object.keys(valores).sort();
+      var escondidos = escondidosPorCol[col] || new Set();
+
+      dropdown.innerHTML =
+        '<input type="text" class="busca-valores" placeholder="Pesquisar...">' +
+        '<div class="ordenar-btns"><button data-dir="asc">A→Z</button><button data-dir="desc">Z→A</button></div>' +
+        '<div class="lista-valores"></div>' +
+        '<div class="rodape-btns"><button class="btn-limpar">Limpar</button><button class="btn-aplicar">Aplicar</button></div>';
+
+      var listaEl = dropdown.querySelector('.lista-valores');
+      function redesenharLista(filtroTexto){
+        listaEl.innerHTML = '';
+        listaValores.filter(function(v){ return !filtroTexto || v.toLowerCase().indexOf(filtroTexto.toLowerCase()) !== -1; })
+          .forEach(function(v){
+            var item = document.createElement('label');
+            item.className = 'valor-item';
+            var chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.checked = !escondidos.has(v);
+            chk.dataset.valor = v;
+            item.appendChild(chk);
+            item.appendChild(document.createTextNode(v || '(vazio)'));
+            listaEl.appendChild(item);
+          });
+      }
+      redesenharLista('');
+
+      dropdown.querySelector('.busca-valores').addEventListener('input', function(e){
+        redesenharLista(e.target.value);
+      });
+
+      dropdown.querySelectorAll('.ordenar-btns button').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var dir = btn.dataset.dir;
+          linhas.sort(function(a, b){
+            var ta = a.children[parseInt(col)], tb = b.children[parseInt(col)];
+            var va = ta.dataset.sort !== undefined ? ta.dataset.sort : valorDaCelula(ta).toLowerCase();
+            var vb = tb.dataset.sort !== undefined ? tb.dataset.sort : valorDaCelula(tb).toLowerCase();
+            if (tipo === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+            if (va < vb) return dir === 'asc' ? -1 : 1;
+            if (va > vb) return dir === 'asc' ? 1 : -1;
+            return 0;
+          });
+          linhas.forEach(function(tr){ tbody.appendChild(tr); });
+        });
+      });
+
+      dropdown.querySelector('.btn-limpar').addEventListener('click', function(){
+        delete escondidosPorCol[col];
+        th.classList.remove('tem-filtro-ativo');
+        funil.classList.remove('ativo');
+        aplicarFiltros();
+        dropdown.classList.remove('aberto');
+      });
+
+      dropdown.querySelector('.btn-aplicar').addEventListener('click', function(){
+        var marcados = Array.from(listaEl.querySelectorAll('input[type=checkbox]:checked')).map(function(c){ return c.dataset.valor; });
+        var novosEscondidos = new Set(listaValores.filter(function(v){ return marcados.indexOf(v) === -1; }));
+        if (novosEscondidos.size === 0) {
+          delete escondidosPorCol[col];
+          th.classList.remove('tem-filtro-ativo');
+          funil.classList.remove('ativo');
+        } else {
+          escondidosPorCol[col] = novosEscondidos;
+          th.classList.add('tem-filtro-ativo');
+          funil.classList.add('ativo');
+        }
+        aplicarFiltros();
+        dropdown.classList.remove('aberto');
+      });
+
+      dropdown.classList.add('aberto');
     });
   });
+
+  document.addEventListener('click', function(){ fecharTodosDropdowns(); });
 })();
 </script>
 {% endblock %}

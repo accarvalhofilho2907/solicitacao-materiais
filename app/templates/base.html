@@ -250,7 +250,7 @@
       {% if perm.pode_facilities %}{{ item('facilities.inspecionar','box','Inspecionar (checklist)') }}{% endif %}
       {% if perm.pode_ver_programacao %}{{ item('facilities.programacao','doc','Programação de atividades') }}{% endif %}
       {% if perm.eh_encarregado_campo %}{{ item('facilities.aprovacao','check','Aprovação de atividades') }}{% endif %}
-      {% if perm.pode_facilities %}{{ item('facilities.rdo','doc','Relatório Diário de Obra') }}{% endif %}
+      {% if perm.pode_rdo %}{{ item('facilities.rdo','doc','Relatório Diário de Obra') }}{% endif %}
 
       {% if perm.pode_relatorios or perm.is_almox %}
       <div class="sb-sec">Relatório<span class="chev">▾</span></div>

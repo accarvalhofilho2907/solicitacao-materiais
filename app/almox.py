@@ -1,5 +1,5 @@
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, abort, flash, current_app, request, session
 from flask_login import login_required, current_user, login_user
@@ -1814,17 +1814,54 @@ def colaborador_novo():
 @almox_bp.route("/colaboradores/<int:cid>", methods=["GET"])
 @_guard("pode_colaboradores")
 def colaborador_perfil(cid):
-    from .models import Fornecedor, HistoricoColaborador, Planta
+    from .models import Fornecedor, HistoricoColaborador, Planta, AusenciaColaborador
     c = db.session.get(Colaborador, cid) or abort(404)
     empresas = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
     hist = (HistoricoColaborador.query.filter_by(colaborador_id=c.id)
             .order_by(HistoricoColaborador.criado_em.desc()).all())
     papeis = PapelColaborador.query.filter_by(ativo=True).order_by(PapelColaborador.nome).all()
     todas_plantas = Planta.query.filter_by(ativo=True).order_by(Planta.nome).all()
+    ausencias = (AusenciaColaborador.query.filter_by(colaborador_id=c.id)
+                .order_by(AusenciaColaborador.data_inicio.desc()).all())
     return render_template("almox/colaborador_perfil.html", c=c, empresas=empresas,
                            papeis=papeis, papeis_colab=PAPEIS_COLAB, hist=hist,
                            pode_papel=current_user.is_admin, is_master=current_user.is_master,
-                           todas_plantas=todas_plantas)
+                           todas_plantas=todas_plantas, ausencias=ausencias, hoje=date.today())
+
+
+@almox_bp.route("/colaboradores/<int:cid>/ausencia", methods=["POST"])
+@_guard("pode_colaboradores")
+def colaborador_ausencia_nova(cid):
+    """[item novo] Registra férias/ausência: motivo + quantos dias ÚTEIS + calcula a data de
+    retorno automaticamente (pulando fim de semana/feriados, mesma lógica das atividades)."""
+    from .models import AusenciaColaborador
+    from .facilities import _gerar_dias_uteis
+    c = db.session.get(Colaborador, cid) or abort(404)
+    motivo = (request.form.get("motivo_ausencia") or "").strip()
+    data_inicio_str = request.form.get("data_inicio_ausencia")
+    dias_uteis_str = request.form.get("dias_uteis_ausencia")
+    if not motivo or not data_inicio_str or not dias_uteis_str:
+        flash("Informe motivo, data de início e quantidade de dias úteis.", "danger")
+        return redirect(url_for("almox.colaborador_perfil", cid=cid))
+    try:
+        data_inicio = datetime.strptime(data_inicio_str, "%Y-%m-%d").date()
+        dias_uteis = max(1, int(dias_uteis_str))
+    except ValueError:
+        flash("Data ou quantidade de dias inválida.", "danger")
+        return redirect(url_for("almox.colaborador_perfil", cid=cid))
+    # data de retorno = o dia útil seguinte ao último dia de ausência
+    datas_ausencia = _gerar_dias_uteis(data_inicio, dias_uteis)
+    ultimo_dia = datas_ausencia[-1]
+    retorno = ultimo_dia + timedelta(days=1)
+    while retorno.weekday() >= 5:
+        retorno += timedelta(days=1)
+    db.session.add(AusenciaColaborador(colaborador_id=c.id, motivo=motivo, data_inicio=data_inicio,
+                                       dias_uteis=dias_uteis, data_retorno=retorno,
+                                       criado_por=current_user.id if current_user.is_authenticated else None))
+    db.session.commit()
+    flash(f"Ausência registrada: {motivo}, de {data_inicio.strftime('%d/%m')} até {ultimo_dia.strftime('%d/%m')} "
+          f"(retorno previsto {retorno.strftime('%d/%m')}).", "success")
+    return redirect(url_for("almox.colaborador_perfil", cid=cid))
 
 
 @almox_bp.route("/colaboradores/<int:cid>/editar", methods=["POST"])
@@ -4048,6 +4085,6 @@ def _inject_ver_como():
                  "pode_colaboradores", "pode_solicitar",
                  "ext_cadastrar", "ext_desativar", "chave_desativar",
                  "pode_facilities", "pode_facilities_inspecionar", "pode_facilities_cadastrar",
-                 "pode_facilities_gerir", "pode_criar_atividade", "pode_ver_programacao", "eh_encarregado_campo"):
+                 "pode_facilities_gerir", "pode_criar_atividade", "pode_ver_programacao", "pode_rdo", "eh_encarregado_campo"):
         setattr(p, prop, _efetivo(prop))
     return {"perm": p, "ver_como_nome": nome}

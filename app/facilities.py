@@ -118,6 +118,20 @@ def _ver_programacao_required(f):
     return w
 
 
+def _rdo_required(f):
+    """RDO é um documento de gestão (mão de obra, clima, % média do dia) — um Colaborador
+    Diverso comum não deve ter acesso, só Admin/Master/Encarregado ou quem tiver fac_rdo."""
+    @wraps(f)
+    def w(*a, **k):
+        from .almox import _colab_sessao
+        if _tem_acesso_facilities("pode_rdo"):
+            return f(*a, **k)
+        if not current_user.is_authenticated and not _colab_sessao():
+            return redirect(url_for("auth.login"))
+        abort(403)
+    return w
+
+
 def _inspecionar_required(f):
     @wraps(f)
     def w(*a, **k):
@@ -375,7 +389,17 @@ def _salvar_fotos(campo_form, maximo=4):
 
 
 def _quem_preencheu():
+    """[fix crítico] Retorna (colaborador_id, usuario_id) — só um dos dois preenchido.
+    ANTES: assumia que current_user.is_authenticated só podia ser um Usuario (admin/staff),
+    então um Colaborador logado NORMALMENTE (login do site, sem QR) caía sempre no ramo
+    errado — colab_id ficava None mesmo ele sendo um Colaborador de verdade. Isso quebrava
+    o filtro de "minhas atividades" (nunca encontrava nada, mesmo participando) e a
+    validação de segurança (eh_participante nunca era True), causando Forbidden e a tela
+    aparentando mostrar TODAS as atividades (o filtro com colab_id=None não filtrava nada
+    corretamente em alguns pontos)."""
     from .almox import _colab_sessao
+    if current_user.is_authenticated and isinstance(current_user, Colaborador):
+        return current_user.id, None
     if current_user.is_authenticated:
         return None, current_user.id
     colab = _colab_sessao()
@@ -580,17 +604,74 @@ def atividade_detalhe(grupo_id):
 
         if acao == "cancelar":
             motivo = (request.form.get("motivo_cancelamento") or "").strip()
+            escopo = request.form.get("escopo_cancelamento", "tudo")
             if not motivo:
                 flash("Informe o motivo do cancelamento.", "danger")
                 return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            hoje = date.today()
             for d in grupo.dias:
-                if d.status not in ("APROVADA",):
-                    d.status = "CANCELADA"
+                if d.status == "APROVADA":
+                    continue
+                # [item novo] escopo "tudo" cancela todos os dias não aprovados; "a_partir_hoje"
+                # preserva os dias já passados/de hoje que não sejam cancelados (deixa o
+                # histórico de dias anteriores intocado, só interrompe o que ainda vem pela frente)
+                if escopo == "a_partir_hoje" and d.data < hoje:
+                    continue
+                d.status = "CANCELADA"
             grupo.motivo_cancelamento = motivo
-            grupo.status_cadastro = grupo.status_cadastro  # mantém, só os dias mudam de status
             db.session.commit()
             flash("Atividade cancelada.", "success")
             return redirect(url_for("facilities.programacao"))
+
+        if acao == "cancelar_dia":
+            dia_id = request.form.get("dia_id")
+            motivo = (request.form.get("motivo_dia") or "").strip()
+            if not dia_id or not motivo:
+                flash("Informe o motivo do cancelamento deste dia.", "danger")
+                return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            d = db.session.get(AtividadeDia, int(dia_id))
+            if d and d.grupo_id == grupo.id and d.status != "APROVADA":
+                d.status = "CANCELADA"
+                d.motivo_reprogramacao = f"[cancelado] {motivo}"
+                db.session.commit()
+                flash(f"Dia {d.ordem} cancelado.", "success")
+            return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+
+        if acao == "duplicar":
+            # [item novo] Duplica a atividade INTEIRA (novo AtividadeGrupo com os mesmos
+            # colaboradores/planta/prédio) a partir de uma nova data de início, OU duplica
+            # SÓ UM DIA/recorrência específica (vira uma atividade avulsa de 1 dia).
+            escopo_dup = request.form.get("escopo_duplicar", "atividade_inteira")
+            nova_data_str = request.form.get("nova_data_duplicar")
+            if not nova_data_str:
+                flash("Informe a data de início da cópia.", "danger")
+                return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            nova_data_ini = datetime.strptime(nova_data_str, "%Y-%m-%d").date()
+
+            if escopo_dup == "somente_dia":
+                dia_ref_id = request.form.get("dia_ref_id")
+                duracao_nova = 1
+            else:
+                duracao_nova = grupo.duracao_dias_uteis
+
+            novo_grupo = AtividadeGrupo(
+                titulo=grupo.titulo + " (cópia)", descricao=grupo.descricao,
+                data_inicio=nova_data_ini, unidade_duracao="dias", duracao_dias_uteis=duracao_nova,
+                recorrencia_dias=grupo.recorrencia_dias, planta_id=grupo.planta_id,
+                predio_id=grupo.predio_id, produto_id=grupo.produto_id, status_cadastro="COMPLETO",
+                criado_por=current_user.id if current_user.is_authenticated else None)
+            db.session.add(novo_grupo)
+            db.session.commit()
+            for ac in grupo.colaboradores:
+                db.session.add(AtividadeColaborador(grupo_id=novo_grupo.id, colaborador_id=ac.colaborador_id,
+                                                    eh_responsavel=ac.eh_responsavel))
+            datas_novas = _gerar_dias_uteis(nova_data_ini, duracao_nova)
+            for i, d in enumerate(datas_novas, start=1):
+                meta = round(i / duracao_nova * 100)
+                db.session.add(AtividadeDia(grupo_id=novo_grupo.id, data=d, ordem=i, meta_percentual=meta, status="PENDENTE"))
+            db.session.commit()
+            flash("Atividade duplicada com sucesso.", "success")
+            return redirect(url_for("facilities.atividade_detalhe", grupo_id=novo_grupo.id))
 
         if acao == "adicionar_colaborador":
             colaborador_id = request.form.get("novo_colaborador_id")
@@ -713,7 +794,7 @@ def preencher_dia(data_str):
     colab_id, usuario_id = _quem_preencheu()
 
     q = AtividadeDia.query.join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
-    q = q.filter(AtividadeDia.data == data_d)
+    q = q.filter(AtividadeDia.data == data_d, AtividadeDia.status != "CANCELADA")
     if colab_id:
         q = q.filter(AtividadeColaborador.colaborador_id == colab_id)
     minhas_atividades = q.all()
@@ -789,7 +870,12 @@ def aprovacao():
         abort(403)
     colab_atual = colab if colab else (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
     q = AtividadeDia.query.filter_by(status="AGUARDANDO_APROVACAO")
-    if colab_atual and not (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False)):
+    # [fix] Admin (qualquer um, is_admin já cobre o Master também, já que Master sempre tem
+    # papel="admin") vê TODAS as pendências, sem filtro de empresa — só filtra por empresa
+    # quando quem está vendo é um Colaborador Encarregado (não Admin/Usuario).
+    eh_admin_ou_master = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                         or getattr(current_user, "is_master", False))
+    if colab_atual and not eh_admin_ou_master:
         empresas_ids = {e.id for e in colab_atual.empresas_encarregado}
         if empresas_ids:
             nomes_empresas = {db.session.get(Fornecedor, eid).nome_fantasia or db.session.get(Fornecedor, eid).razao_social
@@ -904,6 +990,7 @@ def resumo_diario():
 
     fornecedor_sel = request.args.get("empresa")
     linhas = []
+    ausentes_da_empresa = []
     if fornecedor_sel:
         for d in dias:
             colaboradores_da_empresa = [ac.colaborador.nome for ac in d.grupo.colaboradores
@@ -911,12 +998,29 @@ def resumo_diario():
             if not colaboradores_da_empresa:
                 continue
             nomes_fmt = ", ".join(_remover_particulas_sobrenome(n) for n in colaboradores_da_empresa)
-            linhas.append({"local": d.grupo.predio.nome if d.grupo.predio else "—",
-                          "titulo": d.grupo.titulo, "colaboradores": nomes_fmt})
+            linha = {"local": d.grupo.predio.nome if d.grupo.predio else "—",
+                    "titulo": d.grupo.titulo, "colaboradores": nomes_fmt}
+            # [item novo] no resumo de FIM, traz o que os colaboradores de fato reportaram:
+            # % de conclusão e as observações/descrição da execução daquele dia.
+            if tipo == "fim":
+                linha["percentual"] = d.percentual if d.percentual is not None else "—"
+                linha["observacoes"] = d.descricao_execucao or "—"
+            linhas.append(linha)
+
+        # [item novo] colaboradores da empresa que estão de férias/ausentes NESTE dia
+        from .models import AusenciaColaborador
+        colaboradores_empresa = Colaborador.query.filter_by(empresa=fornecedor_sel, ativo=True).all()
+        for c in colaboradores_empresa:
+            aus = (AusenciaColaborador.query.filter_by(colaborador_id=c.id)
+                  .filter(AusenciaColaborador.data_inicio <= data_d, AusenciaColaborador.data_retorno > data_d)
+                  .first())
+            if aus:
+                ausentes_da_empresa.append({"nome": _remover_particulas_sobrenome(c.nome), "motivo": aus.motivo})
 
     return render_template("facilities/resumo_diario.html", data_d=data_d, tipo=tipo,
                            fim_liberado=fim_liberado, empresas=sorted(empresas_ids),
                            empresa_sel=fornecedor_sel, linhas=linhas,
+                           ausentes_da_empresa=ausentes_da_empresa,
                            n_incompletas_no_dia=n_incompletas_no_dia)
 
 
@@ -925,7 +1029,7 @@ def resumo_diario():
 # ============================================================================
 
 @facilities_bp.route("/rdo", methods=["GET", "POST"])
-@_ver_required
+@_rdo_required
 def rdo():
     plantas_disp, ids_permitidas = _plantas_ctx()
     if request.method == "POST":

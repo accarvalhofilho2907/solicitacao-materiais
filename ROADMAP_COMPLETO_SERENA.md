@@ -3265,3 +3265,118 @@ Antonio testou de novo e reportou 10 problemas. Investigados e corrigidos.
 Smoke test geral (15 telas) 200. Menu testado com clique real (jsdom, script correto que abre
 sub-secoes tambem): sem erros de JS, "Movimento" com 17 itens (Preencher minha atividade adicionado
 no bloco Admin).
+
+### ================== TERCEIRA RODADA (18/09) — CHECKPOINT PARCIAL ==================
+Antonio trouxe uma lista grande de melhorias/bugs (12 itens). Trabalhando em ordem de gravidade.
+Ate agora, CORRIGIDOS E TESTADOS:
+
+BUG CRITICO RAIZ ENCONTRADO: _quem_preencheu() assumia que "current_user.is_authenticated" so podia
+ser um Usuario (staff) — um Colaborador logado NORMALMENTE (nao via QR) caia no ramo errado e
+retornava colab_id=None. Isso quebrava TUDO relacionado a preencher: (1) o filtro "minhas atividades"
+nao filtrava nada (colab_id=None faz o "if colab_id:" nunca disparar) — por isso o colaborador via
+TODAS as atividades de todo mundo, inclusive de quem nao fazia parte da equipe; (2) a validacao de
+seguranca do POST (eh_participante) nunca era True mesmo pra quem participava de verdade — dai o
+"Forbidden" mesmo fazendo tudo certo. CORRIGIDO: _quem_preencheu() agora reconhece explicitamente
+isinstance(current_user, Colaborador) antes de cair no ramo de Usuario.
+TESTADO: colaborador logado NORMALMENTE (nao QR) agora ve so' a propria atividade, preenche com
+sucesso, e outro colaborador que nao participa nao ve nada da atividade do primeiro.
+
+[Atividades canceladas aparecendo pro colaborador] GET de preencher_dia agora filtra
+AtividadeDia.status != CANCELADA tambem (nao so' o filtro de colaborador).
+
+[Preenchimento duplicado] Ao reabrir a tela apos salvar, o status vira AGUARDANDO_APROVACAO, que
+antes caia no mesmo ramo de "nao preenchido ainda" (so' tratava especificamente status==APROVADA).
+CORRIGIDO: novo bloco especifico pra AGUARDANDO_APROVACAO — mostra um resumo (% e descricao ja
+enviadas) + botao "Editar" que abre o formulario pre-preenchido, em vez de reabrir o form vazio.
+
+[RDO liberado pra qualquer colaborador] Nova tarefa fac_rdo em Perfis de Acesso, decorador
+_rdo_required proprio — RDO agora exige essa tarefa (ou ser Admin/Master/Encarregado), nao mais so'
+"ver telas de Facilities" generico. Menu ajustado.
+
+[Aprovacao nao aparecia pro Admin Master] A LOGICA da rota ja cobria Admin/Master corretamente nos
+testes (confirmado com teste automatizado — Admin Master acessa e ve o link no menu sem problema).
+Suspeita mais provavel: o usuario real do Antonio pode nao ter a coluna is_master=True marcada no
+banco (e' uma coluna separada de is_admin, default False) — ANTONIO PRECISA CONFIRMAR/CORRIGIR ISSO
+NO PROPRIO CADASTRO DO USUARIO, nao e' um bug de codigo pelo que os testes mostram.
+
+Smoke test geral (9 telas) 200 neste checkpoint.
+
+PENDENTE (fila restante do pedido, ainda NAO implementado):
+- Botao Cancelar por DIA individual (ja existe geral); botao Duplicar atividade/recorrencia
+- Botao Cancelar geral perguntando "tudo" vs "do dia atual pra frente"
+- Ferias/Ausencia de colaborador (motivo, dias uteis, data retorno) + aparecer no Resumo Diario
+- Filtro da tabela no proprio cabecalho (estilo Excel: esconder valores, marcar varios) — o que foi
+  feito antes (busca livre + ordenacao simples) NAO e' o que o Antonio pediu, precisa refazer
+- Resumo Diario: indicar Inicio/Fim ao lado do nome da empresa; puxar observacoes e % dos
+  colaboradores quando for Fim
+- RDO completo: data errada sendo carregada (pega hoje em vez da data escolhida), lista suspensa de
+  clima, carregar atividades SO' apos escolher a data, trava se houver atrasada/pendente/rascunho,
+  mao de obra pre-preenchida dos colaboradores das atividades, media ponderada da % do dia
+- RDO: fluxo de aprovacao (Encarregado + Admin), export em PDF com fotos/observacoes/cores Serena,
+  Encarregado so' vendo RDO das proprias empresas, campos obrigatorios
+
+### ================== CHECKPOINT 2 (18/09) — Cancelar/Duplicar por dia, Ferias ==================
+CANCELAR/DUPLICAR POR DIA: nova acao "cancelar_dia" (cancela so' 1 dia, com motivo, sem afetar os
+demais); "duplicar" com escopo "atividade_inteira" (nova AtividadeGrupo com mesma duracao/colaboradores/
+planta/predio, dias uteis recalculados a partir da nova data) ou "somente_dia" (vira uma atividade
+avulsa de 1 dia). Botao "Cancelar atividade" geral ganhou o escopo pedido: "toda a atividade" vs
+"somente de hoje em diante" (preserva dias passados intocados). Botoes adicionados na tela de detalhe,
+tanto geral (topo) quanto por linha (Reprogramar/Cancelar/Duplicar lado a lado em cada dia).
+TESTADO: duplicar atividade inteira preserva duracao/colaboradores e gera datas corretas (pulando fds);
+cancelar 1 dia nao afeta os demais; duplicar so' 1 dia cria atividade avulsa; cancelamento geral com
+escopo "a_partir_hoje" preserva dias passados e cancela hoje+futuro corretamente.
+
+FERIAS/AUSENCIA DE COLABORADOR: novo modelo AusenciaColaborador (motivo, data_inicio, dias_uteis,
+data_retorno calculada automaticamente pulando fim de semana — mesma logica de _gerar_dias_uteis).
+Nova rota almox.colaborador_ausencia_nova, formulario na tela de perfil do colaborador (visao do
+Admin), com historico de ausencias e destaque visual pra quem esta ausente HOJE.
+TESTADO: 5 dias uteis a partir de sexta 18/09 -> retorno calculado corretamente pra 25/09 (pulando o
+fim de semana 19-20); esta_ausente_em() confirmado true durante o periodo (incluindo fim de semana
+"dentro" do intervalo) e false no dia de retorno.
+PENDENTE: ainda falta CONECTAR a ausencia ao Resumo Diario (mostrar quem esta ausente naquele dia) —
+fica pra quando o Resumo Diario for reescrito por completo (proximo item da fila).
+
+Smoke test geral (10 telas) 200.
+
+FILA RESTANTE (ainda grande): filtro de tabela estilo Excel (cabecalho clicavel com checkbox de
+valores); Resumo Diario completo (Inicio/Fim + puxar observacoes/% dos colaboradores + mostrar
+ausentes); RDO completo (data correta, clima em lista, trava de pendente/atrasada, mao de obra
+pre-preenchida, media ponderada, aprovacao Encarregado+Admin, export PDF com cores Serena, Encarregado
+so' das proprias empresas, campos obrigatorios).
+
+### ================== CHECKPOINT 3 (18/09) — Filtro Excel + Resumo Diario completo ==================
+FILTRO ESTILO EXCEL (refeito do zero, o anterior nao era isso): cada cabecalho da tabela de
+Programacao agora tem um FUNIL clicavel que abre um dropdown com: campo de busca dentro do
+dropdown, botoes Ordenar A-Z/Z-A, lista de TODOS os valores DISTINTOS daquela coluna com checkbox
+(marcado = visivel), botoes Aplicar/Limpar. Uma linha so fica visivel se NENHUMA das suas colunas
+estiver "escondida" pelo filtro daquela coluna (logica tipo Excel de verdade, nao busca livre).
+Funil fica destacado em coral quando ha filtro ativo naquela coluna.
+TESTADO com jsdom (simulacao real de clique): abrir dropdown de Status -> mostra os 2 valores
+distintos (Aprovada, Pendente) -> desmarcar Pendente -> Aplicar -> so a linha Aprovada fica visivel;
+Limpar -> volta a mostrar as duas. Sem erros de JS.
+
+RESUMO DIARIO COMPLETO:
+  - Selo visivel "INICIO DO DIA" / "FIM DO DIA" ao lado do nome da empresa no cabecalho do resumo
+    (facilita identificar no grupo do WhatsApp qual dos dois e' aquela foto).
+  - Quando tipo=fim: colunas extras na tabela com % de conclusao e Observacoes (puxadas de
+    AtividadeDia.percentual e .descricao_execucao, o que os colaboradores de fato preencheram).
+    Quando tipo=inicio, essas colunas nao aparecem (nao faz sentido mostrar execucao antes do dia
+    comecar).
+  - NOVO: lista "Ausentes hoje" no rodape do resumo, cruzando os colaboradores ATIVOS da empresa
+    selecionada com AusenciaColaborador que cobre a data do resumo (esta_ausente_em).
+TESTADO: resumo de INICIO nao mostra observacoes; resumo de FIM mostra % (75%) e a observacao real
+("Armadilhas verificadas, sem infestacao nova") que o colaborador escreveu ao preencher; colaborador
+ausente naquele dia aparece corretamente com o motivo (Ferias).
+NOTA: a regra das 14h (fim so libera apos 14h SE for hoje) e' a mesma de antes e continua correta —
+confirmado que ela disparava certinho no teste (por isso o 1o teste, feito com data=hoje, redirecionou
+pra Programacao ao inves de mostrar o Fim — nao e' bug, e' a regra funcionando; refeito o teste com
+data=ontem pra validar o conteudo em si).
+
+Smoke test geral (11 telas) 200.
+
+FILA RESTANTE: RDO completo — e' o item mais substancial que falta (data correta ao inves de hoje,
+lista suspensa de clima, travar se houver atividade atrasada/pendente/rascunho no dia, carregar
+atividades so' apos escolher a data, mao de obra pre-preenchida dos colaboradores das atividades do
+dia, media ponderada da % executada, fluxo de aprovacao Encarregado+Admin com status pendente,
+exportar PDF com fotos/observacoes/cores Serena, Encarregado so' das proprias empresas, campos
+obrigatorios).

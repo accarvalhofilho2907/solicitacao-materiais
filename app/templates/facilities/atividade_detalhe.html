@@ -78,14 +78,32 @@
 
 {% if eh_gestor and not grupo.motivo_cancelamento %}
 <div class="card mb-3"><div class="card-body">
-  <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#formCancelar">Cancelar atividade</button>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#formCancelar">Cancelar atividade</button>
+    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#formDuplicar">Duplicar atividade</button>
+  </div>
   <div class="collapse mt-2" id="formCancelar">
-    <form method="post" class="border rounded p-2" onsubmit="return confirm('Cancelar esta atividade inteira?')">
+    <form method="post" class="border rounded p-2" onsubmit="return confirm('Cancelar esta atividade?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="acao" value="cancelar">
+      <label class="form-label small">O que cancelar?</label>
+      <select name="escopo_cancelamento" class="form-select form-select-sm mb-2">
+        <option value="tudo">Toda a atividade (todos os dias não aprovados)</option>
+        <option value="a_partir_hoje">Somente de hoje ({{ hoje.strftime('%d/%m') }}) em diante</option>
+      </select>
       <label class="form-label small">Motivo do cancelamento (obrigatório)</label>
       <textarea name="motivo_cancelamento" class="form-control form-control-sm mb-2" required></textarea>
       <button class="btn btn-sm btn-danger">Confirmar cancelamento</button>
+    </form>
+  </div>
+  <div class="collapse mt-2" id="formDuplicar">
+    <form method="post" class="border rounded p-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="duplicar">
+      <input type="hidden" name="escopo_duplicar" value="atividade_inteira">
+      <label class="form-label small">Nova data de início da cópia (mesma duração: {{ grupo.duracao_dias_uteis }} dia(s) útil(eis), mesmos colaboradores)</label>
+      <input type="date" name="nova_data_duplicar" class="form-control form-control-sm mb-2" required>
+      <button class="btn btn-sm btn-primary">Duplicar</button>
     </form>
   </div>
 </div></div>
@@ -118,6 +136,10 @@
         {% endif %}
         {% if eh_gestor and d.status not in ('APROVADA', 'CANCELADA') %}
         <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#reprog{{ d.id }}">Reprogramar</button>
+        <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#canceldia{{ d.id }}">Cancelar</button>
+        {% endif %}
+        {% if eh_gestor %}
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#dupdia{{ d.id }}">Duplicar</button>
         {% endif %}
       </td>
     </tr>
@@ -137,6 +159,29 @@
             <input name="motivo" class="form-control form-control-sm" required></div>
         </div>
         <button class="btn btn-sm btn-primary mt-2">Confirmar reprogramação</button>
+      </form>
+    </td></tr>
+    <tr class="collapse" id="canceldia{{ d.id }}"><td colspan="7">
+      <form method="post" class="border rounded p-2" onsubmit="return confirm('Cancelar somente o dia {{ d.ordem }} desta atividade?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="acao" value="cancelar_dia">
+        <input type="hidden" name="dia_id" value="{{ d.id }}">
+        <label class="form-label small">Motivo do cancelamento deste dia (obrigatório)</label>
+        <input name="motivo_dia" class="form-control form-control-sm mb-2" required>
+        <button class="btn btn-sm btn-danger">Confirmar (só este dia)</button>
+      </form>
+    </td></tr>
+    {% endif %}
+    {% if eh_gestor %}
+    <tr class="collapse" id="dupdia{{ d.id }}"><td colspan="7">
+      <form method="post" class="border rounded p-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="acao" value="duplicar">
+        <input type="hidden" name="escopo_duplicar" value="somente_dia">
+        <input type="hidden" name="dia_ref_id" value="{{ d.id }}">
+        <label class="form-label small">Nova data para a cópia deste dia (vira uma atividade avulsa de 1 dia)</label>
+        <input type="date" name="nova_data_duplicar" class="form-control form-control-sm mb-2" required>
+        <button class="btn btn-sm btn-primary">Duplicar este dia</button>
       </form>
     </td></tr>
     {% endif %}

@@ -20,6 +20,12 @@
       <option {{ 'selected' if r.condicao_climatica == opt }}>{{ opt }}</option>
       {% endfor %}
     </select>
+    <div class="row g-2 mb-2">
+      <div class="col-md-6"><label class="form-label small">Horário de início</label>
+        <input type="time" name="horario_inicio" class="form-control" value="{{ r.horario_inicio or '07:00' }}"></div>
+      <div class="col-md-6"><label class="form-label small">Horário de término</label>
+        <input type="time" name="horario_termino" class="form-control" value="{{ r.horario_termino or '16:48' }}"></div>
+    </div>
     <label class="form-label small">Mão de obra presente</label>
     <textarea name="mao_de_obra_texto" class="form-control mb-2" rows="3">{{ r.mao_de_obra_texto or '' }}</textarea>
     <label class="form-label small">Equipamentos usados no dia</label>

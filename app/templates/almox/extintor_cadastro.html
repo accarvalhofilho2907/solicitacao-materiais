@@ -12,7 +12,7 @@
     <select class="form-select" name="planta_id" required>
       {% for p in plantas_disp %}<option value="{{ p.id }}" {{ 'selected' if planta_padrao_cad and p.id==planta_padrao_cad.id }}>{{ p.nome }}</option>{% endfor %}
     </select></div>
-  <div class="col-6 col-md-3"><label class="form-label small">Prédio</label>
+  <div class="col-6 col-md-3"><label class="form-label small">Edificação</label>
     <input class="form-control" name="predio" list="l_predio" placeholder="Ex.: DELTA6">
     <datalist id="l_predio">{% for v in sugestoes.predio %}<option value="{{ v }}">{% endfor %}</datalist></div>
   <div class="col-6 col-md-5"><label class="form-label small">Local *</label>

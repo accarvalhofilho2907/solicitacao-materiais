@@ -127,12 +127,16 @@ def _grade(linhas):
 def _baixar_foto(url, max_lado=1400, quality=85):
     """Baixa uma foto (URL do Cloudinary ou caminho relativo /uploads/...) e devolve os
     bytes já normalizados. Se falhar (foto removida, sem internet, etc.), devolve None —
-    o PDF é gerado sem essa foto em vez de quebrar."""
+    o PDF é gerado sem essa foto em vez de quebrar.
+    [fix] Antes, qualquer erro (timeout, DNS, certificado, imagem corrompida) era engolido
+    em silêncio, sem nenhum log — impossível diagnosticar por que a foto não aparecia no
+    PDF em produção. Agora registra o erro real no logger do Flask."""
     if not _TEM_PIL or not url:
         return None
     try:
         if url.startswith("http"):
-            with urllib.request.urlopen(url, timeout=8) as resp:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (SIGA-RDO-PDF)"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 raw = resp.read()
         else:
             return None  # caminho local relativo — sem acesso direto ao disco daqui
@@ -145,7 +149,12 @@ def _baixar_foto(url, max_lado=1400, quality=85):
         out = BytesIO()
         im.save(out, format="JPEG", quality=quality, optimize=True)
         return out.getvalue()
-    except Exception:
+    except Exception as e:
+        try:
+            from flask import current_app
+            current_app.logger.warning("RDO PDF: falha ao baixar/processar foto %s — %s: %s", url, type(e).__name__, e)
+        except Exception:
+            pass  # fora de um contexto de app (ex.: teste isolado) — não quebra por causa do log
         return None
 
 
@@ -180,9 +189,9 @@ def gerar_pdf_rdo(rdo):
     story.append(_grade([
         [_campo("Data", rdo.data.strftime("%d/%m/%Y")), _campo("Planta", rdo.planta.nome if rdo.planta else "—"),
          _campo("Condição climática", rdo.condicao_climatica)],
-        [_campo("% média executada no dia", f"{rdo.percentual_medio}%" if rdo.percentual_medio is not None else "—"),
-         _campo("Aprovado (Encarregado)", "Sim" if rdo.aprovado_encarregado_em else "Não"),
-         _campo("Aprovado (Admin)", "Sim" if rdo.aprovado_admin_em else "Não")],
+        [_campo("Horário", f"{rdo.horario_inicio or '—'} às {rdo.horario_termino or '—'}"),
+         _campo("% média executada no dia", f"{rdo.percentual_medio}%" if rdo.percentual_medio is not None else "—"),
+         _campo("Aprovado (Encarregado / Admin)", f"{'Sim' if rdo.aprovado_encarregado_em else 'Não'} / {'Sim' if rdo.aprovado_admin_em else 'Não'}")],
     ]))
     story.append(Spacer(1, 8))
 
@@ -216,8 +225,14 @@ def gerar_pdf_rdo(rdo):
     for grupo in rdo.atividades:
         dia_do_grupo = next((d for d in grupo.dias if d.data == rdo.data), None)
         nomes = ", ".join(ac.colaborador.nome for ac in grupo.colaboradores if ac.colaborador)
+        if grupo.eh_fixa:
+            valor_progresso = "fixa"
+        elif dia_do_grupo and dia_do_grupo.dias_restantes is not None:
+            valor_progresso = f"{dia_do_grupo.dias_restantes} dia(s) restante(s)"
+        else:
+            valor_progresso = "—"
         linha_titulo = Table([[Paragraph(grupo.titulo, _ATV_TIT),
-                              Paragraph(f"{dia_do_grupo.percentual}%" if dia_do_grupo and dia_do_grupo.percentual is not None else "—", _ATV_TIT)]],
+                              Paragraph(valor_progresso, _ATV_TIT)]],
                              colWidths=[148 * mm, 30 * mm])
         linha_titulo.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), AREIA),
                                           ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),

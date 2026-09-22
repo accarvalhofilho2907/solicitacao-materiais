@@ -1465,7 +1465,7 @@ def pendencias_pdf():
     total = 0
     for g in grupos:
         els.append(Paragraph(f"{g['titulo']} ({len(g['itens'])})", st["Heading3"]))
-        dados = [["Código", "Prédio · Local", "Tipo/Carga · Classe", "Validade", "TH"]]
+        dados = [["Código", "Edificação · Local", "Tipo/Carga · Classe", "Validade", "TH"]]
         for e in g["itens"]:
             total += 1
             loc = " · ".join([x for x in [e.predio, e.local] if x])
@@ -1685,7 +1685,7 @@ def extintores_pdf():
                             leftMargin=10 * mm, rightMargin=10 * mm)
     styles = getSampleStyleSheet()
     elems = [Paragraph("Extintores — " + (", ".join(predios_sel) if predios_sel else "Todos os prédios"), styles["Title"]), Spacer(1, 6)]
-    data = [["Código", "Prédio", "Local", "Tipo/Carga", "Classe", "Validade", "TH", "Situação"]]
+    data = [["Código", "Edificação", "Local", "Tipo/Carga", "Classe", "Validade", "TH", "Situação"]]
     resumo = {}
     for e in consulta.order_by(Extintor.predio, Extintor.local, Extintor.codigo).all():
         if predios_sel and e.predio not in predios_sel:

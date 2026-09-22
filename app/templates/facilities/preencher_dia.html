@@ -9,55 +9,73 @@
 
 {% for d in atividades %}
 <div class="card mb-3"><div class="card-body">
-  <h6 class="mb-1">{{ d.grupo.titulo }} <span class="text-muted small">— dia {{ d.ordem }} de {{ d.grupo.duracao_dias_uteis }} (meta de referência: {{ d.meta_percentual }}%)</span></h6>
+  <h6 class="mb-1">{{ d.grupo.titulo }}
+    <span class="text-muted small">— dia {{ d.ordem }} de {{ d.grupo.duracao_dias_uteis }}</span>
+    {% if d.grupo.eh_fixa %}<span class="badge bg-secondary">fixa</span>{% endif %}
+  </h6>
   <p class="text-muted small mb-3">{{ d.grupo.planta.nome if d.grupo.planta else '—' }}{% if d.grupo.predio %} · {{ d.grupo.predio.nome }}{% endif %} · Responsável: {{ d.grupo.responsavel.nome if d.grupo.responsavel else '—' }}</p>
 
   {% if d.status == 'APROVADA' %}
-  <div class="alert alert-success small py-2">Já aprovado — % registrada: {{ d.percentual }}%.</div>
+  <div class="alert alert-success small py-2">
+    Já aprovado.
+    {% if not d.grupo.eh_fixa %} Dias restantes informados: {{ d.dias_restantes if d.dias_restantes is not none else '—' }}.{% endif %}
+  </div>
+
   {% elif d.status == 'AGUARDANDO_APROVACAO' %}
   <div class="alert alert-warning small py-2">
     <b>Já preenchido — aguardando aprovação do Encarregado de Campo.</b><br>
-    % informada: {{ d.percentual }}%{% if d.descricao_execucao %} · {{ d.descricao_execucao }}{% endif %}
+    {% if not d.grupo.eh_fixa %}Dias restantes informados: {{ d.dias_restantes if d.dias_restantes is not none else '—' }}{% endif %}
+    {% if d.descricao_execucao %} · {{ d.descricao_execucao }}{% endif %}
   </div>
   <button class="btn btn-sm btn-outline-secondary" type="button" onclick="document.getElementById('editForm{{ d.id }}').classList.toggle('d-none')">Editar</button>
   <div id="editForm{{ d.id }}" class="d-none mt-2">
   <form method="post" action="{{ url_for('facilities.preencher_dia', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="dia_id" value="{{ d.id }}">
-    <input type="hidden" class="pct-anterior" value="{{ pct_anterior_por_dia.get(d.id) if pct_anterior_por_dia.get(d.id) is not none else '' }}">
+    {% if not d.grupo.eh_fixa %}
+    <input type="hidden" class="dias-restantes-esperado" value="{{ dias_restantes_anterior_por_dia.get(d.id) if dias_restantes_anterior_por_dia.get(d.id) is not none else '' }}">
     <div class="row g-2">
-      <div class="col-md-3"><label class="form-label small">% de conclusão</label>
-        <input type="number" name="percentual" class="form-control inp-pct" min="0" max="100" value="{{ d.percentual }}" required></div>
+      <div class="col-md-4"><label class="form-label small">Quantos dias ainda faltam para concluir?</label>
+        <input type="number" name="dias_restantes" class="form-control inp-dias-restantes" min="0" value="{{ d.dias_restantes }}" required></div>
     </div>
+    {% if dias_restantes_anterior_por_dia.get(d.id) is not none %}
+    <p class="text-muted small mt-1 mb-0">Esperado, segundo o relato anterior: {{ dias_restantes_anterior_por_dia.get(d.id) }} dia(s).</p>
+    {% endif %}
     <div class="justif-box border border-danger rounded p-2 mt-2" style="display:none">
-      <label class="form-label small text-danger">⚠️ Essa % é menor que a anterior. Justifique:</label>
+      <label class="form-label small text-danger">⚠️ Precisa de mais dias do que o previsto. Justifique:</label>
       <textarea name="justificativa" class="form-control" rows="2"></textarea>
     </div>
-    <label class="form-label small mt-2">Descrição do que foi feito</label>
-    <textarea name="descricao" class="form-control" rows="2">{{ d.descricao_execucao or '' }}</textarea>
+    {% endif %}
+    <label class="form-label small mt-2">Descrição do que foi feito *</label>
+    <textarea name="descricao" class="form-control" rows="2" required>{{ d.descricao_execucao or '' }}</textarea>
     <label class="form-label small mt-2">Fotos (máx. 4)</label>
     <input type="file" name="fotos" class="form-control" accept="image/*" multiple>
     <button class="btn btn-primary mt-3">Salvar edição</button>
   </form>
   </div>
+
   {% else %}
   <form method="post" action="{{ url_for('facilities.preencher_dia', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="dia_id" value="{{ d.id }}">
-    <input type="hidden" class="pct-anterior" value="{{ pct_anterior_por_dia.get(d.id) if pct_anterior_por_dia.get(d.id) is not none else '' }}">
+    {% if not d.grupo.eh_fixa %}
+    <input type="hidden" class="dias-restantes-esperado" value="{{ dias_restantes_anterior_por_dia.get(d.id) if dias_restantes_anterior_por_dia.get(d.id) is not none else '' }}">
     <div class="row g-2">
-      <div class="col-md-3"><label class="form-label small">% de conclusão de hoje</label>
-        <input type="number" name="percentual" class="form-control inp-pct" min="0" max="100" required></div>
+      <div class="col-md-4"><label class="form-label small">Quantos dias ainda faltam para concluir?</label>
+        <input type="number" name="dias_restantes" class="form-control inp-dias-restantes" min="0" required></div>
     </div>
-    {% if pct_anterior_por_dia.get(d.id) is not none %}
-    <p class="text-muted small mt-1 mb-0">% do dia anterior: {{ pct_anterior_por_dia.get(d.id) }}%</p>
+    {% if dias_restantes_anterior_por_dia.get(d.id) is not none %}
+    <p class="text-muted small mt-1 mb-0">Esperado, segundo o relato anterior: {{ dias_restantes_anterior_por_dia.get(d.id) }} dia(s).</p>
     {% endif %}
     <div class="justif-box border border-danger rounded p-2 mt-2" style="display:none">
-      <label class="form-label small text-danger">⚠️ Essa % é menor que a anterior. Justifique:</label>
+      <label class="form-label small text-danger">⚠️ Precisa de mais dias do que o previsto. Justifique:</label>
       <textarea name="justificativa" class="form-control" rows="2"></textarea>
     </div>
-    <label class="form-label small mt-2">Descrição do que foi feito</label>
-    <textarea name="descricao" class="form-control" rows="2"></textarea>
+    {% else %}
+    <p class="text-muted small">Atividade fixa: registre o que foi feito e anexe fotos, sem controle de progresso.</p>
+    {% endif %}
+    <label class="form-label small mt-2">Descrição do que foi feito *</label>
+    <textarea name="descricao" class="form-control" rows="2" required></textarea>
     <label class="form-label small mt-2">Fotos de hoje (máx. 4)</label>
     <input type="file" name="fotos" class="form-control" accept="image/*" multiple>
     <button class="btn btn-primary mt-3">Salvar</button>
@@ -82,17 +100,17 @@
 {% endif %}
 
 <script>
-document.querySelectorAll('.inp-pct').forEach(function(inp){
+document.querySelectorAll('.inp-dias-restantes').forEach(function(inp){
   inp.addEventListener('input', function(){
     var form = this.closest('form');
     var box = form.querySelector('.justif-box');
-    var pctAnteriorInp = form.querySelector('.pct-anterior');
-    var pctAnterior = pctAnteriorInp.value !== '' ? parseFloat(pctAnteriorInp.value) : null;
-    var novaPct = parseFloat(this.value);
-    // [item 4 fix] só mostra se REALMENTE existe um valor anterior E a nova % é menor —
-    // antes mostrava sempre, mesmo na primeira vez preenchendo (sem nada anterior).
-    var ehQueda = (pctAnterior !== null) && !isNaN(novaPct) && (novaPct < pctAnterior);
-    box.style.display = ehQueda ? 'block' : 'none';
+    var espInp = form.querySelector('.dias-restantes-esperado');
+    var esperado = espInp && espInp.value !== '' ? parseInt(espInp.value) : null;
+    var novoValor = parseInt(this.value);
+    // [19/09] so' mostra se ha um "esperado" real (nao e' o 1o dia) E o novo valor for MAIOR
+    // (a atividade cresceu alem do previsto) — mesma logica da regra do backend.
+    var cresceu = (esperado !== null) && !isNaN(novoValor) && (novoValor > esperado);
+    box.style.display = cresceu ? 'block' : 'none';
   });
 });
 </script>

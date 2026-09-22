@@ -38,7 +38,7 @@
     <table style="width:100%;font-size:12px">
       <tr style="background:#FF5246;color:#fff">
         <th style="padding:6px">Local</th><th style="padding:6px">Título</th><th style="padding:6px">Colaboradores</th>
-        {% if tipo == 'fim' %}<th style="padding:6px">%</th><th style="padding:6px">Observações</th>{% endif %}
+        {% if tipo == 'fim' %}<th style="padding:6px">Progresso</th><th style="padding:6px">Observações</th>{% endif %}
       </tr>
       {% for l in linhas %}
       <tr>
@@ -46,10 +46,7 @@
         <td style="padding:6px;border-bottom:1px solid #eee">{{ l.titulo }}</td>
         <td style="padding:6px;border-bottom:1px solid #eee">{{ l.colaboradores }}</td>
         {% if tipo == 'fim' %}
-        <td style="padding:6px;border-bottom:1px solid #eee">
-          {{ l.percentual }}{% if l.percentual != '—' %}%{% endif %}
-          {% if l.meta is defined %}<span style="color:#999;font-size:10px"> (meta do dia: {{ l.meta }}%)</span>{% endif %}
-        </td>
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.progresso }}</td>
         <td style="padding:6px;border-bottom:1px solid #eee">{{ l.observacoes }}</td>
         {% endif %}
       </tr>

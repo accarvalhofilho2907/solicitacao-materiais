@@ -19,7 +19,7 @@
   <div class="col-6 col-md-3">
     <div class="dropdown">
       <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
-        Prédios{% if predios_sel %} ({{ predios_sel|length }}){% endif %}
+        Edificações{% if predios_sel %} ({{ predios_sel|length }}){% endif %}
       </button>
       <ul class="dropdown-menu p-2" style="max-height:280px;overflow:auto">
         {% for p in predios %}
@@ -88,7 +88,7 @@
 <table class="table table-sm table-hover mb-0 align-middle" id="tabelaExt">
   <thead class="table-light"><tr>
     <th style="width:34px"><input type="checkbox" id="ckAll" checked onclick="marcarTodos(this)"></th>
-    <th>Código</th><th>Prédio</th><th>Local</th><th>Tipo/Carga · Classe</th><th>Validade</th><th>TH</th><th>Situação</th>
+    <th>Código</th><th>Edificação</th><th>Local</th><th>Tipo/Carga · Classe</th><th>Validade</th><th>TH</th><th>Situação</th>
   </tr></thead>
   <tbody>
     {% for e, k, lbl, cls in linhas %}

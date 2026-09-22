@@ -17,7 +17,7 @@
   <div class="collapse show" id="grp{{ loop.index }}">
   <div class="table-responsive">
   <table class="table table-sm table-hover mb-0 align-middle">
-    <thead class="table-light"><tr><th>Código</th><th>Prédio</th><th>Local</th><th>Tipo/Carga · Classe</th><th>Validade</th><th>TH</th><th></th></tr></thead>
+    <thead class="table-light"><tr><th>Código</th><th>Edificação</th><th>Local</th><th>Tipo/Carga · Classe</th><th>Validade</th><th>TH</th><th></th></tr></thead>
     <tbody>
       {% for e in g.itens %}
       <tr>
@@ -44,7 +44,7 @@
 
 <div class="card mb-4"><div class="card-header fw-bold">Abertas ({{ abertas|length }})</div><div class="table-responsive">
 <table class="table table-sm table-hover mb-0 align-middle">
-  <thead class="table-light"><tr><th>Código</th><th>Prédio</th><th>Local</th><th>Aberta em</th><th>Por</th><th></th></tr></thead>
+  <thead class="table-light"><tr><th>Código</th><th>Edificação</th><th>Local</th><th>Aberta em</th><th>Por</th><th></th></tr></thead>
   <tbody>
     {% for p in abertas %}
     <tr>

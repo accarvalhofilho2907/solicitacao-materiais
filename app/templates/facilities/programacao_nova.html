@@ -12,6 +12,17 @@
       <div class="col-md-4"><label class="form-label small">Data de início</label><input type="date" name="data_inicio" class="form-control"></div>
     </div>
     <div class="row g-2 mt-1">
+      <div class="col-md-12">
+        <label class="form-label small">Tipo de atividade</label>
+        <div class="d-flex gap-3">
+          <div class="form-check"><input class="form-check-input" type="radio" name="tipo_atividade" id="tipoNormal" value="NORMAL" checked>
+            <label class="form-check-label small" for="tipoNormal"><b>Normal</b> — o colaborador reporta quantos dias faltam pra terminar</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="tipo_atividade" id="tipoFixa" value="FIXA">
+            <label class="form-check-label small" for="tipoFixa"><b>Fixa</b> — só fotos + descrição por dia, sem controle de progresso</label></div>
+        </div>
+      </div>
+    </div>
+    <div class="row g-2 mt-1">
       <div class="col-md-3"><label class="form-label small">Duração — unidade</label>
         <select name="unidade_duracao" class="form-select" id="selUnidade" onchange="atualizarUnidade()">
           <option value="dias">Dias (manual)</option>
@@ -37,7 +48,7 @@
           <option value="">—</option>
           {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
         </select></div>
-      <div class="col-md-6"><label class="form-label small">Prédio</label>
+      <div class="col-md-6"><label class="form-label small">Edificação</label>
         <select name="predio_id" class="form-select">
           <option value="">—</option>
           {% for pr in predios_disp %}<option value="{{ pr.id }}">{{ pr.nome }}</option>{% endfor %}

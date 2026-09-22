@@ -36,7 +36,7 @@
           <option value="">—</option>
           {% for p in plantas_disp %}<option value="{{ p.id }}" {{ 'selected' if grupo.planta_id==p.id }}>{{ p.nome }}</option>{% endfor %}
         </select></div>
-      <div class="col-md-6"><label class="form-label small">Prédio</label>
+      <div class="col-md-6"><label class="form-label small">Edificação</label>
         <select name="predio_id" class="form-select" required>
           <option value="">—</option>
           {% for pr in predios_disp %}<option value="{{ pr.id }}" {{ 'selected' if grupo.predio_id==pr.id }}>{{ pr.nome }}</option>{% endfor %}

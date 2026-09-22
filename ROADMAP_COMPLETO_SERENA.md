@@ -3565,3 +3565,228 @@ Smoke test geral (9 telas) 200.
 Todos os pontos reportados pelo Antonio nesta rodada foram investigados, corrigidos (quando eram
 bugs reais) ou confirmados como ja funcionando (item 4 — ferias/ausencia). Pronto para revisao e
 deploy.
+
+### ================== MUDANCA DE ARQUITETURA (19/09) — "DIAS RESTANTES" SUBSTITUI "% DE META" ==================
+Antonio pediu uma mudanca de logica central: em vez do colaborador informar uma % de conclusao (que
+era comparada contra uma meta calculada por dia = ordem/duracao*100), ele agora informa QUANTOS DIAS
+AINDA FALTAM pra terminar a atividade. O sistema computa/ajusta a duracao total a partir disso.
+
+ESPECIFICACAO CONFIRMADA COM ANTONIO (fechada, pronta pra implementar):
+
+1) CAMPO NOVO NO REPORT DO COLABORADOR: "quantos dias faltam para concluir" (numero inteiro, >= 0),
+   SUBSTITUINDO por completo o campo de %, que DEIXA DE EXISTIR na tela de preenchimento. Descricao/
+   observacoes continua existindo, mas agora e' OBRIGATORIA (antes era opcional).
+
+2) REGRA DE JUSTIFICATIVA (substitui a antiga "% menor que ontem"): a cada dia, o sistema compara o
+   "dias_restantes" reportado HOJE contra o que ERA ESPERADO com base no relato do dia ANTERIOR
+   (dia_anterior.dias_restantes - 1, ja que um dia se passou). Se o novo valor for MAIOR que o
+   esperado (ou seja, a atividade cresceu, precisa de mais tempo que o previsto no relato anterior),
+   exige justificativa obrigatoria. Se for igual ou menor (dentro do esperado ou adiantou), nao exige.
+   NAO se aplica no PRIMEIRO dia da atividade (nao ha "dia anterior" pra comparar).
+   Exemplo dado pelo Antonio: atividade estimada em 3 dias. Dia 1: relata "faltam 2" (bate com o
+   esperado: 3-1=2) -> sem justificativa. Dia 2: relata "faltam 2" de novo (esperado seria 2-1=1,
+   mas ele disse 2 -> cresceu 1 dia) -> EXIGE justificativa.
+
+3) GERACAO DE NOVO DIA: quando o relato indica que a atividade vai durar mais do que as linhas
+   (AtividadeDia) ja existentes cobrem, o sistema GERA uma linha nova (proximo dia util, pulando fim
+   de semana/feriados, mesma logica de _gerar_dias_uteis ja usada). Antonio disse "tanto faz how,
+   desde que fique evidente pro Encarregado" — ou seja, a duracao_dias_uteis da AtividadeGrupo pode
+   ser atualizada pra refletir o novo total, e o novo AtividadeDia e' criado normalmente.
+
+4) SEM MAIS META POR DIA: meta_percentual DEIXA DE SER USADA (confirmado explicitamente por Antonio:
+   "não haverá mais meta, como falei, é dias"). O campo pode continuar existindo no banco por
+   compatibilidade/historico, mas a logica nova NAO calcula nem usa meta.
+
+5) VISIBILIDADE PRO ENCARREGADO: quando uma atividade teve um dia extra gerado (cresceu alem do
+   programado), isso precisa aparecer com destaque na tela de Aprovacao — Encarregado precisa ver
+   claramente "esta atividade cresceu X dia(s) alem do previsto" + a justificativa, antes de aprovar.
+
+6) FLUXO DE APROVACAO ESPECIAL QUANDO CRESCE: ao aprovar um dia que gerou um NOVO dia extra, a tela
+   deve abrir COMO SE FOSSE A TELA DE CRIAR ATIVIDADE (mesmo formulario de /programacao/nova, ou
+   equivalente) — permitindo o Encarregado revisar/alterar colaboradores, planta, predio, etc. da
+   nova linha antes de confirmar. Ou seja, o dia extra nasce num estado "rascunho" que o Encarregado
+   completa/confirma (parecido com o fluxo de atividade INCOMPLETA que ja existe).
+
+7) CONFLITO DE AGENDA AUTOMATICO: ao gerar o novo dia extra, se algum colaborador da equipe ja tem
+   outra atividade programada pra essa nova data, DISPARA A MESMA LOGICA DE CONFLITO JA EXISTENTE
+   (manter nas duas / retirar da anterior / reprogramar a outra pra frente) — confirmado por Antonio
+   que e' pra reaproveitar exatamente o que ja existe, so' que disparado automaticamente nesse
+   momento (nao so' na criacao manual de atividade).
+
+8) IMPACTO NO RDO: a "media ponderada de % executada no dia" (que usava percentual*meta_percentual)
+   PRECISA SER REFEITA usando dias_restantes. Antonio deu a formula: para cada atividade do dia,
+   progresso_estimado = 1 - (dias_restantes / dias_totais_estimados_da_atividade) — e a media do dia
+   e' calculada em cima desses progresso_estimado de cada atividade (Antonio disse "algo parecido",
+   entao a formula exata de ponderacao entre atividades ainda pode precisar de ajuste fino na
+   implementacao, mas a base e' essa: 1 - dias_restantes/dias_totais).
+
+9) IMPACTO NO RESUMO DIARIO: hoje mostra "% + meta" quando tipo=fim. Precisa virar "dias restantes"
+   (e possivelmente o progresso estimado calculado da formula acima) em vez de %.
+
+9) [ainda nesta mensagem] PRÉDIO -> EDIFICAÇÃO: renomear em TODO o sistema (models, rotas, templates,
+   menu, RDO/PDF) — cosmetico/rotulo, sem mudanca de logica. O nome tecnico da tabela/coluna Predio
+   pode continuar como esta (evita quebrar FK/migracao), mas TODOS OS RÓTULOS visiveis ao usuario
+   devem dizer "Edificação".
+
+10) BUG REPORTADO: RDO nao esta puxando as fotos das atividades no PDF, mesmo com o fix de linkURL
+    da leva anterior. PRECISA INVESTIGAR DE NOVO — meu teste anterior so validou o link isoladamente
+    (sem depender de rede), nao o fluxo real fim-a-fim com fotos_json de verdade vindas de uma
+    AtividadeDia associada a um RDO. Suspeita: pode ser que dia_do_grupo (o AtividadeDia buscado
+    dentro do RDO) nao esteja encontrando a foto certa, ou que fotos_json esteja vindo vazio/None em
+    algum caso que eu nao testei antes.
+
+STATUS: especificacao fechada com Antonio via perguntas de esclarecimento. NADA AINDA IMPLEMENTADO —
+proxima etapa e' comecar a construir isso com cuidado, dado o tamanho da mudanca (modelo de dados,
+rotas de preenchimento, aprovacao, RDO, resumo diario, e o renomeio Predio->Edificacao em paralelo).
+
+### ================== CHECKPOINT (19/09) — Diagnostico de fotos + renomeio Edificacao ==================
+[Fotos no PDF do RDO - investigacao] Testei de ponta a ponta com mock de download: a logica de
+associacao (buscar dia_do_grupo pela data, ler fotos_json, montar o Flowable) esta CORRETA — quando
+o download da foto funciona, a foto aparece certinho no PDF. Isso descarta bug de logica.
+CORRECOES DE ROBUSTEZ feitas mesmo assim: (1) _baixar_foto() agora REGISTRA o erro real no logger do
+Flask em vez de engolir silenciosamente qualquer excecao — antes era impossivel saber SE a causa era
+timeout, DNS, certificado, ou imagem corrompida; (2) timeout aumentado de 8s pra 15s (fotos grandes
+podem demorar mais, principalmente se Cloudinary aplicar alguma transformacao antes de servir);
+(3) adicionado User-Agent no request (alguns servidores bloqueiam requests sem User-Agent).
+NOVA ROTA DE DIAGNOSTICO (temporaria, so' Admin/Master): /facilities/rdo/<id>/diagnostico-fotos —
+retorna em JSON, pra cada atividade do RDO: se o dia foi encontrado, o fotos_json bruto, e o
+resultado REAL de tentar baixar cada foto (sucesso/falha e o motivo, via log). ANTONIO PRECISA
+ACESSAR essa rota num RDO real com fotos apos o proximo deploy, pra descobrirmos a causa exata (rede
+bloqueada, URL invalida, etc.) — os logs do Render tambem vao mostrar o erro detalhado agora.
+Essa rota deve ser REMOVIDA depois de identificado o problema real.
+
+[PRÉDIO -> EDIFICAÇÃO] Renomeado em TODOS os rotulos visiveis ao usuario: menu (Cadastro > Plantas,
+Armazens e Localizadores > Edificacoes), tela de cadastro (predios.html), formulario de nova
+atividade, tabela de Programacao, tela de detalhe da atividade, telas de Extintores (cadastro, ficha,
+lista, pendencias de etiqueta), PDFs de etiqueta de extintor. NAO alterado (proposital, evita quebrar
+FK/migracao): nome tecnico da classe/tabela Predio, coluna predio_id, nomes de variaveis em
+templates/rotas (predio_id, e.predio, predios_disp, etc.) — so' o TEXTO que o usuario ve mudou.
+Confirmado com teste real: tela de Edificacoes carrega, mostra "Edificações" corretamente, sem
+nenhuma sobra do rotulo antigo "Prédio(s)" na tela.
+
+Smoke test geral (6 telas relevantes) 200.
+
+PROXIMO PASSO (o mais complexo desta leva): implementar a mudanca de arquitetura "dias restantes"
+substituindo "% de meta" — especificacao ja fechada e registrada na entrada anterior deste roadmap.
+
+### ================== NOVOS ITENS ADICIONADOS A ESPECIFICACAO (19/09) ==================
+
+A) HORARIO DE INICIO/TERMINO NO RDO: novo par de campos no RDO (nao na atividade individual — e' um
+   horario GERAL do expediente daquele dia). Padrao 07:00 as 16:48, editavel por quem gera o RDO.
+
+B) "ATIVIDADE FIXA" — novo TIPO de atividade a escolher na criacao (em /programacao/nova), ao lado da
+   atividade normal (a que usa "dias restantes"). Confirmado com Antonio:
+   - Ainda tem duracao em dias UTEIS definida na criacao (1, 2, 3... dias), igual a atividade normal.
+   - NAO tem NENHUMA metrica de progresso — nem % antiga, nem "dias restantes" novo. O relatorio
+     diario do colaborador pra uma Atividade Fixa e' SO: fotos (ate 4, igual as demais) + descricao
+     livre do que aconteceu naquele dia (campo de texto, sem trava de tamanho ou obrigatoriedade
+     especial alem do que ja existe). Sem % media no RDO pra essas atividades (elas ficam de fora do
+     calculo de progresso ponderado, ou entram com peso zero — a definir na implementacao).
+   - Nao dispara a logica de "cresceu alem do previsto" nem gera dias extra automaticamente — ela so'
+     roda pelos dias fixos programados desde o inicio, do jeito que ja era antes da mudanca de "dias
+     restantes" ter sido pedida.
+   IMPACTO NO MODELO: AtividadeGrupo precisa de um campo tipo (NORMAL | FIXA). AtividadeDia associado a
+   uma atividade FIXA nao usa percentual nem dias_restantes — so' fotos_json e descricao_execucao.
+
+C) VISIBILIDADE NA APROVACAO: ao aprovar, o Encarregado deve ver quantos COLABORADORES estavam
+   naquela atividade/dia (contagem simples de AtividadeColaborador daquele grupo), alem do que ja
+   aparece hoje (percentual/dias restantes, justificativa, fotos).
+
+Isso se soma a especificacao ja fechada anteriormente (dias restantes substituindo % de meta, para a
+atividade NORMAL). Nada disso foi implementado ainda — registrando antes de comecar a construir.
+
+### ================== NUCLEO DA MUDANCA "DIAS RESTANTES" IMPLEMENTADO E TESTADO (19/09) ==================
+Implementado o coracao da mudanca de arquitetura (modelo de dados + criacao + preenchimento):
+
+MODELO: AtividadeGrupo ganhou campo tipo (NORMAL|FIXA) + property eh_fixa. AtividadeDia ganhou
+dias_restantes (o que o colaborador reporta), dias_restantes_esperado (o que seria esperado, pra
+comparar), gerado_por_crescimento (marca se a linha nasceu de um report que precisou de mais dias).
+meta_percentual e percentual MANTIDOS no banco (legado/historico), mas a logica NOVA nao os usa mais
+pra atividade NORMAL. RelatorioDiarioObra ganhou horario_inicio/horario_termino (default 07:00/16:48).
+
+CRIACAO DE ATIVIDADE: novo seletor de tipo (Normal/Fixa) em /programacao/nova. Ao gerar os dias,
+calcula dias_restantes_esperado inicial de cada linha (duracao - ordem) pra servir de base de
+comparacao no 1o report.
+
+PREENCHIMENTO (preencher_dia): logica bifurcada por tipo.
+  - FIXA: so' fotos + descricao (agora OBRIGATORIA). Sem dias_restantes, sem justificativa.
+  - NORMAL: colaborador informa "quantos dias faltam". Sistema compara com o ESPERADO (dia anterior
+    -1, ou o esperado inicial no 1o dia). Se o valor informado for MAIOR que o esperado (atividade
+    cresceu), EXIGE justificativa — testado bloqueando de verdade no backend, nao so no JS.
+  - GERACAO AUTOMATICA DE DIA EXTRA: quando cresce, gera as linhas que faltam (dias uteis, pulando
+    fim de semana/feriados), atualiza duracao_dias_uteis do grupo, e marca status_cadastro=INCOMPLETO
+    (fica visivel/revisavel pelo Encarregado, reaproveitando o fluxo ja existente de atividade
+    incompleta). Cada novo dia disparara a MESMA logica de conflito de agenda ja existente
+    (_checar_conflito_colaborador) pra cada colaborador da equipe.
+
+TESTADO REPLICANDO O EXEMPLO EXATO do Antonio (atividade de 3 dias): dia 1 relata "faltam 2" (bate
+com o esperado) -> aceito sem justificativa; dia 2 relata "faltam 2" de novo (esperado seria 1,
+cresceu 1) -> BLOQUEADO sem justificativa, aceito com justificativa -> gerou o dia 4 automaticamente
+em 21/09 (pulando o fim de semana 19-20), duracao do grupo atualizada de 3 para 4, status_cadastro
+virou INCOMPLETO. Todos os 13 pontos do teste confirmados.
+TESTADO Atividade FIXA: bloqueia sem descricao; aceita com descricao SEM nenhum dias_restantes;
+mostra o badge "fixa" na tela.
+
+Novo template preencher_dia.html: mostra o badge "fixa" quando aplicavel, campo "dias restantes"
+(com o valor esperado como referencia visual) pra NORMAL, JS ajustado pra so mostrar a caixa de
+justificativa quando o valor informado for MAIOR que o esperado (mesma logica do backend).
+
+Smoke test geral (7 telas) 200 — nada quebrou, mas APROVACAO e RDO AINDA NAO foram atualizados pra
+mostrar/usar os novos campos (proximo passo).
+
+PENDENTE (proxima etapa):
+- Horario de inicio/termino no formulario de criar RDO (campos existem no modelo, faltam no form)
+- Contagem de colaboradores visivel na tela de Aprovacao
+- Aprovacao mostrar destaque quando a atividade "cresceu" (gerado_por_crescimento) + abrir fluxo de
+  revisao tipo "completar atividade" nesse caso
+- RDO: media ponderada precisa ser recalculada usando dias_restantes (1 - dias_restantes/duracao)
+  em vez de percentual*meta — a formula antiga ainda esta no codigo e vai dar resultado errado/None
+  pra atividades NORMAL que usam o campo novo
+- Resumo Diario: mostrar dias_restantes em vez de %/meta quando tipo=fim
+- Aprovacao.html e rdo_preview.html ainda referenciam d.percentual/d.meta_percentual em varios
+  lugares — precisam ser atualizados pra tratar NORMAL (dias_restantes) e FIXA (sem nada) 
+  separadamente, senao vao mostrar "None%" ou dados velhos/incorretos
+
+### ================== MUDANCA "DIAS RESTANTES" — CONCLUIDA E TESTADA POR COMPLETO (19/09) ==================
+Finalizados todos os pontos que faltavam do checkpoint anterior:
+
+APROVACAO (aprovacao.html + retificar_dia): agora mostra dias_restantes (com o "esperado" ao lado
+pra contexto) em vez de %/meta; conta e mostra quantos colaboradores estao na equipe daquela
+atividade (d.grupo.colaboradores|length); destaque visual (borda amarela + badge "dia extra gerado")
+quando gerado_por_crescimento=True, com link direto pra tela de detalhe da atividade (reaproveitando
+o fluxo ja existente de "atividade incompleta" pro Encarregado revisar colaboradores/planta/etc);
+justificativa de crescimento mostrada em destaque proprio. Formulario de retificar agora edita
+dias_restantes (ou nada, se for atividade FIXA) em vez da % antiga.
+
+RDO — MEDIA PONDERADA REFEITA: novo helper _calcular_media_ponderada_dia() — pra cada atividade
+NORMAL com dias_restantes informado: progresso = 1 - (dias_restantes/duracao_total), ponderado pela
+duracao de cada atividade (atividade maior pesa mais). Atividades FIXA e NORMAL sem dias_restantes
+ainda ficam FORA do calculo. TESTADO reproduzindo um cenario com 2 atividades de duracoes diferentes
+(4 dias com 1 restante = 75%; 2 dias com 0 restante = 100%) -> media ponderada = 83.3%, batendo
+exatamente com o calculo manual ((75*4+100*2)/6).
+
+HORARIO DE INICIO/TERMINO NO RDO: campos adicionados no formulario de criar (default 07:00-16:48,
+type=time editavel), no formulario de editar, no preview, e no PDF (dentro da secao "Dados gerais").
+TESTADO: RDO criado sem informar horario usa o default corretamente; preview mostra o horario; editar
+com horario customizado (08:00-17:00) salva e reflete no PDF (confirmado descomprimindo o stream real
+do PDF, ja que o conteudo de texto vem comprimido/FlateDecode — buscar a string nos bytes brutos nao
+funciona, precisa descomprimir primeiro pra validar de verdade).
+
+RESUMO DIARIO E PDF: coluna "%" virou "Progresso", mostrando "faltam X dia(s)" pra NORMAL ou
+"atividade fixa" pra FIXA, em vez da %+meta antiga. PDF por atividade tambem mostra "X dia(s)
+restante(s)" ou "fixa" no lugar da %.
+
+Smoke test geral FINAL (15 telas, cobrindo toda a Programacao de Atividades/RDO/Resumo/Aprovacao)
+200. Menu testado com clique real (jsdom): sem erros de JS, estrutura intacta.
+
+=== MUDANCA DE ARQUITETURA "DIAS RESTANTES" (pedido completo do Antonio) — CONCLUIDA ===
+Modelo de dados, criacao de atividade (tipo Normal/Fixa), preenchimento diario com a regra de
+justificativa por crescimento, geracao automatica de dia extra com conflito de agenda, aprovacao
+com visibilidade completa, RDO com media ponderada nova + horario, e Resumo Diario — tudo
+implementado e testado. Pronto pra revisao e deploy.
+
+PENDENTE (fora do escopo desta rodada, para o Antonio confirmar depois do deploy):
+- Rota de diagnostico /facilities/rdo/<id>/diagnostico-fotos (temporaria) — usar apos o deploy pra
+  descobrir a causa real do problema de fotos nao aparecendo no PDF do RDO, depois REMOVER a rota.
+- Antonio deve verificar se a coluna is_master do seu proprio usuario esta marcada True (suspeita
+  anterior sobre Aprovacao nao aparecer — a logica do codigo ja cobre isso corretamente).

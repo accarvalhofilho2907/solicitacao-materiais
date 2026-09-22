@@ -505,9 +505,11 @@ class ColaboradorPlanta(db.Model):
 
 
 class Predio(db.Model):
-    """[v3] Prédio dentro de uma planta (ex.: "D6", "Subestação Central") — cadastro novo,
-    pedido para uso em Programação de Atividades. Distinto de Armazem (que é sobre estoque/
-    localização de material); Prédio é sobre onde a atividade de campo acontece."""
+    """[v3] "Edificação" (rótulo visível ao usuário — renomeado de "Prédio" em 19/09) dentro
+    de uma planta (ex.: "D6", "Subestação Central") — cadastro novo, pedido para uso em
+    Programação de Atividades. Distinto de Armazem (que é sobre estoque/localização de
+    material). O nome técnico da classe/tabela/coluna continua "Predio" por compatibilidade
+    (evita quebrar FK e migração) — só o texto exibido na tela mudou para "Edificação"."""
     __tablename__ = "sf_predios"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(160), nullable=False)
@@ -1426,11 +1428,15 @@ class Feriado(db.Model):
 
 
 class AtividadeGrupo(db.Model):
-    """A atividade "mãe": o planejamento. Ao salvar, gera N AtividadeDia (dias úteis)."""
+    """A atividade "mãe": o planejamento. Ao salvar, gera N AtividadeDia (dias úteis).
+    [19/09] tipo: NORMAL usa o report de "dias restantes" (ver AtividadeDia.dias_restantes);
+    FIXA não tem nenhuma métrica de progresso — só fotos + descrição livre por dia, roda
+    exatamente os dias programados desde a criação, sem gerar dias extra automaticamente."""
     __tablename__ = "sf_atividades_grupo"
     id = db.Column(db.Integer, primary_key=True)
     titulo = db.Column(db.String(200), nullable=False)
     descricao = db.Column(db.Text)
+    tipo = db.Column(db.String(10), default="NORMAL")   # NORMAL | FIXA
     data_inicio = db.Column(db.Date, nullable=False)
     unidade_duracao = db.Column(db.String(10), default="dias")   # dias|semana|mes|ano
     duracao_dias_uteis = db.Column(db.Integer, nullable=False)
@@ -1457,6 +1463,10 @@ class AtividadeGrupo(db.Model):
         r = next((c for c in self.colaboradores if c.eh_responsavel), None)
         return r.colaborador if r else None
 
+    @property
+    def eh_fixa(self):
+        return self.tipo == "FIXA"
+
 
 class AtividadeColaborador(db.Model):
     """Um colaborador participante de uma AtividadeGrupo. O PRIMEIRO adicionado é marcado
@@ -1472,16 +1482,24 @@ class AtividadeColaborador(db.Model):
 
 class AtividadeDia(db.Model):
     """Uma linha/dia da atividade (execução). status: PENDENTE (nada preenchido ainda) |
-    AGUARDANDO_APROVACAO | APROVADA | ATRASADA (nada preenchido e a data já passou)."""
+    AGUARDANDO_APROVACAO | APROVADA | ATRASADA (nada preenchido e a data já passou).
+    [19/09] Para atividade tipo NORMAL: dias_restantes substitui a antiga % de conclusão —
+    o colaborador informa quantos dias ainda faltam pra terminar. meta_percentual e
+    percentual ficam mantidos no banco por compatibilidade histórica (RDOs/relatórios
+    antigos que já os usavam), mas a lógica NOVA não os usa mais pra NORMAL.
+    Para atividade tipo FIXA: nenhum dos dois se aplica — só fotos_json e
+    descricao_execucao (sem percentual nem dias_restantes)."""
     __tablename__ = "sf_atividade_dias"
     id = db.Column(db.Integer, primary_key=True)
     grupo_id = db.Column(db.ForeignKey("sf_atividades_grupo.id"), nullable=False)
     data = db.Column(db.Date, nullable=False)
     ordem = db.Column(db.Integer, nullable=False)     # 1, 2, 3... dentro do grupo
-    meta_percentual = db.Column(db.Integer, nullable=False)   # ordem/duracao * 100, arredondado
-    percentual = db.Column(db.Integer)                # o que foi de fato reportado
+    meta_percentual = db.Column(db.Integer, nullable=False)   # [legado] não usado pra NORMAL desde 19/09
+    percentual = db.Column(db.Integer)                # [legado] não usado pra NORMAL desde 19/09
+    dias_restantes = db.Column(db.Integer)            # [19/09] o que o colaborador de fato reporta
+    dias_restantes_esperado = db.Column(db.Integer)   # [19/09] o que seria esperado (dia_anterior - 1), pra auditoria
     descricao_execucao = db.Column(db.Text)
-    justificativa_queda = db.Column(db.Text)          # obrigatório se percentual < dia anterior
+    justificativa_queda = db.Column(db.Text)          # obrigatório se a atividade cresceu além do previsto
     fotos_json = db.Column(db.Text)                   # até 4 fotos "depois/progresso" do dia
     status = db.Column(db.String(24), default="PENDENTE")
     reprogramado_de = db.Column(db.Date)               # data original, se foi reprogramada
@@ -1489,6 +1507,7 @@ class AtividadeDia(db.Model):
     aprovado_em = db.Column(db.DateTime)
     aprovado_por = db.Column(db.ForeignKey("usuarios.id"))
     retificado = db.Column(db.Boolean, default=False)
+    gerado_por_crescimento = db.Column(db.Boolean, default=False)  # [19/09] esta linha nasceu de um report que precisou de mais dias
 
     preenchimentos = db.relationship("RegistroPreenchimento", backref="dia",
                                      order_by="RegistroPreenchimento.criado_em",
@@ -1539,6 +1558,8 @@ class RelatorioDiarioObra(db.Model):
     data = db.Column(db.Date, nullable=False)
     planta_id = db.Column(db.ForeignKey("almox_plantas.id"), nullable=False)
     condicao_climatica = db.Column(db.String(80), nullable=False)
+    horario_inicio = db.Column(db.String(5), default="07:00")   # [19/09] "HH:MM", editável
+    horario_termino = db.Column(db.String(5), default="16:48")  # [19/09] "HH:MM", editável
     mao_de_obra_texto = db.Column(db.Text)      # lista livre (nome + função) por linha, pré-preenchida
     equipamentos_texto = db.Column(db.Text)      # equipamentos usados no dia, texto livre
     atividades_ids_json = db.Column(db.Text)     # ids de AtividadeGrupo daquele dia (automático)

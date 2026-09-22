@@ -15,7 +15,7 @@ import json
 from datetime import date, datetime, timedelta
 from functools import wraps
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, abort
+from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
 from flask_login import login_required, current_user
 
 from .extensions import db
@@ -327,6 +327,27 @@ def _gerar_dias_uteis(data_inicio, quantidade):
     return datas
 
 
+def _calcular_media_ponderada_dia(dias_do_dia):
+    """[19/09] Média ponderada de progresso do dia, usando "dias restantes" em vez da % antiga.
+    Para cada atividade NORMAL com dias_restantes já informado: progresso_estimado =
+    1 - (dias_restantes / duracao_total_da_atividade) — ex.: atividade de 4 dias com 1 dia
+    restante = 1 - 1/4 = 75%. Pondera pela duração de cada atividade (uma atividade maior
+    "pesa" mais no cálculo do dia). Atividades FIXA (sem progresso) e NORMAL sem
+    dias_restantes ainda informado ficam DE FORA do cálculo (não têm progresso pra contar)."""
+    soma_pond = 0.0
+    soma_pesos = 0.0
+    for d in dias_do_dia:
+        if d.grupo.eh_fixa or d.dias_restantes is None:
+            continue
+        duracao = d.grupo.duracao_dias_uteis or 1
+        progresso = max(0.0, min(1.0, 1 - (d.dias_restantes / duracao)))
+        soma_pond += progresso * duracao
+        soma_pesos += duracao
+    if not soma_pesos:
+        return None
+    return round((soma_pond / soma_pesos) * 100, 1)
+
+
 def _checar_conflito_colaborador(colaborador_id, data_inicio, datas_novas, ignorar_grupo_id=None):
     """[v3] Verifica se o colaborador já tem AtividadeDia em qualquer uma das datas da
     atividade nova (overlap por range). Retorna lista de (grupo, dias_conflitantes)."""
@@ -440,7 +461,7 @@ def predios():
         else:
             db.session.add(Predio(nome=nome, planta_id=int(planta_id) if planta_id else None))
             db.session.commit()
-            flash("Prédio cadastrado.", "success")
+            flash("Edificação cadastrada.", "success")
         return redirect(url_for("facilities.predios"))
     itens = Predio.query.filter_by(ativo=True).order_by(Predio.nome).all()
     return render_template("facilities/predios.html", itens=itens, plantas_disp=plantas_disp)
@@ -525,6 +546,9 @@ def programacao_nova():
                                opcoes_recorrencia=OPCOES_RECORRENCIA)
 
     titulo = (request.form.get("titulo") or "").strip()
+    tipo_atividade = request.form.get("tipo_atividade") or "NORMAL"
+    if tipo_atividade not in ("NORMAL", "FIXA"):
+        tipo_atividade = "NORMAL"
     data_inicio_str = request.form.get("data_inicio")
     unidade = request.form.get("unidade_duracao") or "dias"
     if not titulo or not data_inicio_str:
@@ -558,7 +582,7 @@ def programacao_nova():
     fotos_antes = _salvar_fotos("fotos_antes", maximo=4)
 
     grupo = AtividadeGrupo(titulo=titulo or "(sem título)", descricao=(request.form.get("descricao") or "").strip(),
-                           data_inicio=data_inicio, unidade_duracao=unidade, duracao_dias_uteis=duracao,
+                           tipo=tipo_atividade, data_inicio=data_inicio, unidade_duracao=unidade, duracao_dias_uteis=duracao,
                            recorrencia_dias=recorrencia, planta_id=int(planta_id) if planta_id else None,
                            predio_id=int(predio_id) if predio_id else None,
                            produto_id=int(produto_id) if produto_id else None,
@@ -583,11 +607,16 @@ def programacao_nova():
         db.session.add(AtividadeColaborador(grupo_id=grupo.id, colaborador_id=cid, eh_responsavel=(i == 0)))
     db.session.commit()
 
-    # gera as linhas (AtividadeDia)
+    # gera as linhas (AtividadeDia) — meta_percentual mantido só por compatibilidade histórica
+    # (não usado na lógica nova de "dias restantes" pra atividade NORMAL)
     datas = _gerar_dias_uteis(data_inicio, duracao)
     for i, d in enumerate(datas, start=1):
         meta = round(i / duracao * 100)
-        db.session.add(AtividadeDia(grupo_id=grupo.id, data=d, ordem=i, meta_percentual=meta, status="PENDENTE"))
+        # [19/09] esperado no dia i = quantos dias uteis faltam apos aquele dia, segundo o
+        # PLANO ORIGINAL (duracao - i) — usado só pra comparar contra o 1o report real.
+        esperado_inicial = duracao - i
+        db.session.add(AtividadeDia(grupo_id=grupo.id, data=d, ordem=i, meta_percentual=meta,
+                                    dias_restantes_esperado=esperado_inicial, status="PENDENTE"))
     db.session.commit()
 
     if conflitos:
@@ -850,13 +879,18 @@ def preencher_dia(data_str):
     if ids_visiveis:
         q = q.filter(AtividadeColaborador.colaborador_id.in_(ids_visiveis))
     minhas_atividades = q.all()
-    # [item 4 fix] % do dia anterior de cada atividade — usado no template pra so' mostrar a
-    # caixa de justificativa quando a nova % REALMENTE for menor (antes o JS mostrava sempre).
-    pct_anterior_por_dia = {}
+    # [19/09] dias_restantes do dia anterior (e o esperado calculado na criação, pro 1o dia) —
+    # usado no template pra mostrar ao colaborador a referência antes de digitar.
+    dias_restantes_anterior_por_dia = {}
     for at in minhas_atividades:
+        if at.grupo.eh_fixa:
+            continue
         anterior = (AtividadeDia.query.filter(AtividadeDia.grupo_id == at.grupo_id,
                     AtividadeDia.ordem < at.ordem).order_by(AtividadeDia.ordem.desc()).first())
-        pct_anterior_por_dia[at.id] = anterior.percentual if anterior else None
+        if anterior and anterior.dias_restantes is not None:
+            dias_restantes_anterior_por_dia[at.id] = max(0, anterior.dias_restantes - 1)
+        else:
+            dias_restantes_anterior_por_dia[at.id] = at.dias_restantes_esperado
 
     if request.method == "POST":
         dia_id = int(request.form.get("dia_id"))
@@ -870,34 +904,109 @@ def preencher_dia(data_str):
                     or getattr(current_user, "is_master", False))
         if not eh_participante and not eh_gestor:
             abort(403)
-        nova_pct = int(request.form.get("percentual") or 0)
+
+        descricao = (request.form.get("descricao") or "").strip()
+        fotos = _salvar_fotos("fotos", maximo=4)
+
+        if dia.grupo.eh_fixa:
+            # [19/09] Atividade FIXA: sem nenhuma métrica de progresso — só fotos + descrição,
+            # que agora é OBRIGATÓRIA (confirmado por Antonio).
+            if not descricao:
+                flash("Descreva o que foi feito no dia — obrigatório para atividades fixas.", "danger")
+                return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+            dia.descricao_execucao = descricao
+            if fotos:
+                dia.fotos_json = json.dumps(fotos)
+            dia.status = "AGUARDANDO_APROVACAO"
+            db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id, percentual=0))
+            db.session.commit()
+            flash("Preenchido — aguardando aprovação do Encarregado de Campo.", "success")
+            return redirect(url_for("facilities.preencher_dia", data_str=data_str, compartilhar=dia.id))
+
+        # [19/09] Atividade NORMAL: "dias restantes" no lugar da % antiga.
+        if not descricao:
+            flash("Descreva o que foi feito no dia.", "danger")
+            return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+        dias_restantes_str = request.form.get("dias_restantes")
+        if dias_restantes_str is None or dias_restantes_str == "":
+            flash("Informe quantos dias ainda faltam para concluir.", "danger")
+            return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+        try:
+            dias_restantes_novo = max(0, int(dias_restantes_str))
+        except ValueError:
+            flash("Valor de dias restantes inválido.", "danger")
+            return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
         dia_anterior = (AtividadeDia.query.filter(AtividadeDia.grupo_id == dia.grupo_id,
                         AtividadeDia.ordem < dia.ordem).order_by(AtividadeDia.ordem.desc()).first())
         justificativa = (request.form.get("justificativa") or "").strip()
-        # [fix] só exige justificativa se o dia anterior REALMENTE tem uma % registrada (not None
-        # e diferente de vazio) — antes de qualquer preenchimento, dia_anterior.percentual é None,
-        # e comparar "nova_pct < None" nunca deveria disparar o aviso.
-        if (dia_anterior and dia_anterior.percentual is not None
-                and nova_pct < dia_anterior.percentual and not justificativa):
-            flash("A % é menor que a do dia anterior — informe uma justificativa.", "danger")
+
+        # [19/09] Regra de justificativa: compara contra o esperado, que é
+        # (dias_restantes do dia anterior - 1) — o dia que passou "consumiu" 1 dia da
+        # estimativa. No PRIMEIRO dia da atividade (sem dia_anterior), usa
+        # dias_restantes_esperado (calculado na criação a partir da duração original) —
+        # não exige justificativa nesse caso (nada com que comparar de verdade ainda).
+        esperado = None
+        if dia_anterior and dia_anterior.dias_restantes is not None:
+            esperado = max(0, dia_anterior.dias_restantes - 1)
+        cresceu_alem_do_previsto = esperado is not None and dias_restantes_novo > esperado
+        if cresceu_alem_do_previsto and not justificativa:
+            flash(f"A atividade precisa de mais dias do que o previsto (esperado: {esperado}, "
+                  f"informado: {dias_restantes_novo}) — informe uma justificativa.", "danger")
             return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
-        dia.percentual = nova_pct
-        dia.descricao_execucao = (request.form.get("descricao") or "").strip()
+        dia.dias_restantes = dias_restantes_novo
+        dia.dias_restantes_esperado = esperado
+        dia.descricao_execucao = descricao
         dia.justificativa_queda = justificativa or None
         dia.status = "AGUARDANDO_APROVACAO"
-        fotos = _salvar_fotos("fotos", maximo=4)
         if fotos:
             dia.fotos_json = json.dumps(fotos)
-        db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id,
-                                             percentual=nova_pct))
+        db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id, percentual=0))
+
+        conflito_gerado = None
+        if cresceu_alem_do_previsto:
+            # [19/09] Gera o(s) dia(s) extra necessário(s) — a atividade cresceu, então
+            # precisamos de mais linhas além das já existentes. A nova linha nasce como
+            # "rascunho" (status_cadastro do grupo vira INCOMPLETO) pro Encarregado revisar
+            # na aprovação, como se fosse completar uma atividade nova.
+            ultimo_dia_existente = max(dia.grupo.dias, key=lambda d: d.ordem)
+            qtd_dias_extra = dias_restantes_novo - esperado
+            proxima_data = ultimo_dia_existente.data
+            for _ in range(qtd_dias_extra):
+                proxima_data = proxima_data + timedelta(days=1)
+                while not _dia_util(proxima_data):
+                    proxima_data += timedelta(days=1)
+                novo_dia = AtividadeDia(grupo_id=dia.grupo_id, data=proxima_data,
+                                        ordem=ultimo_dia_existente.ordem + 1,
+                                        meta_percentual=100, status="PENDENTE",
+                                        gerado_por_crescimento=True)
+                db.session.add(novo_dia)
+                db.session.flush()
+                ultimo_dia_existente = novo_dia
+
+                # [item 7 da especificação] dispara a MESMA lógica de conflito de agenda já
+                # existente na criação manual, pra cada colaborador da equipe, na nova data.
+                for ac in dia.grupo.colaboradores:
+                    conflito = _checar_conflito_colaborador(ac.colaborador_id, proxima_data, [proxima_data],
+                                                            ignorar_grupo_id=dia.grupo_id)
+                    if conflito:
+                        conflito_gerado = {"colaborador_id": ac.colaborador_id, "colaborador_nome": ac.colaborador.nome,
+                                          "grupo_titulo": conflito["grupo"].titulo, "grupo_id": conflito["grupo"].id,
+                                          "nova_data": proxima_data.isoformat()}
+            dia.grupo.duracao_dias_uteis = dia.grupo.duracao_dias_uteis + qtd_dias_extra
+            dia.grupo.status_cadastro = "INCOMPLETO"  # [item 4] fica visível pro Encarregado revisar na aprovação
+
         db.session.commit()
-        flash("Preenchido — aguardando aprovação do Encarregado de Campo.", "success")
+        if conflito_gerado:
+            flash(f"Preenchido — atenção: {conflito_gerado['colaborador_nome']} já tem outra atividade "
+                  f"('{conflito_gerado['grupo_titulo']}') na nova data gerada. Resolva na tela da atividade.", "warning")
+        else:
+            flash("Preenchido — aguardando aprovação do Encarregado de Campo.", "success")
         return redirect(url_for("facilities.preencher_dia", data_str=data_str, compartilhar=dia.id))
 
     return render_template("facilities/preencher_dia.html", data_d=data_d, atividades=minhas_atividades,
-                           pct_anterior_por_dia=pct_anterior_por_dia,
+                           dias_restantes_anterior_por_dia=dias_restantes_anterior_por_dia,
                            compartilhar_id=request.args.get("compartilhar"))
 
 
@@ -965,7 +1074,13 @@ def aprovar_dia(dia_id):
 def retificar_dia(dia_id):
     """[v3] Não existe mais "reprovar": o Encarregado edita direto e já sai aprovado."""
     dia = db.session.get(AtividadeDia, dia_id) or abort(404)
-    dia.percentual = int(request.form.get("percentual") or dia.percentual or 0)
+    if not dia.grupo.eh_fixa:
+        dias_restantes_str = request.form.get("dias_restantes")
+        if dias_restantes_str not in (None, ""):
+            try:
+                dia.dias_restantes = max(0, int(dias_restantes_str))
+            except ValueError:
+                pass
     dia.descricao_execucao = (request.form.get("descricao") or dia.descricao_execucao)
     dia.retificado = True
     dia.status = "APROVADA"
@@ -1067,13 +1182,16 @@ def resumo_diario():
             nomes_fmt = ", ".join(_remover_particulas_sobrenome(n) for n in colaboradores_da_empresa)
             linha = {"local": d.grupo.predio.nome if d.grupo.predio else "—",
                     "titulo": d.grupo.titulo, "colaboradores": nomes_fmt}
-            # [item 5] no resumo de FIM, traz o que os colaboradores de fato reportaram: %
-            # de conclusão (JUNTO com a META daquele dia, senão "5%" sozinho dá a entender que
-            # a pessoa só trabalhou 5% do dia, quando na verdade pode ter batido a meta cheia
-            # de 5% daquele dia especifico) e as observações/descrição da execução.
+            # [19/09] no resumo de FIM, traz o que os colaboradores de fato reportaram: dias
+            # restantes (pra NORMAL) ou nada (pra FIXA, só a descrição) — substitui a antiga
+            # % + meta, que não existe mais na lógica nova.
             if tipo == "fim":
-                linha["percentual"] = d.percentual if d.percentual is not None else "—"
-                linha["meta"] = d.meta_percentual
+                if d.grupo.eh_fixa:
+                    linha["progresso"] = "atividade fixa"
+                elif d.dias_restantes is not None:
+                    linha["progresso"] = f"faltam {d.dias_restantes} dia(s)"
+                else:
+                    linha["progresso"] = "—"
                 linha["observacoes"] = d.descricao_execucao or "—"
             linhas.append(linha)
 
@@ -1144,9 +1262,7 @@ def rdo_atividades_do_dia():
 
     # média ponderada: soma(percentual * meta) / soma(meta) — pondera pelo "peso" da meta de
     # cada atividade no dia (uma atividade com meta 100% pesa mais que uma com meta 25%).
-    soma_pond = sum((d.percentual or 0) * d.meta_percentual for d in dias if d.meta_percentual)
-    soma_pesos = sum(d.meta_percentual for d in dias if d.meta_percentual)
-    media_ponderada = round(soma_pond / soma_pesos, 1) if soma_pesos else None
+    media_ponderada = _calcular_media_ponderada_dia(dias)
 
     # mão de obra pré-preenchida: todos os colaboradores distintos das atividades do dia
     nomes_colab = sorted({ac.colaborador.nome for d in dias for ac in d.grupo.colaboradores if ac.colaborador})
@@ -1208,12 +1324,12 @@ def rdo():
             flash("Há atividade pendente ou atrasada neste dia — não é possível gerar o RDO ainda.", "danger")
             return redirect(url_for("facilities.rdo"))
 
-        soma_pond = sum((d.percentual or 0) * d.meta_percentual for d in dias_do_dia if d.meta_percentual)
-        soma_pesos = sum(d.meta_percentual for d in dias_do_dia if d.meta_percentual)
-        media = round(soma_pond / soma_pesos, 1) if soma_pesos else None
+        media = _calcular_media_ponderada_dia(dias_do_dia)
 
         rdo_novo = RelatorioDiarioObra(
             data=data_d, planta_id=int(planta_id), condicao_climatica=clima,
+            horario_inicio=(request.form.get("horario_inicio") or "07:00").strip(),
+            horario_termino=(request.form.get("horario_termino") or "16:48").strip(),
             mao_de_obra_texto=(request.form.get("mao_de_obra_texto") or "").strip(),
             equipamentos_texto=(request.form.get("equipamentos_texto") or "").strip(),
             atividades_ids_json=json.dumps([d.grupo_id for d in dias_do_dia]),
@@ -1280,6 +1396,41 @@ def rdo_pdf(rdo_id):
     return send_file(buf, mimetype="application/pdf", as_attachment=False, download_name=nome_arquivo)
 
 
+@facilities_bp.route("/rdo/<int:rdo_id>/diagnostico-fotos")
+def rdo_diagnostico_fotos(rdo_id):
+    """[TEMPORÁRIO — diagnóstico] Só Admin/Master. Testa, passo a passo, por que as fotos não
+    aparecem no PDF do RDO: lista as atividades vinculadas, o fotos_json de cada uma, e tenta
+    baixar cada foto de verdade, reportando o erro exato se falhar. Remover depois de
+    confirmado o motivo real em produção."""
+    if not (current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))):
+        abort(403)
+    from .pdf_rdo import _baixar_foto, _TEM_PIL
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    diagnostico = {"pillow_disponivel": _TEM_PIL, "cloudinary_configurado": bool(current_app.config.get("CLOUDINARY_URL")),
+                  "atividades": []}
+    for grupo in r.atividades:
+        dia_do_grupo = next((d for d in grupo.dias if d.data == r.data), None)
+        item = {"titulo": grupo.titulo, "tem_dia_no_rdo": dia_do_grupo is not None}
+        if dia_do_grupo:
+            item["fotos_json_bruto"] = dia_do_grupo.fotos_json
+            fotos_urls = []
+            if dia_do_grupo.fotos_json:
+                try:
+                    fotos_urls = json.loads(dia_do_grupo.fotos_json)
+                except (ValueError, TypeError) as e:
+                    item["erro_ao_ler_json"] = str(e)
+            item["fotos_testadas"] = []
+            for url in fotos_urls:
+                resultado = _baixar_foto(url)
+                item["fotos_testadas"].append({
+                    "url": url, "baixou_com_sucesso": resultado is not None,
+                    "tamanho_bytes": len(resultado) if resultado else None
+                })
+        diagnostico["atividades"].append(item)
+    from flask import jsonify
+    return jsonify(diagnostico)
+
+
 def _pode_editar_rdo(r, colab_atual):
     """[item 8] Regra de edição do RDO: se está PENDENTE, o Encarregado ou Admin já pode
     editar direto. Se está APROVADO, precisa que um Admin "reabra" primeiro (rdo_reabrir) —
@@ -1328,6 +1479,8 @@ def rdo_editar(rdo_id):
             flash("Condição climática é obrigatória.", "danger")
             return redirect(url_for("facilities.rdo_editar", rdo_id=rdo_id))
         r.condicao_climatica = clima
+        r.horario_inicio = (request.form.get("horario_inicio") or r.horario_inicio or "07:00").strip()
+        r.horario_termino = (request.form.get("horario_termino") or r.horario_termino or "16:48").strip()
         r.mao_de_obra_texto = (request.form.get("mao_de_obra_texto") or "").strip()
         r.equipamentos_texto = (request.form.get("equipamentos_texto") or "").strip()
         r.observacoes = (request.form.get("observacoes") or "").strip()

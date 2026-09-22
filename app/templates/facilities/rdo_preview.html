@@ -33,9 +33,10 @@
 
 <div class="card"><div class="card-body">
   <div class="row g-2 mb-2">
-    <div class="col-md-4"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
-    <div class="col-md-4"><label class="form-label small text-muted">Clima</label><p class="mb-0">{{ r.condicao_climatica or '—' }}</p></div>
-    <div class="col-md-4"><label class="form-label small text-muted">% média executada</label><p class="mb-0">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</p></div>
+    <div class="col-md-3"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
+    <div class="col-md-3"><label class="form-label small text-muted">Clima</label><p class="mb-0">{{ r.condicao_climatica or '—' }}</p></div>
+    <div class="col-md-3"><label class="form-label small text-muted">Horário</label><p class="mb-0">{{ r.horario_inicio or '—' }} às {{ r.horario_termino or '—' }}</p></div>
+    <div class="col-md-3"><label class="form-label small text-muted">% média executada</label><p class="mb-0">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</p></div>
   </div>
   {% if r.mao_de_obra_texto %}<p class="small"><b>Mão de obra:</b><br>{{ r.mao_de_obra_texto|replace('\n', '<br>')|safe }}</p>{% endif %}
   {% if r.equipamentos_texto %}<p class="small"><b>Equipamentos:</b> {{ r.equipamentos_texto }}</p>{% endif %}
@@ -49,7 +50,11 @@
   <div class="border rounded p-2 mb-2">
     <div class="d-flex justify-content-between">
       <b>{{ grupo.titulo }}</b>
-      <span>{% if dia_do_grupo and dia_do_grupo.percentual is not none %}{{ dia_do_grupo.percentual }}%{% else %}—{% endif %}</span>
+      <span>
+        {% if grupo.eh_fixa %}fixa
+        {% elif dia_do_grupo and dia_do_grupo.dias_restantes is not none %}{{ dia_do_grupo.dias_restantes }} dia(s) restante(s)
+        {% else %}—{% endif %}
+      </span>
     </div>
     <p class="text-muted small mb-1">Local: {{ grupo.predio.nome if grupo.predio else '—' }} · Colaboradores: {% for ac in grupo.colaboradores %}{{ ac.colaborador.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
     {% if dia_do_grupo and dia_do_grupo.descricao_execucao %}<p class="small mb-1">{{ dia_do_grupo.descricao_execucao }}</p>{% endif %}

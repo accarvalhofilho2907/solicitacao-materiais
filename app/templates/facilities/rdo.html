@@ -1,26 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Relatório Diário de Obra{% endblock %}
 {% block content %}
+<style>
+  /* [item novo] mesmo filtro estilo Excel já usado em Programação de Atividades */
+  .th-filtro{display:flex;align-items:center;justify-content:space-between;gap:4px;user-select:none}
+  .th-filtro .funil{cursor:pointer;opacity:.6;padding:2px 4px;border-radius:4px}
+  .th-filtro .funil:hover{opacity:1;background:rgba(255,255,255,.08)}
+  .th-filtro .funil.ativo{opacity:1;color:#FF5246}
+  .filtro-dropdown{position:absolute;background:var(--card-bg,#232323);border:1px solid var(--linha,#333);
+    border-radius:8px;padding:8px;z-index:50;min-width:200px;max-width:260px;box-shadow:0 6px 18px rgba(0,0,0,.5);
+    display:none}
+  .filtro-dropdown.aberto{display:block}
+  .filtro-dropdown .busca-valores{width:100%;margin-bottom:6px;font-size:12px;padding:4px 6px;
+    background:var(--input-bg);border:1px solid var(--linha);color:var(--texto);border-radius:6px}
+  .filtro-dropdown .ordenar-btns{display:flex;gap:4px;margin-bottom:6px}
+  .filtro-dropdown .ordenar-btns button{flex:1;font-size:11px;padding:3px;background:var(--input-bg);
+    border:1px solid var(--linha);color:var(--texto);border-radius:5px;cursor:pointer}
+  .filtro-dropdown .lista-valores{max-height:180px;overflow-y:auto;border-top:1px solid var(--linha);
+    padding-top:6px;margin-bottom:6px}
+  .filtro-dropdown .valor-item{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;color:var(--texto)}
+  .filtro-dropdown .rodape-btns{display:flex;gap:4px}
+  .filtro-dropdown .rodape-btns button{flex:1;font-size:11px;padding:4px;border-radius:5px;cursor:pointer}
+  .filtro-dropdown .btn-aplicar{background:#FF5246;color:#fff;border:none}
+  .filtro-dropdown .btn-limpar{background:var(--input-bg);color:var(--texto);border:1px solid var(--linha)}
+  th[data-col].tem-filtro-ativo{color:#FF5246}
+</style>
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h4 class="mb-0">Relatório Diário de Obra (RDO)</h4>
   <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNovoRDO">＋ Novo RDO</button>
 </div>
 <div class="alert alert-secondary small py-2">Registro diário de campo: mão de obra, atividades já programadas para o dia, condições climáticas e equipamentos.</div>
 
+<form method="post" id="formLoteRDO">
+<div class="d-flex gap-2 mb-2">
+  <button type="button" class="btn btn-sm btn-outline-secondary" formaction="{{ url_for('facilities.rdo_pdf_lote') }}" onclick="return document.querySelectorAll('input[name=rdo_ids]:checked').length > 0" formtarget="_blank">📄 Baixar PDF dos selecionados</button>
+  <button type="button" class="btn btn-sm btn-outline-danger" onclick="if(document.querySelectorAll('input[name=rdo_ids]:checked').length && confirm('Excluir os RDOs selecionados (só os pendentes serão excluídos)?')){ document.getElementById('formLoteRDO').action='{{ url_for('facilities.rdo_excluir_lote') }}'; document.getElementById('formLoteRDO').submit(); }">🗑 Excluir selecionados</button>
+</div>
 <div class="card"><div class="card-body">
-<table class="table table-sm align-middle mb-0">
-  <thead class="table-light"><tr><th>Data</th><th>Planta</th><th>Clima</th><th>% média</th><th>Atividades</th><th>Status</th><th></th></tr></thead>
+<div style="position:relative">
+<table class="table table-sm align-middle mb-0" id="tabelaRDO">
+  <thead class="table-light"><tr>
+    <th style="width:30px"></th>
+    <th data-col="1" data-tipo="data">Data</th><th data-col="2">Planta</th><th data-col="3">Clima</th>
+    <th data-col="4" data-tipo="num">% média</th><th data-col="5">Atividades</th><th data-col="6">Status</th><th></th>
+  </tr></thead>
   <tbody>
     {% for r in itens %}
     <tr>
-      <td class="small">{{ r.data.strftime('%d/%m/%Y') }}</td>
+      <td><input type="checkbox" name="rdo_ids" value="{{ r.id }}" form="formLoteRDO"></td>
+      <td class="small" data-sort="{{ r.data.strftime('%Y%m%d') }}">{{ r.data.strftime('%d/%m/%Y') }}</td>
       <td class="small">{{ r.planta.nome if r.planta else '—' }}</td>
       <td class="small">{{ r.condicao_climatica or '—' }}</td>
-      <td class="small">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</td>
+      <td class="small" data-sort="{{ r.percentual_medio if r.percentual_medio is not none else -1 }}">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</td>
       <td class="small">
         {% for a in r.atividades %}<span class="badge bg-secondary me-1">{{ a.titulo }}</span>{% else %}—{% endfor %}
       </td>
-      <td>
+      <td data-valor="{{ 'Aprovado' if r.status == 'APROVADO' else 'Pendente' }}">
         {% if r.status == 'APROVADO' %}<span class="badge bg-success">aprovado</span>
         {% else %}<span class="badge bg-warning text-dark">pendente
           {% if r.aprovado_encarregado_em %} (falta Admin){% elif r.aprovado_admin_em %} (falta Encarregado){% endif %}
@@ -46,11 +81,14 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="7" class="text-muted text-center py-3">Nenhum RDO registrado ainda.</td></tr>
+    <tr><td colspan="8" class="text-muted text-center py-3">Nenhum RDO registrado ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 </div></div>
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
 
 <div class="modal fade" id="modalNovoRDO" tabindex="-1">
   <div class="modal-dialog modal-lg"><div class="modal-content">
@@ -159,5 +197,159 @@ function carregarAtividadesRDO(){
 }
 document.getElementById('inpDataRDO').addEventListener('change', carregarAtividadesRDO);
 document.getElementById('selPlantaRDO').addEventListener('change', carregarAtividadesRDO);
+
+// [item novo] Filtro estilo Excel: cada coluna tem um funil que abre um dropdown com os
+// valores DISTINTOS daquela coluna (checkboxes marcar/desmarcar), busca dentro do dropdown,
+// e ordenar A-Z/Z-A. Estado de filtro por coluna fica em memória (Map de índice -> Set de
+// valores ESCONDIDOS); uma linha só aparece se NENHUMA das suas colunas estiver escondida.
+(function(){
+  var tabela = document.getElementById('tabelaRDO');
+  if (!tabela) return;
+  var thead = tabela.querySelector('thead');
+  var tbody = tabela.querySelector('tbody');
+  var linhas = Array.from(tbody.querySelectorAll('tr')).filter(function(tr){ return tr.children.length > 1; });
+  var escondidosPorCol = {}; // {colIndex: Set(valoresEscondidos)}
+
+  function valorDaCelula(td){
+    return td.dataset.valor !== undefined ? td.dataset.valor : td.textContent.trim();
+  }
+
+  function aplicarFiltros(){
+    linhas.forEach(function(tr){
+      var mostrar = true;
+      Object.keys(escondidosPorCol).forEach(function(col){
+        if (!mostrar) return;
+        var td = tr.children[parseInt(col)];
+        if (!td) return;
+        var v = valorDaCelula(td);
+        if (escondidosPorCol[col].has(v)) mostrar = false;
+      });
+      tr.style.display = mostrar ? '' : 'none';
+    });
+  }
+
+  function fecharTodosDropdowns(){
+    document.querySelectorAll('.filtro-dropdown').forEach(function(dd){ dd.classList.remove('aberto'); });
+  }
+
+  thead.querySelectorAll('th[data-col]').forEach(function(th){
+    var col = th.dataset.col;
+    var tipo = th.dataset.tipo || 'texto';
+    var textoOriginal = th.textContent.trim();
+
+    var wrap = document.createElement('div');
+    wrap.className = 'th-filtro';
+    var span = document.createElement('span');
+    span.textContent = textoOriginal;
+    var funil = document.createElement('span');
+    funil.className = 'funil';
+    funil.textContent = '▾';
+    wrap.appendChild(span);
+    wrap.appendChild(funil);
+    th.textContent = '';
+    th.appendChild(wrap);
+    th.style.position = 'relative';
+
+    var dropdown = document.createElement('div');
+    dropdown.className = 'filtro-dropdown';
+    // [fix crítico] sem isso, QUALQUER clique dentro do dropdown (inclusive nos checkboxes de
+    // valor, que são <label> — clicar no texto do label também deveria marcar/desmarcar)
+    // propagava até o listener global no document, que fechava o dropdown ANTES do navegador
+    // terminar de processar o toggle do checkbox. Resultado: parecia que o clique "não pegava".
+    dropdown.addEventListener('click', function(ev){ ev.stopPropagation(); });
+    th.appendChild(dropdown);
+
+    funil.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var jaAberto = dropdown.classList.contains('aberto');
+      fecharTodosDropdowns();
+      if (jaAberto) return;
+
+      // monta a lista de valores distintos desta coluna, a partir das linhas atuais
+      var valores = {};
+      linhas.forEach(function(tr){
+        var td = tr.children[parseInt(col)];
+        if (td) valores[valorDaCelula(td)] = true;
+      });
+      var listaValores = Object.keys(valores).sort();
+      var escondidos = escondidosPorCol[col] || new Set();
+
+      var rotuloAsc = tipo === 'num' ? '1→9' : 'A→Z';
+      var rotuloDesc = tipo === 'num' ? '9→1' : 'Z→A';
+      dropdown.innerHTML =
+        '<input type="text" class="busca-valores" placeholder="Pesquisar...">' +
+        '<div class="ordenar-btns"><button data-dir="asc">' + rotuloAsc + '</button><button data-dir="desc">' + rotuloDesc + '</button></div>' +
+        '<div class="lista-valores"></div>' +
+        '<div class="rodape-btns"><button class="btn-limpar">Limpar</button><button class="btn-aplicar">Aplicar</button></div>';
+
+      var listaEl = dropdown.querySelector('.lista-valores');
+      function redesenharLista(filtroTexto){
+        listaEl.innerHTML = '';
+        listaValores.filter(function(v){ return !filtroTexto || v.toLowerCase().indexOf(filtroTexto.toLowerCase()) !== -1; })
+          .forEach(function(v){
+            var item = document.createElement('label');
+            item.className = 'valor-item';
+            var chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.checked = !escondidos.has(v);
+            chk.dataset.valor = v;
+            item.appendChild(chk);
+            item.appendChild(document.createTextNode(v || '(vazio)'));
+            listaEl.appendChild(item);
+          });
+      }
+      redesenharLista('');
+
+      dropdown.querySelector('.busca-valores').addEventListener('input', function(e){
+        redesenharLista(e.target.value);
+      });
+
+      dropdown.querySelectorAll('.ordenar-btns button').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var dir = btn.dataset.dir;
+          linhas.sort(function(a, b){
+            var ta = a.children[parseInt(col)], tb = b.children[parseInt(col)];
+            var va = ta.dataset.sort !== undefined ? ta.dataset.sort : valorDaCelula(ta).toLowerCase();
+            var vb = tb.dataset.sort !== undefined ? tb.dataset.sort : valorDaCelula(tb).toLowerCase();
+            if (tipo === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+            if (va < vb) return dir === 'asc' ? -1 : 1;
+            if (va > vb) return dir === 'asc' ? 1 : -1;
+            return 0;
+          });
+          linhas.forEach(function(tr){ tbody.appendChild(tr); });
+        });
+      });
+
+      dropdown.querySelector('.btn-limpar').addEventListener('click', function(){
+        delete escondidosPorCol[col];
+        th.classList.remove('tem-filtro-ativo');
+        funil.classList.remove('ativo');
+        aplicarFiltros();
+        dropdown.classList.remove('aberto');
+      });
+
+      dropdown.querySelector('.btn-aplicar').addEventListener('click', function(){
+        var marcados = Array.from(listaEl.querySelectorAll('input[type=checkbox]:checked')).map(function(c){ return c.dataset.valor; });
+        var novosEscondidos = new Set(listaValores.filter(function(v){ return marcados.indexOf(v) === -1; }));
+        if (novosEscondidos.size === 0) {
+          delete escondidosPorCol[col];
+          th.classList.remove('tem-filtro-ativo');
+          funil.classList.remove('ativo');
+        } else {
+          escondidosPorCol[col] = novosEscondidos;
+          th.classList.add('tem-filtro-ativo');
+          funil.classList.add('ativo');
+        }
+        aplicarFiltros();
+        dropdown.classList.remove('aberto');
+      });
+
+      dropdown.classList.add('aberto');
+    });
+  });
+
+  document.addEventListener('click', function(){ fecharTodosDropdowns(); });
+})();
+
 </script>
 {% endblock %}

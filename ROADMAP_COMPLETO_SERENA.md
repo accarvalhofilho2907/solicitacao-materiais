@@ -3790,3 +3790,64 @@ PENDENTE (fora do escopo desta rodada, para o Antonio confirmar depois do deploy
   descobrir a causa real do problema de fotos nao aparecendo no PDF do RDO, depois REMOVER a rota.
 - Antonio deve verificar se a coluna is_master do seu proprio usuario esta marcada True (suspeita
   anterior sobre Aprovacao nao aparecer — a logica do codigo ja cobre isso corretamente).
+
+### ================== CORRECOES CRITICAS (22/09) ==================
+
+1) ERRO 500 CRITICO NA APROVACAO: "Key (aprovado_por)=(31) is not present in table usuarios" —
+   CAUSA: AtividadeDia.aprovado_por era uma FK UNICA pra usuarios.id, mas quando quem aprova e' um
+   Colaborador (Encarregado logado NORMALMENTE pelo site, nao via QR), current_user.id e' o ID dele
+   na tabela de COLABORADORES — nao existe na tabela usuarios, violando a FK e derrubando com 500.
+   CORRIGIDO: separado em aprovado_por_usuario_id + aprovado_por_colaborador_id (mesmo padrao ja
+   usado em RelatorioAtividade/ExecucaoChecklist), com o novo helper _marcar_aprovado_por() e a
+   property aprovado_por_nome. TESTADO reproduzindo o cenario EXATO do erro (Encarregado logado
+   normalmente aprovando): status 200, aprovado_por_colaborador_id preenchido corretamente, nome
+   resolvido via property. Admin (Usuario) testado tambem, continua funcionando.
+
+2) EXCLUIR RDO: nova rota rdo_excluir (individual) e rdo_excluir_lote (varios via checkbox) — so
+   permite excluir RDO com status PENDENTE; se aprovado, pede pra reabrir primeiro (reaproveitando
+   rdo_reabrir ja existente).
+
+3) BAIXAR MULTIPLOS RDOs EM PDF: nova rota rdo_pdf_lote, usando pypdf (adicionado ao
+   requirements.txt) pra combinar os PDFs de varios RDOs selecionados (checkbox) num unico arquivo.
+   Checkboxes de selecao adicionados na tabela do RDO.
+
+4) FOTOS NO PDF DO RDO — investigacao aprofundada: a logica de associacao (buscar o AtividadeDia
+   certo, ler fotos_json, montar o link clicavel) foi reconfirmada correta com testes de mock.
+   Trocado urllib.request por requests (biblioteca mais robusta com SSL/redirects em ambientes
+   containerizados como o Render) — adicionado ao requirements.txt. MELHORIA IMPORTANTE: antes, se
+   uma foto falhasse ao baixar, ela simplesmente SUMIA do PDF sem nenhum rastro visivel. Agora, se
+   isso acontecer, aparece um AVISO EXPLICITO no proprio PDF com o link direto da foto que falhou —
+   assim, mesmo se o download automatico nao funcionar, a pessoa consegue abrir manualmente e ve
+   claramente que ha fotos ali. NAO FOI POSSIVEL reproduzir um download real via rede neste ambiente
+   de sandbox pra confirmar a causa exata (limitacao tecnica do ambiente de teste, servidor HTTP
+   local nao sobrevive entre chamadas) — Antonio deve conferir o proximo PDF gerado com fotos reais;
+   se o aviso aparecer, o log do Render vai mostrar o motivo exato agora.
+
+5) FILTRO ESTILO EXCEL NO RDO: mesmo mecanismo ja usado em Programacao de Atividades (funil por
+   coluna, checkbox de valores, busca, ordenar) replicado na tabela do RDO. Testado com clique real
+   (jsdom): tabela encontrada, filtro funcionando, sem erros de JS.
+
+6) PROGRAMACAO DE ATIVIDADES: "Cancelada" agora vem DESMARCADA (escondida) por padrao ao abrir a
+   tela — so aparece se o usuario for no filtro da coluna Status e marcar explicitamente. O funil da
+   coluna Status ja vem destacado (indicando filtro ativo) desde o carregamento da pagina.
+
+7) TRAVA DE CONFLITO DE AGENDA NA REPROGRAMACAO — BUG REAL CONFIRMADO E CORRIGIDO: as rotas
+   reprogramar_dia (por linha/recorrencia) e reprogramar_geral (botao geral) NUNCA verificavam se
+   um colaborador da equipe ja tinha outra atividade na nova data — moviam a data direto, sem
+   checagem nenhuma. Adicionada a MESMA logica de conflito ja usada na criacao manual
+   (_checar_conflito_colaborador), com aviso explicito na tela (nome do colaborador + atividade
+   conflitante + datas) quando ha choque — a reprogramacao continua acontecendo (mantem nas duas,
+   o padrao ja definido por Antonio quando nao ha intervencao explicita), mas agora com visibilidade
+   total do conflito. TESTADO reproduzindo o cenario: colaborador com atividade B ja marcada pro dia
+   24/09, reprogramando a atividade A pra essa mesma data -> aviso aparece corretamente com nome do
+   colaborador e da atividade conflitante.
+
+8) "FECHAR TELA E VOLTAR PRA LISTA APOS SALVAR NOVA ATIVIDADE": investigado — o backend JA
+   redireciona corretamente pra facilities.programacao apos criar (confirmado com teste: POST 302
+   -> /facilities/programacao), e o formulario e' um submit HTML normal (nao fetch/AJAX), entao o
+   navegador deveria seguir o redirect automaticamente. NAO ENCONTRADO NENHUM BUG DE CODIGO aqui —
+   Antonio deve confirmar apos o proximo deploy se o comportamento realmente nao acontece (pode ter
+   sido testado numa versao anterior a essa parte, ou ser cache do navegador).
+
+Smoke test geral (8 telas) 200. Filtro do RDO testado com clique real (jsdom): sem erros de JS,
+checkboxes de selecao presentes, filtro reconhecendo os valores distintos de Status.

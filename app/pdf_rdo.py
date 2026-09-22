@@ -3,7 +3,7 @@ Carga (pdf_carga.py): paleta oficial Serena (Coral #FF5246, Grafite #4B4B4B, Are
 cabeçalho em bloco grafite, seções em faixa areia com filete coral. Não é salvo no banco —
 gerado na hora, sob demanda (mesmo padrão do relatório de carga)."""
 from io import BytesIO
-import urllib.request
+import requests
 
 try:
     from reportlab import rl_config as _rl_config
@@ -128,16 +128,18 @@ def _baixar_foto(url, max_lado=1400, quality=85):
     """Baixa uma foto (URL do Cloudinary ou caminho relativo /uploads/...) e devolve os
     bytes já normalizados. Se falhar (foto removida, sem internet, etc.), devolve None —
     o PDF é gerado sem essa foto em vez de quebrar.
-    [fix] Antes, qualquer erro (timeout, DNS, certificado, imagem corrompida) era engolido
-    em silêncio, sem nenhum log — impossível diagnosticar por que a foto não aparecia no
-    PDF em produção. Agora registra o erro real no logger do Flask."""
+    [fix 22/09] Trocado urllib.request por requests — mais robusto com SSL/redirects em
+    ambientes containerizados (Render); antes qualquer falha de certificado ou redirect
+    do Cloudinary podia derrubar silenciosamente TODAS as fotos do PDF. Log de erro real
+    mantido (antes engolia tudo em silêncio, impossível diagnosticar em produção)."""
     if not _TEM_PIL or not url:
         return None
     try:
         if url.startswith("http"):
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (SIGA-RDO-PDF)"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                raw = resp.read()
+            resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0 (SIGA-RDO-PDF)"},
+                               allow_redirects=True)
+            resp.raise_for_status()
+            raw = resp.content
         else:
             return None  # caminho local relativo — sem acesso direto ao disco daqui
         im = PILImage.open(BytesIO(raw))
@@ -254,10 +256,13 @@ def gerar_pdf_rdo(rdo):
             except (ValueError, TypeError):
                 urls = []
             imgs_ok = []
+            falhas = []
             for u in urls[:4]:
                 foto_bytes = _baixar_foto(u)
                 if foto_bytes:
                     imgs_ok.append((foto_bytes, u))
+                else:
+                    falhas.append(u)
             if imgs_ok:
                 cel_imgs = []
                 for fb, url_original in imgs_ok:
@@ -271,6 +276,14 @@ def gerar_pdf_rdo(rdo):
                                                  ("RIGHTPADDING", (0, 0), (-1, -1), 2)]))
                 story.append(linha_fotos)
                 story.append(Paragraph("Clique numa foto para abrir em tamanho grande.", _LABEL))
+            if falhas:
+                # [fix 22/09] antes uma foto que falhasse ao baixar simplesmente SUMIA do PDF
+                # sem nenhum rastro — impossível saber se ela existia ou não. Agora aparece um
+                # aviso explícito com o link direto, pra pessoa poder abrir manualmente e o
+                # problema fica visível em vez de silencioso.
+                aviso = f"⚠️ {len(falhas)} foto(s) não puderam ser incluídas automaticamente neste PDF. Abra o link diretamente: " + \
+                        " | ".join(f'<link href="{u}">{u[:50]}...</link>' for u in falhas)
+                story.append(Paragraph(aviso, _LABEL))
         story.append(Spacer(1, 10))
 
     if not rdo.atividades:

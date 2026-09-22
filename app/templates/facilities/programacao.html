@@ -154,6 +154,9 @@ document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diari
   var tbody = tabela.querySelector('tbody');
   var linhas = Array.from(tbody.querySelectorAll('tr')).filter(function(tr){ return tr.children.length > 1; });
   var escondidosPorCol = {}; // {colIndex: Set(valoresEscondidos)}
+  // [item novo] "Cancelada" some da lista por padrão ao abrir a tela — só aparece se o
+  // usuário for no filtro da coluna Status e marcar explicitamente pra mostrar.
+  escondidosPorCol['5'] = new Set(['Cancelada']);
 
   function valorDaCelula(td){
     return td.dataset.valor !== undefined ? td.dataset.valor : td.textContent.trim();
@@ -172,6 +175,8 @@ document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diari
       tr.style.display = mostrar ? '' : 'none';
     });
   }
+  aplicarFiltros();  // aplica o filtro inicial (Cancelada escondida) assim que a página carrega
+  document.querySelector('th[data-col="5"]').classList.add('tem-filtro-ativo');
 
   function fecharTodosDropdowns(){
     document.querySelectorAll('.filtro-dropdown').forEach(function(dd){ dd.classList.remove('aberto'); });

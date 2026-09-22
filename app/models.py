@@ -1505,7 +1505,13 @@ class AtividadeDia(db.Model):
     reprogramado_de = db.Column(db.Date)               # data original, se foi reprogramada
     motivo_reprogramacao = db.Column(db.Text)
     aprovado_em = db.Column(db.DateTime)
-    aprovado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix CRÍTICO 22/09] aprovado_por era uma FK única pra usuarios.id — mas quem aprova pode
+    # ser um Colaborador (Encarregado logado normalmente, não via QR), cujo current_user.id é
+    # o ID dele na tabela de COLABORADORES, não de usuários. Isso violava a FK e derrubava a
+    # aprovação com erro 500 ("Key (aprovado_por)=(31) is not present in table usuarios").
+    # Separado em duas colunas, mesmo padrão já usado em RelatorioAtividade/ExecucaoChecklist.
+    aprovado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    aprovado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     retificado = db.Column(db.Boolean, default=False)
     gerado_por_crescimento = db.Column(db.Boolean, default=False)  # [19/09] esta linha nasceu de um report que precisou de mais dias
 
@@ -1516,6 +1522,16 @@ class AtividadeDia(db.Model):
     @property
     def atrasada(self):
         return self.status == "PENDENTE" and self.data < date.today()
+
+    @property
+    def aprovado_por_nome(self):
+        if self.aprovado_por_usuario_id:
+            u = db.session.get(Usuario, self.aprovado_por_usuario_id)
+            return u.nome if u else "—"
+        if self.aprovado_por_colaborador_id:
+            c = db.session.get(Colaborador, self.aprovado_por_colaborador_id)
+            return c.nome if c else "—"
+        return "—"
 
 
 class RegistroPreenchimento(db.Model):

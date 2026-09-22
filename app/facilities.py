@@ -409,6 +409,26 @@ def _salvar_fotos(campo_form, maximo=4):
     return urls
 
 
+def _marcar_aprovado_por(dia):
+    """[fix crítico 22/09] Marca dia.aprovado_por_usuario_id OU aprovado_por_colaborador_id
+    (nunca os dois) — current_user pode ser um Usuario (Admin/staff) OU um Colaborador
+    (Encarregado logado normalmente pelo site). Usar current_user.id direto numa FK única
+    pra usuarios.id quebrava (violação de integridade) sempre que quem aprovava era um
+    Colaborador, já que o ID dele não existe na tabela de usuários."""
+    from .almox import _colab_sessao
+    if current_user.is_authenticated and isinstance(current_user, Colaborador):
+        dia.aprovado_por_colaborador_id = current_user.id
+        dia.aprovado_por_usuario_id = None
+    elif current_user.is_authenticated:
+        dia.aprovado_por_usuario_id = current_user.id
+        dia.aprovado_por_colaborador_id = None
+    else:
+        colab = _colab_sessao()
+        if colab:
+            dia.aprovado_por_colaborador_id = colab.id
+            dia.aprovado_por_usuario_id = None
+
+
 def _quem_preencheu():
     """[fix crítico] Retorna (colaborador_id, usuario_id) — só um dos dois preenchido.
     ANTES: assumia que current_user.is_authenticated só podia ser um Usuario (admin/staff),
@@ -672,12 +692,22 @@ def atividade_detalhe(grupo_id):
                 flash("Não há dias para reprogramar (todos já aprovados ou fora do escopo).", "warning")
                 return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
             novas_datas = _gerar_dias_uteis(nova_data_ini, len(dias_afetados))
+            avisos = []
+            for ac in grupo.colaboradores:
+                conflito = _checar_conflito_colaborador(ac.colaborador_id, novas_datas[0], novas_datas,
+                                                        ignorar_grupo_id=grupo.id)
+                if conflito:
+                    avisos.append(f"{ac.colaborador.nome} já tem outra atividade ('{conflito['grupo'].titulo}') "
+                                  f"em {', '.join(d.strftime('%d/%m') for d in conflito['dias'])}")
             for d, nova_d in zip(dias_afetados, novas_datas):
                 d.reprogramado_de = d.data
                 d.data = nova_d
                 d.motivo_reprogramacao = motivo
             db.session.commit()
-            flash(f"{len(dias_afetados)} dia(s) reprogramado(s) a partir de {nova_data_ini.strftime('%d/%m/%Y')}.", "success")
+            msg = f"{len(dias_afetados)} dia(s) reprogramado(s) a partir de {nova_data_ini.strftime('%d/%m/%Y')}."
+            if avisos:
+                msg += " ⚠️ Conflito de agenda: " + "; ".join(avisos)
+            flash(msg, "warning" if avisos else "success")
             return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
 
         if acao == "cancelar":
@@ -1055,7 +1085,7 @@ def aprovar_dia(dia_id):
     dia = db.session.get(AtividadeDia, dia_id) or abort(404)
     dia.status = "APROVADA"
     dia.aprovado_em = datetime.utcnow()
-    dia.aprovado_por = current_user.id if current_user.is_authenticated else None
+    _marcar_aprovado_por(dia)
     # [item 7] o Encarregado pode ANEXAR fotos extras na hora de aprovar, somando com as que
     # o colaborador já tinha enviado — até o limite de 4 no total (não substitui as existentes).
     fotos_existentes = json.loads(dia.fotos_json) if dia.fotos_json else []
@@ -1085,7 +1115,7 @@ def retificar_dia(dia_id):
     dia.retificado = True
     dia.status = "APROVADA"
     dia.aprovado_em = datetime.utcnow()
-    dia.aprovado_por = current_user.id if current_user.is_authenticated else None
+    _marcar_aprovado_por(dia)
     # [item 7] mesma regra de soma de fotos até 4, na retificação também
     fotos_existentes = json.loads(dia.fotos_json) if dia.fotos_json else []
     vagas = max(0, 4 - len(fotos_existentes))
@@ -1118,6 +1148,19 @@ def reprogramar_dia(dia_id):
         return redirect(request.referrer or url_for("facilities.aprovacao"))
     nova_data_d = datetime.strptime(nova_data, "%Y-%m-%d").date()
 
+    # [fix] a reprogramação NUNCA checava conflito de agenda dos colaboradores da equipe na
+    # nova data — mesma lógica já usada na criação manual e no crescimento automático, mas
+    # que faltava aqui. Antes de mover a data, verifica pra cada colaborador do grupo.
+    def _avisar_conflitos(datas_novas, grupo_id_ignorar):
+        avisos = []
+        for ac in dia.grupo.colaboradores:
+            conflito = _checar_conflito_colaborador(ac.colaborador_id, datas_novas[0], datas_novas,
+                                                     ignorar_grupo_id=grupo_id_ignorar)
+            if conflito:
+                avisos.append(f"{ac.colaborador.nome} já tem outra atividade ('{conflito['grupo'].titulo}') "
+                              f"em {', '.join(d.strftime('%d/%m') for d in conflito['dias'])}")
+        return avisos
+
     if escopo == "todas_restantes":
         # todos os dias do MESMO grupo, a partir deste (por ordem), que ainda não foram
         # aprovados — os já aprovados ficam intocados, o histórico deles não deve mudar.
@@ -1125,18 +1168,26 @@ def reprogramar_dia(dia_id):
                      AtividadeDia.ordem >= dia.ordem, AtividadeDia.status != "APROVADA")
                      .order_by(AtividadeDia.ordem).all())
         novas_datas = _gerar_dias_uteis(nova_data_d, len(restantes))
+        avisos = _avisar_conflitos(novas_datas, dia.grupo_id)
         for d, nova_d in zip(restantes, novas_datas):
             d.reprogramado_de = d.data
             d.data = nova_d
             d.motivo_reprogramacao = motivo
         db.session.commit()
-        flash(f"{len(restantes)} dia(s) reprogramado(s) a partir de {nova_data_d.strftime('%d/%m/%Y')}.", "success")
+        msg = f"{len(restantes)} dia(s) reprogramado(s) a partir de {nova_data_d.strftime('%d/%m/%Y')}."
+        if avisos:
+            msg += " ⚠️ Conflito de agenda: " + "; ".join(avisos)
+        flash(msg, "warning" if avisos else "success")
     else:
+        avisos = _avisar_conflitos([nova_data_d], dia.grupo_id)
         dia.reprogramado_de = dia.data
         dia.data = nova_data_d
         dia.motivo_reprogramacao = motivo
         db.session.commit()
-        flash("Dia reprogramado.", "success")
+        msg = "Dia reprogramado."
+        if avisos:
+            msg += " ⚠️ Conflito de agenda: " + "; ".join(avisos)
+        flash(msg, "warning" if avisos else "success")
     return redirect(request.referrer or url_for("facilities.aprovacao"))
 
 
@@ -1396,6 +1447,35 @@ def rdo_pdf(rdo_id):
     return send_file(buf, mimetype="application/pdf", as_attachment=False, download_name=nome_arquivo)
 
 
+@facilities_bp.route("/rdo/pdf-lote", methods=["POST"])
+@_rdo_required
+def rdo_pdf_lote():
+    """[item novo] Gera um único PDF combinado com vários RDOs selecionados na lista
+    (checkbox), um atrás do outro — cada um gerado com o mesmo layout do PDF individual."""
+    from flask import send_file
+    from io import BytesIO
+    from pypdf import PdfWriter, PdfReader
+    from .pdf_rdo import gerar_pdf_rdo
+    ids = [int(x) for x in request.form.getlist("rdo_ids") if x.isdigit()]
+    if not ids:
+        flash("Selecione ao menos um RDO para baixar.", "warning")
+        return redirect(url_for("facilities.rdo"))
+    writer = PdfWriter()
+    for rid in ids:
+        r = db.session.get(RelatorioDiarioObra, rid)
+        if not r:
+            continue
+        buf = gerar_pdf_rdo(r)
+        reader = PdfReader(buf)
+        for page in reader.pages:
+            writer.add_page(page)
+    saida = BytesIO()
+    writer.write(saida)
+    saida.seek(0)
+    return send_file(saida, mimetype="application/pdf", as_attachment=False,
+                     download_name=f"RDOs_{date.today().strftime('%Y%m%d')}.pdf")
+
+
 @facilities_bp.route("/rdo/<int:rdo_id>/diagnostico-fotos")
 def rdo_diagnostico_fotos(rdo_id):
     """[TEMPORÁRIO — diagnóstico] Só Admin/Master. Testa, passo a passo, por que as fotos não
@@ -1508,3 +1588,54 @@ def rdo_reabrir(rdo_id):
     db.session.commit()
     flash("RDO reaberto — agora pode ser editado novamente.", "success")
     return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))
+
+
+@facilities_bp.route("/rdo/<int:rdo_id>/excluir", methods=["POST"])
+@_rdo_required
+def rdo_excluir(rdo_id):
+    """[item novo] Exclui um RDO — só permitido enquanto PENDENTE. Se estiver APROVADO,
+    precisa reabrir primeiro (rdo_reabrir), que zera as aprovações e volta pra PENDENTE."""
+    r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_gestor:
+        abort(403)
+    if r.status != "PENDENTE":
+        flash("Este RDO está aprovado — reabra-o primeiro para poder excluir.", "danger")
+        return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))
+    db.session.delete(r)
+    db.session.commit()
+    flash("RDO excluído.", "success")
+    return redirect(url_for("facilities.rdo"))
+
+
+@facilities_bp.route("/rdo/excluir-lote", methods=["POST"])
+@_rdo_required
+def rdo_excluir_lote(rdo_id=None):
+    """[item novo] Exclui vários RDOs de uma vez (checkbox na lista) — mesma regra: só os
+    que estiverem PENDENTE são excluídos; os aprovados são ignorados, com aviso."""
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_gestor:
+        abort(403)
+    ids = [int(x) for x in request.form.getlist("rdo_ids") if x.isdigit()]
+    excluidos, bloqueados = 0, 0
+    for rid in ids:
+        r = db.session.get(RelatorioDiarioObra, rid)
+        if not r:
+            continue
+        if r.status != "PENDENTE":
+            bloqueados += 1
+            continue
+        db.session.delete(r)
+        excluidos += 1
+    db.session.commit()
+    msg = f"{excluidos} RDO(s) excluído(s)."
+    if bloqueados:
+        msg += f" {bloqueados} ignorado(s) por estarem aprovados (reabra antes de excluir)."
+    flash(msg, "success" if excluidos else "warning")
+    return redirect(url_for("facilities.rdo"))

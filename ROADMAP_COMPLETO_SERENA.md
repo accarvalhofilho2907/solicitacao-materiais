@@ -4162,3 +4162,34 @@ usem definitivamente o codigo novo.
 Smoke test geral (7 telas) 200.
 
 === BUG CRITICO DE CACHE DE CONFIGURACAO DO CLOUDINARY: ENCONTRADO NA RAIZ E CORRIGIDO ===
+
+### ================== BUG CRITICO NA MIGRACAO AUTOMATICA ENCONTRADO E CORRIGIDO (23/09) ==================
+NOVO erro 500 reportado no RDO (mesmo padrao do erro anterior, colunas faltando: horario_inicio,
+status, etc, mesmo apos MULTIPLAS entregas desde que essas colunas foram criadas no modelo). Isso
+indicava que o mecanismo de auto-correcao (_light_migrate) nao estava resolvendo de verdade,
+contrariando o que eu tinha confirmado antes só com testes SEM concorrencia real.
+
+CAUSA RAIZ ENCONTRADA: o loop principal de _light_migrate() que adiciona colunas novas (ALTER
+TABLE ADD COLUMN) NAO TINHA NENHUM try/except por coluna — só um db.session.commit() no final de
+TODO o loop. Se QUALQUER ALTER TABLE falhasse por QUALQUER motivo (o mais provavel: condicao de
+CORRIDA entre os multiplos WORKERS do Gunicorn subindo ao mesmo tempo no Render e tentando
+adicionar a MESMA coluna simultaneamente — um deles chega primeiro, o outro tenta criar uma coluna
+que ja existe e recebe erro do Postgres), a excecao propagava pra FORA do loop inteiro, sem
+commitar NADA — inclusive colunas de OUTRAS tabelas que viriam depois na ordem do loop, mesmo sem
+nenhuma relacao com o erro original. Isso explica por que bugs de "coluna faltando" continuavam
+aparecendo em rodadas diferentes mesmo com _light_migrate rodando: bastava UM erro em QUALQUER
+tabela, em QUALQUER worker, pra comprometer a migracao de TODAS as tabelas daquele boot especifico.
+
+FIX: cada ALTER TABLE agora tem seu proprio try/except + commit individual — uma falha isolada
+numa coluna (ex.: outro worker ja criou ela um instante antes) nao impede as DEMAIS colunas, de
+QUALQUER tabela, de serem migradas com sucesso.
+TESTADO O CENARIO REAL DE CONCORRENCIA: simulado um banco onde uma coluna (horario_inicio) JA
+EXISTE parcialmente (como aconteceria se outro worker ja tivesse rodado aquele pedaco especifico
+da migracao um instante antes) — confirmado que TODAS as demais colunas esperadas (horario_termino,
+status, aprovado_encarregado_em, aprovado_admin_em, percentual_medio) sao adicionadas corretamente
+mesmo assim, sem travar.
+
+Smoke test geral (6 telas) 200.
+
+=== FIX CRITICO DE ROBUSTEZ NA MIGRACAO AUTOMATICA — deve eliminar de vez os erros recorrentes de
+    "coluna faltando" que apareciam em rodadas anteriores mesmo com colunas ja criadas no modelo ===

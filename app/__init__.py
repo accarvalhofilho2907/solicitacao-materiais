@@ -10,7 +10,16 @@ from .seed_data import TIPOS_PADRAO
 
 
 def _light_migrate():
-    """Adiciona colunas novas que ainda não existem (não apaga dados)."""
+    """Adiciona colunas novas que ainda não existem (não apaga dados).
+    [fix CRÍTICO 23/09] Antes, um ALTER TABLE que falhasse (por qualquer motivo — corrida
+    entre workers do Gunicorn subindo ao mesmo tempo e tentando adicionar a mesma coluna,
+    nome reservado, tipo incompatível) derrubava a exceção pra fora do loop inteiro, sem
+    commitar NADA — inclusive colunas de tabelas que viriam depois na ordem do loop, mesmo
+    sem relação nenhuma com o erro. Isso explica RDOs (e outras tabelas) continuarem faltando
+    colunas novas mesmo depois de várias entregas — bastava UM erro em QUALQUER tabela pra
+    travar a migração inteira daquele worker. Agora cada coluna é isolada num commit próprio
+    com seu try/except: uma falha isolada (ex.: outro worker já criou a coluna um instante
+    antes) não impede as demais colunas, de qualquer tabela, de serem migradas."""
     insp = inspect(db.engine)
     for table in db.metadata.sorted_tables:
         if not insp.has_table(table.name):
@@ -19,8 +28,11 @@ def _light_migrate():
         for col in table.columns:
             if col.name not in existentes:
                 tipo = col.type.compile(dialect=db.engine.dialect)
-                db.session.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {tipo}'))
-    db.session.commit()
+                try:
+                    db.session.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {tipo}'))
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
     # Roadmap 19.11 — a coluna 'tarefas' dos Perfis cresceu (lista completa passa de 400 chars).
     # No Postgres, amplia varchar(400) -> TEXT (idempotente). SQLite não precisa (não impõe tamanho).
     if db.engine.dialect.name == "postgresql" and insp.has_table("almox_papeis"):

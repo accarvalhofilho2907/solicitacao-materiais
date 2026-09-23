@@ -78,8 +78,21 @@
 
 {% if eh_gestor and not grupo.motivo_cancelamento %}
 <div class="card mb-3"><div class="card-body">
+  {% if grupo.eh_fixa and not grupo.encerrada %}
+  <div class="alert alert-secondary small py-2 mb-2">📌 Atividade fixa — contínua, sem data de término. Roda todo dia até ser encerrada.</div>
+  {% elif grupo.eh_fixa and grupo.encerrada %}
+  <div class="alert alert-success small py-2 mb-2">✓ Atividade fixa encerrada em {{ grupo.encerrada_em.strftime('%d/%m/%Y') }} — não gera mais dias novos.</div>
+  {% endif %}
   <div class="d-flex gap-2">
+    {% if grupo.eh_fixa and not grupo.encerrada %}
+    <form method="post" onsubmit="return confirm('Encerrar esta atividade fixa? Ela deixa de gerar novos dias a partir de hoje.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="acao" value="encerrar_fixa">
+      <button class="btn btn-sm btn-outline-danger">⏹ Encerrar atividade fixa</button>
+    </form>
+    {% else %}
     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#formReprogramarGeral">Reprogramar atividade</button>
+    {% endif %}
     <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#formCancelar">Cancelar atividade</button>
     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#formDuplicar">Duplicar atividade</button>
   </div>

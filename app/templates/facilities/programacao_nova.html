@@ -1,32 +1,62 @@
 {% extends "base.html" %}
 {% block title %}Nova atividade{% endblock %}
 {% block content %}
-<h4 class="mb-3">Nova atividade</h4>
-<p class="text-muted small">Ao salvar, a atividade é dividida em dias úteis (pula fim de semana e feriados); admin pode salvar sem preencher tudo.</p>
+<style>
+  .secao-form{background:var(--card-bg);border-radius:10px;margin-bottom:16px;overflow:hidden}
+  .secao-form .secao-head{background:var(--areia,#EDE9E5);border-left:4px solid #FF5246;padding:10px 16px;
+    font-weight:700;font-size:13px;letter-spacing:.3px;text-transform:uppercase;color:var(--texto)}
+  .secao-form .secao-body{padding:16px}
+  .tipo-card{border:2px solid var(--linha,#333);border-radius:10px;padding:12px 14px;cursor:pointer;
+    transition:border-color .15s, background .15s; flex:1}
+  .tipo-card:hover{border-color:#FF5246}
+  .tipo-card.selecionado{border-color:#FF5246;background:rgba(255,82,70,.08)}
+  .tipo-card input{display:none}
+  .tipo-card .tipo-titulo{font-weight:700;font-size:14px;margin-bottom:2px}
+  .tipo-card .tipo-desc{font-size:12px;color:var(--texto-2,#999)}
+  .linha-colab-form{background:rgba(255,255,255,.02);border-radius:8px;padding:10px;margin-bottom:8px}
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0">Nova atividade</h4>
+    <p class="text-muted small mb-0">Ao salvar, a atividade é dividida em dias úteis (pula fim de semana e feriados) — pode salvar sem preencher tudo.</p>
+  </div>
+</div>
 
 <form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="card mb-3"><div class="card-body">
-    <div class="row g-2">
-      <div class="col-md-8"><label class="form-label small">Título</label><input name="titulo" class="form-control"></div>
-      <div class="col-md-4"><label class="form-label small">Data de início</label><input type="date" name="data_inicio" class="form-control"></div>
-    </div>
-    <div class="row g-2 mt-1">
-      <div class="col-md-12">
-        <label class="form-label small">Tipo de atividade</label>
-        <div class="d-flex gap-3">
-          <div class="form-check"><input class="form-check-input" type="radio" name="tipo_atividade" id="tipoNormal" value="NORMAL" checked>
-            <label class="form-check-label small" for="tipoNormal"><b>Normal</b> — o colaborador reporta quantos dias faltam pra terminar</label></div>
-          <div class="form-check"><input class="form-check-input" type="radio" name="tipo_atividade" id="tipoFixa" value="FIXA">
-            <label class="form-check-label small" for="tipoFixa"><b>Fixa</b> — só fotos + descrição por dia, sem controle de progresso</label></div>
-        </div>
+
+  <div class="secao-form">
+    <div class="secao-head">Identificação</div>
+    <div class="secao-body">
+      <div class="row g-3">
+        <div class="col-md-8"><label class="form-label small">Título</label><input name="titulo" class="form-control"></div>
+        <div class="col-md-4"><label class="form-label small">Data de início</label><input type="date" name="data_inicio" class="form-control"></div>
       </div>
+      <div class="mt-3"><label class="form-label small">Descrição e detalhamento</label><textarea name="descricao" class="form-control" rows="2"></textarea></div>
     </div>
-    <div class="row g-2 mt-2">
-      <div class="col-md-12">
+  </div>
+
+  <div class="secao-form">
+    <div class="secao-head">Tipo de atividade</div>
+    <div class="secao-body">
+      <div class="d-flex gap-3">
+        <label class="tipo-card selecionado" id="cardNormal">
+          <input type="radio" name="tipo_atividade" id="tipoNormal" value="NORMAL" checked onchange="mudarTipo()">
+          <div class="tipo-titulo">📋 Normal</div>
+          <div class="tipo-desc">O colaborador reporta, a cada dia, quantos dias ainda faltam pra terminar.</div>
+        </label>
+        <label class="tipo-card" id="cardFixa">
+          <input type="radio" name="tipo_atividade" id="tipoFixa" value="FIXA" onchange="mudarTipo()">
+          <div class="tipo-titulo">📌 Fixa</div>
+          <div class="tipo-desc">Atividade contínua, sem data de término — roda todo dia até ser encerrada. Só fotos + descrição por dia.</div>
+        </label>
+      </div>
+
+      <div class="mt-3 pt-3 border-top">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="tem_horimetro" id="chkHorimetro" value="1" onchange="document.getElementById('areaMaquina').classList.toggle('d-none', !this.checked)">
-          <label class="form-check-label small" for="chkHorimetro"><b>Máquina com horímetro</b> — ativa 2 reports diários (início com horímetro inicial + foto do painel, fim com horímetro final + foto do painel)</label>
+          <label class="form-check-label small" for="chkHorimetro"><b>🚜 Máquina com horímetro</b> — ativa 2 reports diários (início com horímetro inicial + foto do painel, fim com horímetro final + foto do painel)</label>
         </div>
         <div id="areaMaquina" class="d-none mt-2">
           <label class="form-label small">Máquina *</label>
@@ -34,70 +64,83 @@
             <option value="">— selecione —</option>
             {% for m in maquinas_disp %}<option value="{{ m.id }}">{{ m.nome }}{% if m.planta %} ({{ m.planta.nome }}){% endif %}</option>{% endfor %}
           </select>
-          {% if not maquinas_disp %}<p class="text-muted small mt-1">Nenhuma máquina cadastrada — cadastre em Cadastro &gt; Cadastro Geral Terceiro &gt; Maquinário Pesado Terceiro.</p>{% endif %}
+          {% if not maquinas_disp %}<p class="text-muted small mt-1 mb-0">Nenhuma máquina cadastrada — cadastre em Cadastro &gt; Cadastro Geral Terceiro &gt; Maquinário Pesado Terceiro.</p>{% endif %}
         </div>
       </div>
     </div>
-    <div class="row g-2 mt-1">
-      <div class="col-md-3"><label class="form-label small">Duração — unidade</label>
-        <select name="unidade_duracao" class="form-select" id="selUnidade" onchange="atualizarUnidade()">
-          <option value="dias">Dias (manual)</option>
-          <option value="semana">1 semana</option>
-          <option value="mes">1 mês</option>
-          <option value="ano">1 ano</option>
-        </select></div>
-      <div class="col-md-3"><label class="form-label small">Duração (dias úteis)</label>
-        <input type="number" name="duracao_dias_uteis" id="inpDuracao" class="form-control" value="1" min="1"></div>
-      <div class="col-md-6"><label class="form-label small">Recorrência (opcional)</label>
-        <select name="recorrencia_dias" id="selRecorrencia" class="form-select">
-          <option value="">— não se repete —</option>
-          {% for v, l in opcoes_recorrencia %}<option value="{{ v }}" data-min="{{ v }}">{{ l }}</option>{% endfor %}
-        </select></div>
-    </div>
-    <div class="alert alert-warning small py-2 mt-2">Os dias informados são <b>dias úteis</b> (não corridos). "1 semana" = 5 dias úteis · "1 mês" ≈ 22 · "1 ano" ≈ 260.</div>
-    <div class="row g-2 mt-1">
-      <div class="col-12"><label class="form-label small">Descrição e detalhamento</label><textarea name="descricao" class="form-control" rows="2"></textarea></div>
-    </div>
-    <div class="row g-2 mt-1">
-      <div class="col-md-4"><label class="form-label small">Planta</label>
-        <select name="planta_id" class="form-select">
-          <option value="">—</option>
-          {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
-        </select></div>
-      <div class="col-md-6"><label class="form-label small">Edificação</label>
-        <select name="predio_id" class="form-select">
-          <option value="">—</option>
-          {% for pr in predios_disp %}<option value="{{ pr.id }}">{{ pr.nome }}</option>{% endfor %}
-        </select></div>
-    </div>
-    <label class="form-label small mt-2">Fotos — ANTES (máx. 4)</label>
-    <input type="file" name="fotos_antes" class="form-control" accept="image/*" multiple>
-  </div></div>
+  </div>
 
-  <div class="card mb-3"><div class="card-body">
-    <h6 class="mb-2">Empresa e responsável</h6>
-    <div id="listaColaboradores">
-      <div class="row g-2 align-items-end mb-2 linha-colab-form">
-        <div class="col-md-1"><span class="badge bg-primary">responsável</span></div>
-        <div class="col-md-5"><label class="form-label small">Empresa</label>
-          <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
-            <option value="">—</option>
-            {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
+  <div class="secao-form" id="secaoDuracao">
+    <div class="secao-head">Duração</div>
+    <div class="secao-body">
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label small">Unidade</label>
+          <select name="unidade_duracao" class="form-select" id="selUnidade" onchange="atualizarUnidade()">
+            <option value="dias">Dias (manual)</option>
+            <option value="semana">1 semana</option>
+            <option value="mes">1 mês</option>
+            <option value="ano">1 ano</option>
           </select></div>
-        <div class="col-md-5"><label class="form-label small">Colaborador</label>
-          <select name="colaborador_id" class="form-select sel-colab"><option value="">— escolha a empresa —</option></select></div>
+        <div class="col-md-4"><label class="form-label small">Duração (dias úteis)</label>
+          <input type="number" name="duracao_dias_uteis" id="inpDuracao" class="form-control" value="1" min="1"></div>
+        <div class="col-md-4"><label class="form-label small">Recorrência (opcional)</label>
+          <select name="recorrencia_dias" id="selRecorrencia" class="form-select">
+            <option value="">— não se repete —</option>
+            {% for v, l in opcoes_recorrencia %}<option value="{{ v }}" data-min="{{ v }}">{{ l }}</option>{% endfor %}
+          </select></div>
       </div>
+      <p class="text-muted small mt-2 mb-0">Os dias informados são <b>dias úteis</b> (não corridos). "1 semana" = 5 dias úteis · "1 mês" ≈ 22 · "1 ano" ≈ 260.</p>
     </div>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addColaboradorLinha()">＋ Adicionar colaborador</button>
-    <div class="alert alert-secondary small py-2 mt-2" id="avisoDivisao">Ao salvar: a atividade será dividida em dias úteis, cada um valendo uma fração igual da meta.</div>
-  </div></div>
+  </div>
 
-  <button class="btn btn-primary">Salvar atividade</button>
-  <a class="btn btn-outline-secondary" href="{{ url_for('facilities.programacao') }}">Cancelar</a>
+  <div class="secao-form">
+    <div class="secao-head">Local</div>
+    <div class="secao-body">
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label small">Planta</label>
+          <select name="planta_id" class="form-select">
+            <option value="">—</option>
+            {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+          </select></div>
+        <div class="col-md-8"><label class="form-label small">Edificação</label>
+          <select name="predio_id" class="form-select">
+            <option value="">—</option>
+            {% for pr in predios_disp %}<option value="{{ pr.id }}">{{ pr.nome }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="mt-3"><label class="form-label small">Fotos — ANTES (máx. 4)</label>
+        <input type="file" name="fotos_antes" class="form-control" accept="image/*" multiple></div>
+    </div>
+  </div>
+
+  <div class="secao-form">
+    <div class="secao-head">Empresa e equipe</div>
+    <div class="secao-body">
+      <div id="listaColaboradores">
+        <div class="row g-2 align-items-end linha-colab-form">
+          <div class="col-md-1"><span class="badge bg-primary">responsável</span></div>
+          <div class="col-md-5"><label class="form-label small">Empresa</label>
+            <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
+              <option value="">—</option>
+              {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
+            </select></div>
+          <div class="col-md-5"><label class="form-label small">Colaborador</label>
+            <select name="colaborador_id" class="form-select sel-colab"><option value="">— escolha a empresa —</option></select></div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addColaboradorLinha()">＋ Adicionar colaborador</button>
+      <p class="text-muted small mt-3 mb-0">Ao salvar, a atividade é dividida automaticamente em dias úteis.</p>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary">Salvar atividade</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('facilities.programacao') }}">Cancelar</a>
+  </div>
 </form>
 
 <template id="templateLinhaColab">
-  <div class="row g-2 align-items-end mb-2 linha-colab-form">
+  <div class="row g-2 align-items-end linha-colab-form">
     <div class="col-md-1"><span class="badge bg-secondary">colaborador</span></div>
     <div class="col-md-5"><label class="form-label small">Empresa</label>
       <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
@@ -111,6 +154,17 @@
 </template>
 
 <script>
+function mudarTipo(){
+  const eh_fixa = document.getElementById('tipoFixa').checked;
+  document.getElementById('cardNormal').classList.toggle('selecionado', !eh_fixa);
+  document.getElementById('cardFixa').classList.toggle('selecionado', eh_fixa);
+  // [23/09] Fixa = atividade CONTÍNUA, sem fim definido — não faz sentido perguntar "quantos
+  // dias" pra ela, então a seção de Duração inteira some quando Fixa é selecionada.
+  document.getElementById('secaoDuracao').classList.toggle('d-none', eh_fixa);
+}
+document.getElementById('cardNormal').addEventListener('click', function(){ document.getElementById('tipoNormal').checked = true; mudarTipo(); });
+document.getElementById('cardFixa').addEventListener('click', function(){ document.getElementById('tipoFixa').checked = true; mudarTipo(); });
+
 function addColaboradorLinha(){
   const tpl = document.getElementById('templateLinhaColab').content.cloneNode(true);
   document.getElementById('listaColaboradores').appendChild(tpl);

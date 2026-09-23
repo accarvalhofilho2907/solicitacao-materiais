@@ -1484,9 +1484,12 @@ class Feriado(db.Model):
 
 class AtividadeGrupo(db.Model):
     """A atividade "mãe": o planejamento. Ao salvar, gera N AtividadeDia (dias úteis).
-    [19/09] tipo: NORMAL usa o report de "dias restantes" (ver AtividadeDia.dias_restantes);
-    FIXA não tem nenhuma métrica de progresso — só fotos + descrição livre por dia, roda
-    exatamente os dias programados desde a criação, sem gerar dias extra automaticamente."""
+    [19/09] tipo: NORMAL usa o report de "dias restantes" (ver AtividadeDia.dias_restantes).
+    [23/09 CORREÇÃO DE CONCEITO] FIXA não é "duração fixa em dias" — é uma atividade CONTÍNUA,
+    SEM FIM DEFINIDO (ex.: ronda diária, monitoramento contínuo). Não tem duracao_dias_uteis
+    significativa; os dias são gerados SOB DEMANDA (ver _garantir_dias_fixa_ate()) sempre que
+    alguém abre uma tela numa data futura, até a atividade ser ENCERRADA explicitamente
+    (encerrada=True), que é quando a geração automática para."""
     __tablename__ = "sf_atividades_grupo"
     id = db.Column(db.Integer, primary_key=True)
     titulo = db.Column(db.String(200), nullable=False)
@@ -1494,7 +1497,7 @@ class AtividadeGrupo(db.Model):
     tipo = db.Column(db.String(10), default="NORMAL")   # NORMAL | FIXA
     data_inicio = db.Column(db.Date, nullable=False)
     unidade_duracao = db.Column(db.String(10), default="dias")   # dias|semana|mes|ano
-    duracao_dias_uteis = db.Column(db.Integer, nullable=False)
+    duracao_dias_uteis = db.Column(db.Integer)   # [23/09] nullable — FIXA não usa este campo
     recorrencia_dias = db.Column(db.Integer)   # null = não recorrente
     planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
     predio_id = db.Column(db.ForeignKey("sf_predios.id"))   # [v3] Prédio (cadastro novo)
@@ -1503,6 +1506,8 @@ class AtividadeGrupo(db.Model):
     status_cadastro = db.Column(db.String(20), default="COMPLETO")  # COMPLETO|INCOMPLETO
     motivo_cancelamento = db.Column(db.Text)
     maquina_horimetro_id = db.Column(db.ForeignKey("sf_maquinario_pesado_terceiro.id"))  # [22/09] se preenchido, ativa o fluxo de 2 reports/dia com horímetro
+    encerrada = db.Column(db.Boolean, default=False)   # [23/09] só relevante pra FIXA — para a geração automática de novos dias
+    encerrada_em = db.Column(db.DateTime)
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

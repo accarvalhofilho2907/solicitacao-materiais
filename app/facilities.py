@@ -331,6 +331,30 @@ def _gerar_dias_uteis(data_inicio, quantidade):
     return datas
 
 
+def _garantir_dias_fixa_ate(data_alvo):
+    """[23/09] Atividade FIXA não tem duração — os dias são gerados SOB DEMANDA. Chamado
+    sempre que uma tela (Programação, Preencher) é aberta numa data: para cada atividade
+    FIXA ativa (não encerrada) cujo último AtividadeDia gerado é anterior a data_alvo, gera
+    os dias úteis que faltam até lá (preenchendo a lacuna de uma vez, mesmo pulando várias
+    semanas — cobre o caso de "pular pra daqui 90 dias e a atividade já aparecer")."""
+    grupos_fixa_ativos = AtividadeGrupo.query.filter_by(tipo="FIXA", encerrada=False).all()
+    for grupo in grupos_fixa_ativos:
+        ultimo_dia = max(grupo.dias, key=lambda d: d.data) if grupo.dias else None
+        proxima_data = (ultimo_dia.data + timedelta(days=1)) if ultimo_dia else grupo.data_inicio
+        ultima_ordem = ultimo_dia.ordem if ultimo_dia else 0
+        novas_datas = []
+        d = proxima_data
+        while d <= data_alvo:
+            if _dia_util(d):
+                novas_datas.append(d)
+            d += timedelta(days=1)
+        for i, nova_data in enumerate(novas_datas, start=1):
+            db.session.add(AtividadeDia(grupo_id=grupo.id, data=nova_data, ordem=ultima_ordem + i,
+                                        meta_percentual=100, status="PENDENTE"))
+        if novas_datas:
+            db.session.commit()
+
+
 def _calcular_media_ponderada_dia(dias_do_dia):
     """[19/09] Média ponderada de progresso do dia, usando "dias restantes" em vez da % antiga.
     Para cada atividade NORMAL com dias_restantes já informado: progresso_estimado =
@@ -577,6 +601,12 @@ def programacao():
         offset_semanas = 0
     hoje = date.today()
     inicio_janela = hoje - timedelta(days=hoje.weekday()) + timedelta(weeks=offset_semanas)
+    fim_janela = inicio_janela + timedelta(days=13)
+
+    # [23/09] garante que atividades FIXA ativas já tenham dias gerados até a data mais
+    # distante que esta tela pode mostrar (fim da janela do calendário, ou a data selecionada
+    # mais distante, o que for maior) — cobre o caso de "pular pra daqui 90 dias".
+    _garantir_dias_fixa_ate(max(fim_janela, max(datas_sel)))
 
     q = AtividadeDia.query.filter(AtividadeDia.data.in_(datas_sel))
     if ids_permitidas:
@@ -586,11 +616,12 @@ def programacao():
 
     n_incompletas = AtividadeGrupo.query.filter_by(status_cadastro="INCOMPLETO").count()
 
-    # contagem + TÍTULOS de atividades por dia, pra tooltip customizado (14 dias a partir da janela)
+    # contagem + TÍTULOS de atividades por dia, pra tooltip customizado (14 dias a partir da
+    # janela) — [fix] excluindo CANCELADAS, que não deveriam aparecer nem contar no resumo.
     contagem = {}
     for i in range(14):
         d = inicio_janela + timedelta(days=i)
-        qc = AtividadeDia.query.filter_by(data=d)
+        qc = AtividadeDia.query.filter(AtividadeDia.data == d, AtividadeDia.status != "CANCELADA")
         if ids_permitidas:
             qc = qc.join(AtividadeGrupo).filter(db.or_(AtividadeGrupo.planta_id.in_(ids_permitidas),
                                                         AtividadeGrupo.planta_id.is_(None)))
@@ -600,7 +631,7 @@ def programacao():
     return render_template("facilities/programacao.html", dias=dias,
                            datas_sel=[d.isoformat() for d in datas_sel],
                            offset_semanas=offset_semanas, inicio_janela=inicio_janela,
-                           fim_janela=inicio_janela + timedelta(days=13),
+                           fim_janela=fim_janela,
                            n_incompletas=n_incompletas, contagem_json=json.dumps(contagem),
                            hoje=date.today())
 
@@ -684,17 +715,35 @@ def programacao_nova():
     # colaboradores: o PRIMEIRO da lista = responsável
     colaboradores_ids = request.form.getlist("colaborador_id")
     conflitos = []
+    # [23/09] Para FIXA (contínua, sem duração), a checagem de conflito e a geração inicial
+    # usam uma janela curta (14 dias úteis) em vez da "duração" — o resto é gerado sob demanda
+    # depois, por _garantir_dias_fixa_ate().
+    duracao_para_conflito = 14 if tipo_atividade == "FIXA" else duracao
     for i, cid in enumerate(colaboradores_ids):
         if not cid:
             continue
         cid = int(cid)
-        datas_novas = _gerar_dias_uteis(data_inicio, duracao)
+        datas_novas = _gerar_dias_uteis(data_inicio, duracao_para_conflito)
         conflito = _checar_conflito_colaborador(cid, data_inicio, datas_novas, ignorar_grupo_id=grupo.id)
         if conflito:
             conflitos.append({"colaborador_id": cid, "grupo_titulo": conflito["grupo"].titulo,
                               "grupo_id": conflito["grupo"].id, "dias": [d.isoformat() for d in conflito["dias"]]})
         db.session.add(AtividadeColaborador(grupo_id=grupo.id, colaborador_id=cid, eh_responsavel=(i == 0)))
     db.session.commit()
+
+    if tipo_atividade == "FIXA":
+        # [23/09] Atividade FIXA: sem "duração" — gera uma janela inicial de 14 dias úteis
+        # (o resto continua sendo gerado sob demanda enquanto ela não for encerrada).
+        datas = _gerar_dias_uteis(data_inicio, 14)
+        for i, d in enumerate(datas, start=1):
+            db.session.add(AtividadeDia(grupo_id=grupo.id, data=d, ordem=i, meta_percentual=100, status="PENDENTE"))
+        db.session.commit()
+        if conflitos:
+            flash(f"Atividade fixa criada, mas {len(conflitos)} colaborador(es) já têm outra atividade nesse período — "
+                  f"revise na tela de detalhes.", "warning")
+        else:
+            flash("Atividade fixa programada — roda todo dia até ser encerrada.", "success")
+        return redirect(url_for("facilities.programacao"))
 
     # gera as linhas (AtividadeDia) — meta_percentual mantido só por compatibilidade histórica
     # (não usado na lógica nova de "dias restantes" pra atividade NORMAL)
@@ -778,6 +827,20 @@ def atividade_detalhe(grupo_id):
                 msg += " ⚠️ Conflito de agenda: " + "; ".join(avisos)
             flash(msg, "warning" if avisos else "success")
             return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+
+        if acao == "encerrar_fixa":
+            # [23/09] Só relevante pra atividade FIXA (contínua, sem fim definido): marca
+            # encerrada=True, o que para a geração automática de novos dias
+            # (_garantir_dias_fixa_ate ignora grupos com encerrada=True). Os dias já
+            # existentes continuam no histórico normalmente.
+            if not grupo.eh_fixa:
+                flash("Só atividades fixas podem ser encerradas por aqui.", "danger")
+                return redirect(url_for("facilities.atividade_detalhe", grupo_id=grupo.id))
+            grupo.encerrada = True
+            grupo.encerrada_em = datetime.utcnow()
+            db.session.commit()
+            flash("Atividade fixa encerrada — não serão gerados novos dias.", "success")
+            return redirect(url_for("facilities.programacao"))
 
         if acao == "cancelar":
             motivo = (request.form.get("motivo_cancelamento") or "").strip()
@@ -953,6 +1016,7 @@ def preencher_escolher():
     """Tela 1: escolhe HOJE ou um dos dias em que o colaborador (ou, se ele for Encarregado
     de Campo, algum colaborador da equipe da empresa dele) tem atividade."""
     from .almox import _colab_sessao
+    _garantir_dias_fixa_ate(date.today())  # [23/09] garante atividades FIXA até hoje
     colab_id, usuario_id = _quem_preencheu()
     ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
     q = AtividadeDia.query.join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeDia.grupo_id)
@@ -970,6 +1034,7 @@ def preencher_dia(data_str):
         data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
     except ValueError:
         abort(404)
+    _garantir_dias_fixa_ate(data_d)  # [23/09] garante que atividades FIXA já tenham dia gerado pra essa data
     colab_id, usuario_id = _quem_preencheu()
     ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
 

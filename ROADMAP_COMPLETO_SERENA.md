@@ -4001,3 +4001,88 @@ Smoke test geral final (11 telas, cobrindo o modulo completo) 200.
 === MODULO HORIMETRO/MAQUINARIO PESADO: CONCLUIDO ===
 Cadastro, criacao de atividade vinculada, os 2 reports diarios, painel dedicado, e as 2 secoes no
 RDO — tudo implementado e testado. Pronto pra revisao e deploy.
+
+### ================== MUDANCA DE CONCEITO: ATIVIDADE FIXA (23/09) ==================
+CORRECAO DE ENTENDIMENTO IMPORTANTE: "Fixa" NAO significa "atividade com duracao fixa em dias" (o
+que eu tinha implementado) — significa uma atividade CONTINUA, SEM FIM DEFINIDO, que roda "todo dia"
+(ex: uma ronda diaria, um monitoramento continuo). Por isso, ao criar uma atividade Fixa, o campo de
+"Duracao (dias uteis)" NAO deve aparecer — nao faz sentido perguntar "quantos dias" pra algo que nao
+tem fim definido.
+
+ESPECIFICACAO FECHADA (perguntas de esclarecimento com Antonio):
+
+1) GERACAO DE DIAS: "gera todos os dias para sempre" na pratica -> geracao SOB DEMANDA. Toda vez que
+   alguem abre a tela de Programacao ou Preencher numa data X, o sistema checa se ha atividades FIXA
+   ATIVAS sem AtividadeDia gerado ate' aquela data, e gera na hora (preenchendo a lacuna, pulando fim
+   de semana/feriados, mesma logica de _gerar_dias_uteis). Confirmado explicitamente por Antonio que
+   isso resolve o caso de "pular pra daqui 90 dias" — a atividade aparece imediatamente ao abrir
+   aquela tela, sem precisar esperar o tempo passar naturalmente.
+
+2) ENCERRAR: por nao ter fim automatico, precisa de uma ACAO EXPLICITA — um botao "Encerrar
+   atividade fixa" (Encarregado/Admin) que marca a atividade como finalizada e PARA a geracao
+   automatica de novos dias (os dias ja existentes continuam no historico normalmente).
+
+IMPACTO NO MODELO: AtividadeGrupo com tipo=FIXA passa a NAO TER duracao_dias_uteis significativa (o
+campo pode ficar null ou ser ignorado) — precisa de um novo campo tipo "encerrada" (boolean) ou um
+status proprio pra saber se ainda deve gerar dias novos.
+
+IMPACTO NA CRIACAO: o formulario condicionalmente ESCONDE o bloco de "Duracao" inteiro quando Fixa
+esta selecionada (JS + validacao no backend pra nao exigir duracao_dias_uteis nesse caso).
+
+STATUS: especificacao fechada, ainda NAO IMPLEMENTADO — e' uma mudanca de conceito que precisa
+reescrever a logica de geracao de dias pra atividade FIXA (hoje ela gera N dias fixos igual a
+NORMAL, so' sem o report de dias_restantes — isso muda: FIXA nao tem N dias, e sim geracao continua
+sob demanda ate' ser encerrada).
+
+OUTROS 2 BUGS DESTA RODADA (ja corrigidos e testados):
+- Tooltip do calendario (resumo ao passar o mouse) estava contando atividades CANCELADAS — a query
+  de contagem nao filtrava por status. CORRIGIDO E TESTADO: JSON de contagem embutido na pagina
+  confirmado mostrando so' as atividades ativas, cancelada excluida corretamente.
+- Layout da tela de Criar Atividade redesenhado: 5 secoes claramente demarcadas (Identificacao,
+  Tipo de atividade, Duracao, Local, Empresa e equipe) com cabecalho em faixa areia + filete coral
+  (mesmo padrao visual do resto do sistema), tipo de atividade virou 2 cards clicaveis (visual mais
+  claro que os radios antigos) em vez do bloco confuso anterior. Testado com clique real (jsdom):
+  sem erros de JS, cards alternam a selecao visual corretamente ao clicar.
+
+### ================== ATIVIDADE FIXA REIMPLEMENTADA COM O CONCEITO CORRETO (23/09) ==================
+Implementada a mudanca de conceito registrada na entrada anterior: FIXA = atividade continua, sem
+fim definido, NAO "duracao fixa em dias" (o que estava implementado antes, incorretamente).
+
+MODELO: duracao_dias_uteis agora e' NULLABLE (antes era obrigatorio) — FIXA nao usa esse campo.
+Novos campos: encerrada (bool) e encerrada_em (datetime).
+
+CRIACAO: pra FIXA, gera uma janela inicial de 14 dias uteis (o resto vem sob demanda depois). O
+formulario de criacao AGORA ESCONDE a secao inteira de "Duracao" via JS quando Fixa e' selecionada
+(nao faz sentido perguntar "quantos dias" pra algo continuo) — checagem de conflito de agenda na
+criacao tambem usa essa janela de 14 dias pra FIXA, em vez da duracao (que nao existe).
+
+GERACAO SOB DEMANDA: novo helper _garantir_dias_fixa_ate(data_alvo) — pra cada atividade FIXA ATIVA
+(encerrada=False), verifica o ultimo dia ja gerado e cria os dias uteis que faltam ate' a data alvo,
+de uma vez (preenchendo a lacuna inteira, mesmo que seja de varias semanas). Chamado nas 3 telas que
+importam: Programacao (usa o fim da janela do calendario OU a data selecionada, o que for maior),
+Preencher (usa a data que a pessoa esta abrindo), Preencher-Escolher (usa hoje).
+TESTADO O CENARIO EXATO que o Antonio perguntou: criar atividade Fixa -> pular pra ~90 dias a frente
+na tela de Programacao -> a atividade JA APARECE imediatamente (94 dias gerados sob demanda numa
+unica chamada), sem precisar esperar o tempo passar naturalmente.
+
+ENCERRAR: novo botao "Encerrar atividade fixa" na tela de detalhe (so aparece pra FIXA nao
+encerrada) — marca encerrada=True, o que faz _garantir_dias_fixa_ate PARAR de gerar novos dias pra
+aquele grupo (os dias ja existentes continuam intactos no historico). TESTADO: apos encerrar,
+mesmo abrindo uma tela numa data ainda mais distante no futuro, a quantidade de dias NAO cresce mais.
+
+Smoke test geral (8 telas) 200.
+
+### ================== OUTROS 2 FIXES DESTA RODADA ==================
+1) Tooltip do calendario contando atividades CANCELADAS: a query de contagem (usada no resumo ao
+   passar o mouse em cada dia) nao filtrava por status. CORRIGIDO E CONFIRMADO: JSON de contagem
+   embutido na pagina mostra so' as atividades ativas daquele dia, cancelada excluida corretamente
+   tanto da lista de titulos quanto do numero total.
+
+2) Layout da tela de Criar Atividade: redesenhado em 5 secoes claramente demarcadas (Identificacao,
+   Tipo de atividade, Duracao, Local, Empresa e equipe), cada uma com cabecalho em faixa areia +
+   filete coral (mesmo padrao visual usado no PDF/RDO). Tipo de atividade virou 2 cards clicaveis
+   (visual mais claro que os radios simples de antes). Testado com clique real (jsdom): sem erros
+   de JS, cards alternam a selecao visual corretamente, secao de Duracao aparece/desaparece ao
+   trocar o tipo.
+
+=== ATIVIDADE FIXA (conceito corrigido) + tooltip + layout: CONCLUIDOS E TESTADOS ===

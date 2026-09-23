@@ -4124,3 +4124,41 @@ Smoke test geral (5 telas) 200.
 === PAINEL DE HORIMETROS: TODAS AS 3 MELHORIAS CONCLUIDAS E TESTADAS ===
 === FOTOS NO PDF: CAUSA RAIZ IDENTIFICADA COM CERTEZA — DEPENDE DE ANTONIO CORRIGIR A CONFIGURACAO
     REAL DO CLOUDINARY NO RENDER, USANDO A NOVA ROTA DE DIAGNOSTICO PRA CONFIRMAR ===
+
+### ================== BUG RAIZ REAL DO CLOUDINARY ENCONTRADO E CORRIGIDO (23/09) ==================
+Antonio corrigiu o CLOUDINARY_URL no Render (tinha residuo do template "<your_api_secret>" com um
+">" sobrando) — o diagnostico confirmou "Cloudinary esta funcionando corretamente" com upload de
+teste real. PORÉM, ao testar com uma atividade real (RETROESCAVADEIRA) DEPOIS da correcao, as 4
+fotos da atividade AINDA cairam em /uploads/, enquanto as 2 fotos do horimetro (mesma atividade,
+mesmo momento) funcionaram e foram pro Cloudinary. Isso descartou de vez a hipotese de "config
+ainda errada" e apontou pra um bug de codigo real.
+
+CAUSA RAIZ ENCONTRADA (confirmada lendo o codigo-fonte da biblioteca cloudinary e testando o
+cenario exato): a biblioteca Python do Cloudinary INSTANCIA a config UMA UNICA VEZ, na IMPORTACAO
+do modulo (_config = Config() no nivel do modulo cloudinary/__init__.py, que chama
+_load_config_from_env() automaticamente). Isso significa que os.environ["CLOUDINARY_URL"] SO' e'
+lido quando o processo Python sobe — nao a cada chamada de cloudinary.config(secure=True) (que so
+reconfigura o que ja foi carregado, sem reler o ambiente). Se o Render nao reinicia de fato TODOS
+os workers do Gunicorn apos uma mudanca de variavel de ambiente (comportamento plausivel e dificil
+de garantir 100%), um worker antigo continua com a config ERRADA em memoria PARA SEMPRE, mesmo com
+a variavel ja corrigida no painel — explica perfeitamente por que ALGUMAS requisicoes funcionavam
+(bateram num worker novo) e outras nao (bateram num worker antigo).
+
+FIX: app/storage.py agora faz o parse manual da URL (urllib.parse.urlparse, biblioteca padrao) e
+passa cloud_name/api_key/api_secret EXPLICITAMENTE em cada chamada de cloudinary.config(), em vez
+de confiar na leitura implicita do ambiente. Isso garante que TODA chamada usa o valor ATUAL de
+current_app.config["CLOUDINARY_URL"], nunca o que estava em memoria desde a importacao do modulo —
+elimina de vez a dependencia do comportamento fragil de "process reload" do Render.
+TESTADO O CENARIO EXATO DO BUG: simulado um cloudinary.config() com valores ERRADOS/ANTIGOS em
+memoria (como um worker preso teria), confirmado que o fix FORCA a config correta a partir do
+valor atual, sobrescrevendo o que estava errado. Testado tambem o fluxo completo de salvar_imagem()
+com credencial fake (sem rede real no sandbox): cai no fallback local sem quebrar, como esperado.
+
+RECOMENDACAO PARA ANTONIO: apos subir esse fix, nao deveria mais ser necessario reiniciar o servico
+manualmente toda vez que mexer no CLOUDINARY_URL — o codigo agora sempre le o valor atual na hora
+do upload. Ainda assim, um restart completo do servico apos o deploy garante que fotos futuras
+usem definitivamente o codigo novo.
+
+Smoke test geral (7 telas) 200.
+
+=== BUG CRITICO DE CACHE DE CONFIGURACAO DO CLOUDINARY: ENCONTRADO NA RAIZ E CORRIGIDO ===

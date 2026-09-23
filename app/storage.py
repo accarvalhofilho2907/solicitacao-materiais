@@ -80,8 +80,21 @@ def salvar_imagem(file_storage):
         try:
             import cloudinary
             import cloudinary.uploader
+            from urllib.parse import urlparse
 
-            cloudinary.config(secure=True)  # lê CLOUDINARY_URL do ambiente
+            # [fix CRÍTICO 23/09] cloudinary.config(secure=True) SEM passar as credenciais
+            # confia que a biblioteca já leu CLOUDINARY_URL do os.environ — mas ela só faz
+            # essa leitura UMA VEZ, na importação do módulo (Config() é instanciado no nível
+            # do módulo, em cloudinary/__init__.py). Se o Render não reiniciar de fato TODOS
+            # os workers do Gunicorn depois de uma mudança na variável de ambiente, um worker
+            # antigo continua com a config velha em memória pra sempre — explica por que
+            # algumas requisições funcionavam e outras não, mesmo com a variável já corrigida
+            # no painel. Aqui fazemos o parse manual (só urlparse, biblioteca padrão) e
+            # passamos cloud_name/api_key/api_secret explicitamente — usa sempre o valor
+            # ATUAL de current_app.config, nunca o que estava em memória na importação.
+            parsed = urlparse(current_app.config["CLOUDINARY_URL"])
+            cloudinary.config(cloud_name=parsed.hostname, api_key=parsed.username,
+                              api_secret=parsed.password, secure=True)
             res = cloudinary.uploader.upload(usar_arquivo, folder="solicitacoes")
             return res["secure_url"]
         except Exception:

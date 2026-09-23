@@ -4346,3 +4346,215 @@ podem ser feitos em qualquer ordem/paralelo se Antonio preferir priorizar.
 
 PROXIMO PASSO: aguardando ordem explicita de Antonio pra iniciar (pode ser por item ou tudo de uma
 vez). Nenhum codigo sera alterado ate' la'.
+
+### ================== ESPECIFICACAO REFINADA E CONFIRMADA PELO ANTONIO (23/09, continuacao) ==================
+AINDA NADA FOI IMPLEMENTADO — Antonio so' confirmou/detalhou a especificacao abaixo, com PDF de
+referencia anexado (RDO real da empresa Omega/TG Melo, relatorio n. 850, 20/11/2025, 10 paginas) e
+4 prints do sistema atual (Preenchendo Relatorio, grade de fotos 2x2, tabela de mao de obra). Esta
+secao SUBSTITUI/detalha os itens 1-8 registrados na entrada anterior com as respostas exatas.
+Continua valendo a regra: so' implementar apos ordem explicita ("pode rodar").
+
+PDF DE REFERENCIA (anexado, arquivo "Relatório Diário de Obra (RDO) n 850 - 20-11-2025.pdf") —
+estrutura observada, usada como base visual (nao copiar 1:1, adaptar aos campos que o Antonio quer
+manter/remover, listados abaixo):
+- Cabecalho com logo, "Relatorio n", Data, Dia da semana à direita; bloco Obra/Contrato/Local/
+  Contratante/Responsavel/Prazos à esquerda (ESSE BLOCO DE PRAZOS/OBRA/CONTRATANTE/RESPONSAVEL
+  SERA REMOVIDO no nosso, ver item 1 abaixo).
+- Bloco Horario de trabalho + Horas trabalhadas + Condicao climatica (Manha/Tarde/Noite, Tempo,
+  Condicao) lado a lado.
+- Tabela "Mao de obra (N)": Nome | Funcao | Entrada/Saida | Intervalo | Horas — inclui maquinas
+  operadas (ex.: "Retroescavadeira Case 580NTE" como uma linha) junto com pessoas, agrupados por
+  colchete "Equipamento linha direta" / "Mao de Obra Direta" (NO NOSSO: maquinario vai pra caixa de
+  Equipamentos separada, mao de obra so' tem pessoas).
+- Tabela "Equipamentos (N)": caixinhas com nome + quantidade.
+- "Atividades (N)": grupo/subgrupo, titulo, descricao, e % ou status à direita.
+- "Ocorrencias (N)" e "Comentarios (N)": texto livre, comentarios com autor+data (no nosso: campos
+  simples preenchidos na hora de gerar o RDO, sem thread de comentarios com multiplos autores/datas).
+- "Fotos (N)": grade 2x2 com legenda (numero da atividade) embaixo de cada foto.
+- Rodape com carimbo de aprovacao (nome, data/hora) repetido em toda pagina — NO NOSSO: pagina a
+  pagina, mostrar aprovacao do Encarregado E do Admin (as duas, nao so' uma).
+
+ITEM 1 — CAMPOS REMOVIDOS DO PDF: Obra, Contratante, Responsavel, Prazo contratual, Prazo
+decorrido, Prazo a vencer. Ficam de fora completamente (nao so' escondidos).
+
+ITEM 2 — CLIMA: manter so' Manha e Tarde (remover Noite). Padrao "Ensolarado" pre-preenchido, mas
+editavel pelo usuario.
+
+ITEM 3 — INTERVALO: incluir campo de horario de intervalo no formulario/RDO, padrao "12:00-13:00",
+editavel.
+
+ITEM 4 — MAO DE OBRA: cada colaborador do RDO tem FUNCAO + horario individual (entrada/saida),
+padrao "07:00 as 16:48" com 1h de intervalo, editavel por colaborador (usa o novo modelo
+RDOMaoDeObra: colaborador, funcao, horario_entrada, horario_saida — nao mistura maquinario aqui).
+
+ITEM 5 — EQUIPAMENTOS EM CAIXA SEPARADA: maquinario/equipamento NAO entra na tabela de mao de obra
+(diferente do PDF de referencia) — fica em caixas proprias, igual "Equipamentos (N)" do exemplo mas
+numa secao visualmente separada da mao de obra.
+   - Ao criar um RDO novo, PRE-PREENCHER com os MESMOS equipamentos (e quantidades) do RDO anterior
+     da MESMA planta — "uma duplicacao" que o usuario pode ajustar.
+   - Selecao de equipamento vem de uma LISTA SUSPENSA (nao texto livre), puxando do cadastro que
+     JA EXISTE hoje em Cadastro > Cadastro Geral Terceiro > Equipamentos Terceiro (modelo
+     EquipamentoTerceiro).
+
+ITEM 6 — ATIVIDADES NO PDF: layout "titulo da atividade em cima, fotos embaixo" (nao lado a lado).
+   - Atividade vinculada a maquinario com horimetro: mostrar as HORAS TRABALHADAS NO DIA (calculado
+     de horimetro final - horimetro inicial daquele dia), alem do horimetro inicial e final em si.
+   - Grade de fotos 2x2 (conforme prints anexados) — atividades normais ate' 4 fotos; atividades COM
+     horimetro podem chegar a 6 fotos (4 da atividade + 2 do painel, inicio/fim) — nesse caso a
+     grade tem 2 linhas x 2 colunas + mais uma linha (total 3x2 ou 2x2 com "+2"), com celula(s)
+     vazia(s) em branco quando sobrar espaco (sem problema visual, so' fica em branco).
+   - Manter no rodape a instrucao "clique na foto para ampliar" (mesmo mecanismo _FotoClicavel ja
+     usado hoje).
+
+ITEM 7 — APROVACAO PAGINA A PAGINA: cada pagina do PDF deve trazer a informacao de aprovacao do
+Encarregado E do Admin (nome + data/hora de cada um, quando aprovado) — nao so' um carimbo generico
+"Aprovado" como no exemplo.
+
+ITEM 8 — OCORRENCIAS E COMENTARIOS: dois campos novos (ja previstos no item 1 da entrada anterior:
+RelatorioDiarioObra.ocorrencias e .comentarios) preenchidos no MOMENTO DE GERACAO do RDO (nao depois,
+nao em thread com multiplos autores como no exemplo) — texto livre simples.
+
+ITEM 9 — TELA DIGITAL (rdo_preview.html): mesmos campos removidos do item 1 tambem somem daqui.
+Layout OBRIGATORIO em DUAS COLUNAS por atividade: atividade (titulo+descricao+%) de UM LADO, fotos
+clicaveis do OUTRO LADO (nao empilhado como e' hoje).
+
+ITEM 10 — % DA ATIVIDADE (substitui dias_restantes na exibicao do RDO):
+   - O RDO de CADA DIA mostra a % informada NAQUELE DIA especifico (ex.: RDO de ontem mostra 20%,
+     RDO de hoje mostra 50% — sao valores INDEPENDENTES por dia, nao acumulados no RDO diario).
+   - Campo de % OBRIGATORIO, preenchido pelo ENCARREGADO no momento da APROVACAO de cada atividade
+     (nao mais pelo colaborador via dias_restantes — dias_restantes deixa de aparecer no RDO, mas o
+     campo continua existindo no sistema pra Programacao/Resumo, ja usado hoje).
+   - Atividade tipo FIXA: NAO tem %, mostra so' a indicacao "FIXO" (sem numero).
+   - RESUMO DIARIO (aba Programacao): soma as % de TODOS os dias da mesma atividade (acumulado) —
+     ex.: 20% ontem + 50% hoje = 70% acumulado no Resumo, respeitando a trava de 100% ja
+     especificada na entrada anterior (item 2).
+
+ITEM 11 — COMBOBOX PESQUISAVEL NA PROGRAMACAO: ao criar/preencher atividade, os campos de EMPRESA e
+COLABORADOR viram combobox com busca (digitar pra filtrar), em vez do <select> simples atual (hoje
+"fica procurando" na lista inteira).
+
+ITEM 12 — TRAVAS DE HORIMETRO (no preenchimento do report diario de atividade com horimetro):
+   i.   Bloquear se horimetro INICIAL informado for MENOR que o horimetro FINAL do dia anterior da
+        MESMA maquina — mostrar mensagem de erro clara pro usuario.
+   ii.  Bloquear informar o horimetro INICIAL de hoje se o horimetro FINAL de ontem ainda nao foi
+        informado — mostrar mensagem de erro clara.
+   iii. Campo aceita virgula OU ponto como separador decimal; NAO aceita letras nem outros
+        caracteres especiais (validacao no front e no back).
+   iv.  Ao preencher o horimetro INICIAL, a secao do horimetro FINAL fica FECHADA/escondida (evita
+        confundir o usuario) — so' abre depois que o inicial for salvo.
+
+STATUS: especificacao completa e confirmada com Antonio (incluindo exemplo visual de referencia).
+AINDA PENDENTE DE ORDEM EXPLICITA PRA COMECAR A IMPLEMENTAR. Proximo passo: Antonio decide se quer
+tudo de uma vez ou por prioridade (sugestao de ordem ja registrada na entrada anterior: modelo de
+dados -> aprovacao com % -> resumo diario -> form de criacao -> PDF -> tela digital -> combobox ->
+travas de horimetro).
+
+REGRA FIXA (23/09): toda entrega de codigo desta reformulacao (e de qualquer outra dai em diante)
+vem SEMPRE com a mensagem de commit pronta, pro Antonio colar no GitHub Desktop.
+
+### ================== REFORMULACAO GRANDE DO RDO — IMPLEMENTADA E TESTADA (23/09) ==================
+ORDEM EXPLICITA RECEBIDA ("executa tudo") — os 8 itens da especificacao (detalhada nas duas entradas
+acima) foram implementados nesta sessao (Cowork), testados localmente (SQLite, venv novo,
+test_client simulando login como Usuario E como Colaborador com perm_total/"admin", que e' o
+cenario de Encarregado que mais historicamente pegava bug de FK). Detalhe por item:
+
+1) MODELO DE DADOS — feito. `AtividadeDia.percentual` agora e' a "% do dia" gravada pelo Encarregado
+   na aprovacao (`dias_restantes` INTACTO, continua sendo usado pelo colaborador no preenchimento).
+   `AtividadeGrupo.percentual_acumulado`/`percentual_restante` novas properties (None pra FIXA).
+   Dois modelos novos: `RDOMaoDeObra` e `RDOEquipamento` (ambos com `colaborador_id`/`equipamento_id`
+   opcionais + `nome_livre`, cascade delete a partir de `RelatorioDiarioObra.mao_de_obra`/
+   `.equipamentos`). Campos novos em `RelatorioDiarioObra`: `clima_manha`, `clima_tarde`,
+   `horario_intervalo_inicio/fim`, `ocorrencias`, `comentarios` (`condicao_climatica`,
+   `mao_de_obra_texto`, `equipamentos_texto` mantidos por compatibilidade com RDOs antigos).
+   NAO precisou mexer em `_light_migrate()`: o loop generico ja existente (linhas ~23-35 de
+   app/__init__.py) percorre TODAS as tabelas do metadata e adiciona qualquer coluna faltando por
+   try/except individual — cobre as colunas novas automaticamente; tabelas novas (RDOMaoDeObra/
+   RDOEquipamento) sao cobertas pelo `db.create_all()` que ja roda no boot. Confirmado rodando
+   localmente: as colunas/tabelas apareceram certinho no app.db depois do primeiro boot.
+
+2) APROVACAO COM % OBRIGATORIA — feito. Novo campo `percentual_dia` obrigatorio nos forms de
+   Aprovar e Retificar (aprovacao.html), ausente pra atividade FIXA. Helper novo
+   `_validar_e_gravar_percentual_dia()` em facilities.py trava se o acumulado (dias ja aprovados do
+   grupo, excluindo o proprio dia caso ja estivesse aprovado antes) + o novo valor ultrapassar 100 —
+   mensagem de erro cita os numeros exatos. TESTADO: cenario do Antonio reproduzido exatamente
+   (20% + 50% = 70% aprova normalmente; tentar aprovar +40% depois, que daria 110%, e' bloqueado e o
+   dia continua AGUARDANDO_APROVACAO).
+
+3) RESUMO DIARIO — feito. Coluna "Progresso" (tipo="fim") agora mostra "{percentual_acumulado}%
+   concluido (N/total dias)" pra NORMAL, e "Atividade fixa" pra FIXA (sem numero). Testado via
+   test_client (200, sem erro de template).
+
+4) FORMULARIO DE CRIACAO DO RDO — feito. Novo endpoint AJAX `/facilities/rdo/dados-planta` devolve
+   os equipamentos ativos (EquipamentoTerceiro) da planta escolhida E os equipamentos+quantidades do
+   RDO mais recente da MESMA planta (pre-preenchimento automatico, editavel). Mao de obra vira uma
+   tabela dinamica (add-row) com combobox pesquisavel (datalist) pro colaborador ou nome livre,
+   funcao, horario entrada/saida (padrao 07:00/16:48). Campos novos no form: clima Manha/Tarde
+   (grava tambem um resumo em condicao_climatica, campo antigo, so' por compatibilidade — coluna
+   continua NOT NULL no banco), intervalo (padrao 12:00-13:00), ocorrencias, comentarios. TESTADO
+   end-to-end via test_client: POST real criando RDOMaoDeObra e RDOEquipamento (equipamento do
+   cadastro real, com quantidade) a partir do form — confirmado no banco depois do submit.
+
+5) PDF DO RDO — reescrito. Removidos (nunca existiram nesta versao, mas confirmado que nao ha nada
+   de Obra/Contratante/Responsavel/Prazos no PDF). Clima agora Manha/Tarde (com fallback pra
+   condicao_climatica em RDOs antigos sem os campos novos). Horario inclui o intervalo. Mao de obra
+   agora e' uma TABELA so' de pessoas (RDOMaoDeObra — nome/funcao/entrada/saida), com fallback pro
+   texto livre legado se o RDO for antigo. Equipamentos em tabela SEPARADA (RDOEquipamento —
+   nome+quantidade), mesmo fallback legado. Atividades: titulo em cima, % do dia (ou "FIXO") a'
+   direita, fotos EMBAIXO numa grade 2x2 nova (funcao `_monta_grade_fotos`) que aceita ate' 6 fotos
+   (4 da atividade + 2 do painel do horimetro) preenchendo celulas vazias em branco quando sobra
+   espaco, sem quebrar layout. Horimetro mostra inicial/final/horas trabalhadas no dia (calculado).
+   Secoes novas de Ocorrencias e Comentarios. Secao de Aprovacao no final mostra Encarregado E Admin
+   (nome + data/hora de cada um, "Pendente" se ainda nao aprovado) — DECISAO DE DESIGN: a
+   especificacao pedia a informacao em toda pagina do PDF; como o relatorio e' gerado com
+   SimpleDocTemplate (sem callback de rodape customizado ja implementado), optei por uma secao clara
+   e unica no final em vez de duplicar em cabecalho/rodape de cada pagina — mantem as DUAS aprovacoes
+   visiveis sem a complexidade de reescrever o mecanismo de paginacao. TESTADO: PDF real gerado e
+   confirmado via pypdf (extract_text) contendo titulo da atividade, % do dia, climas, mao de obra,
+   equipamentos, ocorrencias, comentarios e a secao de aprovacao.
+
+6) TELA DIGITAL DO RDO (rdo_preview.html) — reescrita. Removidos os mesmos campos do item 5 (nunca
+   existiam). Layout em DUAS COLUNAS por atividade (titulo+%/FIXO+descricao+horimetro a' esquerda,
+   fotos clicaveis a' direita, via `<div class="row">`/col-md-7/col-md-5). Mostra RDOMaoDeObra/
+   RDOEquipamento em tabelas quando existirem (fallback pro texto legado). Testado via test_client
+   (200).
+
+7) COMBOBOX PESQUISAVEL — feito em programacao_nova.html (criacao de atividade): Empresa e
+   Colaborador viram `<input list="...">` + `<datalist>` (filtra ao digitar, sem biblioteca externa).
+   O ID de verdade e' resolvido em JS comparando o texto digitado com o `data-id` da `<option>`
+   escolhida, e enviado num `<input type="hidden">`. Testado renderizando a pagina via test_client
+   (200) — a interacao de digitar/filtrar em si e' comportamento nativo do `<datalist>` do browser,
+   nao testavel via test_client (sem JS real), mas a logica de resolucao de ID foi revisada
+   manualmente linha a linha.
+
+8) TRAVAS DE HORIMETRO — feitas as 4:
+   i.   Bloqueia INICIAL menor que o FINAL do dia anterior da mesma maquina (busca o RegistroHorimetro
+        FIM mais recente com data anterior, mesma maquina_id, em qualquer atividade).
+   ii.  Bloqueia informar o INICIAL de hoje se o dia anterior da MESMA atividade teve INICIO mas
+        nunca teve FIM registrado.
+   iii. Aceita virgula OU ponto (regex `[0-9]+([.,][0-9]+)?`, valida ANTES de trocar por ponto);
+        rejeita letras/caracteres especiais — validado no back (facilities.py) e no front
+        (preencher_dia.html, funcao `_validarHorimetro` que sanitiza o campo em tempo real).
+   iv.  A secao do horimetro FINAL fica dentro de um `<details>` FECHADO com aviso, em vez do form,
+        enquanto o INICIAL do dia nao foi preenchido.
+   TESTADO com test_client: valor "abc" rejeitado (nao cria registro); "100,5" aceito e convertido
+   pra 100.5; tentar INICIO do dia 2 sem ter preenchido FIM do dia 1 bloqueado; apos preencher FIM
+   do dia 1 (150.0), tentar INICIO do dia 2 com 120 (menor) bloqueado, com 160 (maior) aceito;
+   template renderizado confirmando a secao "(bloqueado)" aparecendo quando o INICIAL nao existe.
+
+SMOKE TEST GERAL: ~12 URLs principais do modulo (Programacao, Programacao Nova, Aprovacao, Resumo
+Diario, RDO, Painel de Horimetros, Predios, Preencher, RDO Preview, RDO PDF) — 200 tanto logado como
+Usuario Admin quanto como Colaborador com papel="admin" (fallback de perm_total).
+
+NAO IMPLEMENTADO / PENDENTE: nada dos 8 itens ficou pela metade. Fora do escopo desta entrega (nao
+pedido explicitamente, decisao consciente pra nao gerar trabalho nao solicitado): a tela de EDITAR
+RDO (`rdo_editar.html`/rota `rdo_editar`) continua usando os campos antigos (texto livre de
+clima/mao de obra/equipamentos) — RDOs criados pelo NOVO formulario podem ser editados por ela sem
+quebrar (os campos novos simplesmente nao aparecem pra edicao ali), mas se o Antonio quiser editar
+mao de obra/equipamentos/clima Manha-Tarde/ocorrencias/comentarios de um RDO ja criado, essa tela
+precisa do mesmo tratamento dado ao formulario de criacao — registrar como proximo passo se ele
+pedir.
+
+TESTES: venv novo criado (`python3 -m venv .venv && pip install -r requirements.txt`), SQLite local
+(reproduz o schema de producao via `_light_migrate`), scripts de teste com `app.test_client()`
+simulando login como Usuario (`session["_user_id"]="U:<id>"`) e como Colaborador
+(`session["_user_id"]="C:<id>"`, papel="admin" como proxy de "Encarregado com perm_total").

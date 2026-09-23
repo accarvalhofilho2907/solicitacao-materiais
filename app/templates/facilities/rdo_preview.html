@@ -11,6 +11,8 @@
   {% if r.status == 'PENDENTE' %}
     {% if r.aprovado_encarregado_em %} — falta aprovação do Admin{% else %} — aguardando aprovação do Encarregado de Campo{% endif %}
   {% endif %}
+  {% if r.aprovado_encarregado_em %} · Encarregado: {{ r.aprovado_encarregado_nome }} em {{ r.aprovado_encarregado_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+  {% if r.aprovado_admin_em %} · Admin: {{ r.aprovado_admin_nome }} em {{ r.aprovado_admin_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}
 </div>
 
 <div class="d-flex gap-2 mb-3 flex-wrap">
@@ -35,15 +37,32 @@
   {% endif %}
 </div>
 
+<!-- [23/09 reformulacao RDO] Removidos: Obra, Contratante, Responsável, Prazos (não existem
+     mais nesta tela — item 1/9 da especificação). Clima virou Manhã/Tarde. -->
 <div class="card"><div class="card-body">
   <div class="row g-2 mb-2">
     <div class="col-md-3"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
-    <div class="col-md-3"><label class="form-label small text-muted">Clima</label><p class="mb-0">{{ r.condicao_climatica or '—' }}</p></div>
-    <div class="col-md-3"><label class="form-label small text-muted">Horário</label><p class="mb-0">{{ r.horario_inicio or '—' }} às {{ r.horario_termino or '—' }}</p></div>
+    <div class="col-md-3"><label class="form-label small text-muted">Clima — Manhã / Tarde</label><p class="mb-0">{{ r.clima_manha or r.condicao_climatica or '—' }} / {{ r.clima_tarde or r.condicao_climatica or '—' }}</p></div>
+    <div class="col-md-3"><label class="form-label small text-muted">Horário</label><p class="mb-0">{{ r.horario_inicio or '—' }} às {{ r.horario_termino or '—' }}{% if r.horario_intervalo_inicio %} (intervalo {{ r.horario_intervalo_inicio }}-{{ r.horario_intervalo_fim }}){% endif %}</p></div>
     <div class="col-md-3"><label class="form-label small text-muted">% média executada</label><p class="mb-0">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</p></div>
   </div>
-  {% if r.mao_de_obra_texto %}<p class="small"><b>Mão de obra:</b><br>{{ r.mao_de_obra_texto|replace('\n', '<br>')|safe }}</p>{% endif %}
-  {% if r.equipamentos_texto %}<p class="small"><b>Equipamentos:</b> {{ r.equipamentos_texto }}</p>{% endif %}
+
+  {% if r.mao_de_obra %}
+  <p class="small mb-1"><b>Mão de obra ({{ r.mao_de_obra|length }}):</b></p>
+  <table class="table table-sm mb-2"><thead><tr><th>Nome</th><th>Função</th><th>Entrada</th><th>Saída</th></tr></thead>
+    <tbody>{% for m in r.mao_de_obra %}<tr><td>{{ m.nome }}</td><td>{{ m.funcao or '—' }}</td><td>{{ m.horario_entrada }}</td><td>{{ m.horario_saida }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% elif r.mao_de_obra_texto %}<p class="small"><b>Mão de obra:</b><br>{{ r.mao_de_obra_texto|replace('\n', '<br>')|safe }}</p>{% endif %}
+
+  {% if r.equipamentos %}
+  <p class="small mb-1"><b>Equipamentos ({{ r.equipamentos|length }}):</b></p>
+  <div class="d-flex gap-2 flex-wrap mb-2">
+    {% for e in r.equipamentos %}<span class="badge bg-secondary">{{ e.nome }} × {{ e.quantidade }}</span>{% endfor %}
+  </div>
+  {% elif r.equipamentos_texto %}<p class="small"><b>Equipamentos:</b> {{ r.equipamentos_texto }}</p>{% endif %}
+
+  {% if r.ocorrencias %}<p class="small"><b>Ocorrências:</b> {{ r.ocorrencias }}</p>{% endif %}
+  {% if r.comentarios %}<p class="small"><b>Comentários:</b> {{ r.comentarios }}</p>{% endif %}
   {% if r.observacoes %}<p class="small"><b>Observações:</b> {{ r.observacoes }}</p>{% endif %}
 </div></div>
 
@@ -51,28 +70,45 @@
   <h6 class="mb-2">Atividades do dia ({{ r.atividades|length }})</h6>
   {% for grupo in r.atividades %}
   {% set dia_do_grupo = grupo.dias|selectattr('data', 'equalto', r.data)|first %}
+  <!-- [23/09 reformulacao RDO — item 6/9] layout em DUAS COLUNAS: atividade (título+descrição+%)
+       de um lado, fotos clicáveis do outro (em vez de empilhado como era antes). -->
   <div class="border rounded p-2 mb-2">
-    <div class="d-flex justify-content-between">
-      <b>{{ grupo.titulo }}</b>
-      <span>
-        {% if grupo.eh_fixa %}fixa
-        {% elif dia_do_grupo and dia_do_grupo.dias_restantes is not none %}{{ dia_do_grupo.dias_restantes }} dia(s) restante(s)
-        {% else %}—{% endif %}
-      </span>
+    <div class="row g-2">
+      <div class="col-md-7">
+        <div class="d-flex justify-content-between">
+          <b>{{ grupo.titulo }}</b>
+          <span class="badge {{ 'bg-secondary' if grupo.eh_fixa else 'bg-info text-dark' }}">
+            {% if grupo.eh_fixa %}FIXO
+            {% elif dia_do_grupo and dia_do_grupo.percentual is not none %}{{ dia_do_grupo.percentual }}%
+            {% else %}—{% endif %}
+          </span>
+        </div>
+        <p class="text-muted small mb-1">Local: {{ grupo.predio.nome if grupo.predio else '—' }} · Colaboradores: {% for ac in grupo.colaboradores %}{{ ac.colaborador.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+        {% if dia_do_grupo and dia_do_grupo.descricao_execucao %}<p class="small mb-1">{{ dia_do_grupo.descricao_execucao }}</p>{% endif %}
+        {% if grupo.tem_horimetro and dia_do_grupo and dia_do_grupo.registros_horimetro %}
+        {% set regs = {} %}
+        {% for reg in dia_do_grupo.registros_horimetro %}{% set _ = regs.update({reg.tipo: reg}) %}{% endfor %}
+        <p class="small mb-1">🚜 <b>Horímetro</b>
+          {% if regs.get('INICIO') %} — inicial: {{ regs['INICIO'].valor_horimetro }}h{% endif %}
+          {% if regs.get('FIM') %} — final: {{ regs['FIM'].valor_horimetro }}h{% endif %}
+          {% if regs.get('INICIO') and regs.get('FIM') %} — horas trabalhadas: {{ (regs['FIM'].valor_horimetro - regs['INICIO'].valor_horimetro)|round(1) }}h{% endif %}
+        </p>
+        {% endif %}
+        {% if dia_do_grupo and dia_do_grupo.historico_retificacoes %}
+        <a href="{{ url_for('facilities.historico_retificacoes', dia_id=dia_do_grupo.id) }}" class="small d-inline-block mt-2">
+          ✎ Ver edições feitas nesta atividade ({{ dia_do_grupo.historico_retificacoes|length }})
+        </a>
+        {% endif %}
+      </div>
+      <div class="col-md-5">
+        {% if dia_do_grupo and dia_do_grupo.fotos_json %}
+        {% set fotos = dia_do_grupo.fotos_json|fromjson %}
+        <div class="d-flex gap-2 flex-wrap">
+          {% for f in fotos %}<a href="{{ f }}" target="_blank"><img src="{{ f }}" style="width:70px;height:70px;object-fit:cover;border-radius:6px" alt="Foto da atividade — clique pra ampliar"></a>{% endfor %}
+        </div>
+        {% else %}<p class="text-muted small mb-0">Sem fotos.</p>{% endif %}
+      </div>
     </div>
-    <p class="text-muted small mb-1">Local: {{ grupo.predio.nome if grupo.predio else '—' }} · Colaboradores: {% for ac in grupo.colaboradores %}{{ ac.colaborador.nome }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
-    {% if dia_do_grupo and dia_do_grupo.descricao_execucao %}<p class="small mb-1">{{ dia_do_grupo.descricao_execucao }}</p>{% endif %}
-    {% if dia_do_grupo and dia_do_grupo.fotos_json %}
-    {% set fotos = dia_do_grupo.fotos_json|fromjson %}
-    <div class="d-flex gap-2">
-      {% for f in fotos %}<a href="{{ f }}" target="_blank"><img src="{{ f }}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"></a>{% endfor %}
-    </div>
-    {% endif %}
-    {% if dia_do_grupo and dia_do_grupo.historico_retificacoes %}
-    <a href="{{ url_for('facilities.historico_retificacoes', dia_id=dia_do_grupo.id) }}" class="small d-inline-block mt-2">
-      ✎ Ver edições feitas nesta atividade ({{ dia_do_grupo.historico_retificacoes|length }})
-    </a>
-    {% endif %}
   </div>
   {% else %}
   <p class="text-muted small mb-0">Nenhuma atividade vinculada.</p>

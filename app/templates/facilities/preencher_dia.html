@@ -32,7 +32,9 @@
           <input type="hidden" name="tipo_registro" value="INICIO">
           <p class="small mb-1"><b>Horímetro de início do dia</b></p>
           <label class="form-label small">Valor do horímetro *</label>
-          <input type="number" step="0.1" name="valor_horimetro" class="form-control form-control-sm mb-2" required>
+          <input type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]+)?"
+                 title="Só números — vírgula ou ponto para decimal" name="valor_horimetro"
+                 class="form-control form-control-sm mb-2" oninput="_validarHorimetro(this)" required>
           <label class="form-label small">Empresa operando hoje</label>
           <select name="fornecedor_id" class="form-select form-select-sm mb-2">
             <option value="">—</option>
@@ -49,6 +51,13 @@
         <div class="alert alert-success small py-2 mb-0">✓ Fim registrado: {{ regs['FIM'].valor_horimetro }}h
           {% if regs['FIM'].foto_painel_url %}<br><a href="{{ regs['FIM'].foto_painel_url }}" target="_blank">ver foto do painel</a>{% endif %}
         </div>
+        {% elif 'INICIO' not in regs %}
+        <!-- [23/09 reformulacao RDO — item 12.iv] seção do horímetro FINAL fica FECHADA
+             (details fechado) enquanto o INICIAL deste dia ainda não foi registrado. -->
+        <details class="border rounded p-2 text-muted small">
+          <summary>Horímetro de fim do dia (bloqueado)</summary>
+          Registre primeiro o horímetro de <b>início</b> deste dia.
+        </details>
         {% else %}
         <form method="post" action="{{ url_for('facilities.preencher_horimetro', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data" class="border rounded p-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -56,7 +65,9 @@
           <input type="hidden" name="tipo_registro" value="FIM">
           <p class="small mb-1"><b>Horímetro de fim do dia</b></p>
           <label class="form-label small">Valor do horímetro *</label>
-          <input type="number" step="0.1" name="valor_horimetro" class="form-control form-control-sm mb-2" required>
+          <input type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]+)?"
+                 title="Só números — vírgula ou ponto para decimal" name="valor_horimetro"
+                 class="form-control form-control-sm mb-2" oninput="_validarHorimetro(this)" required>
           <label class="form-label small">Empresa operando hoje</label>
           <select name="fornecedor_id" class="form-select form-select-sm mb-2">
             <option value="">—</option>
@@ -170,5 +181,16 @@ document.querySelectorAll('.inp-dias-restantes').forEach(function(inp){
     box.style.display = cresceu ? 'block' : 'none';
   });
 });
+
+// [23/09 reformulacao RDO — item 12.iii] valida no FRONT (além do back) que o valor do
+// horímetro aceita vírgula OU ponto como decimal e rejeita letras/caracteres especiais —
+// normaliza o campo em tempo real, removendo qualquer caractere que não seja dígito ou um
+// único separador decimal.
+function _validarHorimetro(inp){
+  var v = inp.value.replace(/[^0-9.,]/g, '');
+  var partes = v.split(/[.,]/);
+  if (partes.length > 2) v = partes[0] + ',' + partes.slice(1).join('');
+  inp.value = v;
+}
 </script>
 {% endblock %}

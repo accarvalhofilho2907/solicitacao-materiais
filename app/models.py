@@ -1617,6 +1617,27 @@ class AtividadeGrupo(db.Model):
     def eh_fixa(self):
         return self.tipo == "FIXA"
 
+    @property
+    def percentual_acumulado(self):
+        """[23/09 reformulacao RDO] Soma o % do dia (AtividadeDia.percentual) de todos os dias
+        já APROVADOS deste grupo, capado em 100. Atividade FIXA não usa percentual — retorna
+        None pra essa property nesse caso (o template/PDF deve mostrar "FIXO")."""
+        if self.eh_fixa:
+            return None
+        total = sum(
+            d.percentual for d in self.dias
+            if d.status == "APROVADA" and d.percentual is not None
+        )
+        return min(total, 100)
+
+    @property
+    def percentual_restante(self):
+        """[23/09 reformulacao RDO] 100 - percentual_acumulado, nunca negativo. None pra FIXA."""
+        acumulado = self.percentual_acumulado
+        if acumulado is None:
+            return None
+        return max(100 - acumulado, 0)
+
 
 class AtividadeColaborador(db.Model):
     """Um colaborador participante de uma AtividadeGrupo. O PRIMEIRO adicionado é marcado
@@ -1754,14 +1775,20 @@ class RelatorioDiarioObra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     data = db.Column(db.Date, nullable=False)
     planta_id = db.Column(db.ForeignKey("almox_plantas.id"), nullable=False)
-    condicao_climatica = db.Column(db.String(80), nullable=False)
+    condicao_climatica = db.Column(db.String(80), nullable=False)  # [legado] RDOs antigos; RDOs novos usam clima_manha/clima_tarde
+    clima_manha = db.Column(db.String(80), default="Ensolarado")   # [23/09 reformulacao RDO]
+    clima_tarde = db.Column(db.String(80), default="Ensolarado")   # [23/09 reformulacao RDO]
     horario_inicio = db.Column(db.String(5), default="07:00")   # [19/09] "HH:MM", editável
     horario_termino = db.Column(db.String(5), default="16:48")  # [19/09] "HH:MM", editável
-    mao_de_obra_texto = db.Column(db.Text)      # lista livre (nome + função) por linha, pré-preenchida
-    equipamentos_texto = db.Column(db.Text)      # equipamentos usados no dia, texto livre
+    horario_intervalo_inicio = db.Column(db.String(5), default="12:00")  # [23/09 reformulacao RDO]
+    horario_intervalo_fim = db.Column(db.String(5), default="13:00")     # [23/09 reformulacao RDO]
+    mao_de_obra_texto = db.Column(db.Text)      # [legado] lista livre (nome + função) por linha; RDOs novos usam RDOMaoDeObra
+    equipamentos_texto = db.Column(db.Text)      # [legado] equipamentos usados no dia, texto livre; RDOs novos usam RDOEquipamento
     atividades_ids_json = db.Column(db.Text)     # ids de AtividadeGrupo daquele dia (automático)
     percentual_medio = db.Column(db.Float)        # média ponderada pela meta de cada atividade do dia
     observacoes = db.Column(db.Text)
+    ocorrencias = db.Column(db.Text)   # [23/09 reformulacao RDO] preenchido na hora de gerar o RDO
+    comentarios = db.Column(db.Text)   # [23/09 reformulacao RDO] preenchido na hora de gerar o RDO
     status = db.Column(db.String(20), default="PENDENTE")  # PENDENTE|APROVADO
     aprovado_encarregado_em = db.Column(db.DateTime)
     aprovado_encarregado_por = db.Column(db.ForeignKey("almox_colaboradores.id"))
@@ -1773,6 +1800,8 @@ class RelatorioDiarioObra(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     planta = db.relationship("Planta")
+    mao_de_obra = db.relationship("RDOMaoDeObra", backref="rdo", cascade="all, delete-orphan")
+    equipamentos = db.relationship("RDOEquipamento", backref="rdo", cascade="all, delete-orphan")
 
     @property
     def atividades(self):
@@ -1789,5 +1818,63 @@ class RelatorioDiarioObra(db.Model):
     def totalmente_aprovado(self):
         return self.aprovado_encarregado_em is not None and self.aprovado_admin_em is not None
 
+    @property
+    def aprovado_encarregado_nome(self):
+        if self.aprovado_encarregado_por:
+            c = db.session.get(Colaborador, self.aprovado_encarregado_por)
+            return c.nome if c else "—"
+        return None
+
+    @property
+    def aprovado_admin_nome(self):
+        if self.aprovado_admin_por:
+            u = db.session.get(Usuario, self.aprovado_admin_por)
+            return u.nome if u else "—"
+        return None
+
+
+class RDOMaoDeObra(db.Model):
+    """[23/09 reformulacao RDO] Uma linha de mão de obra (pessoa) de um RDO — substitui, pra
+    RDOs novos, o texto livre RelatorioDiarioObra.mao_de_obra_texto. colaborador_id é opcional
+    porque pode ser alguém que não está cadastrado como Colaborador no sistema — nesse caso o
+    nome é digitado livremente em nome_livre."""
+    __tablename__ = "sf_rdo_mao_de_obra"
+    id = db.Column(db.Integer, primary_key=True)
+    rdo_id = db.Column(db.ForeignKey("sf_rdo.id"), nullable=False)
+    colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    nome_livre = db.Column(db.String(160))   # usado quando colaborador_id é nulo
+    funcao = db.Column(db.String(120))
+    horario_entrada = db.Column(db.String(5), default="07:00")
+    horario_saida = db.Column(db.String(5), default="16:48")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    colaborador = db.relationship("Colaborador")
+
+    @property
+    def nome(self):
+        if self.colaborador_id and self.colaborador:
+            return self.colaborador.nome
+        return self.nome_livre or "—"
+
+
+class RDOEquipamento(db.Model):
+    """[23/09 reformulacao RDO] Um equipamento/maquinário usado num RDO — substitui, pra RDOs
+    novos, o texto livre RelatorioDiarioObra.equipamentos_texto. equipamento_id é opcional pelo
+    mesmo motivo de RDOMaoDeObra.colaborador_id (equipamento não cadastrado -> nome_livre)."""
+    __tablename__ = "sf_rdo_equipamentos"
+    id = db.Column(db.Integer, primary_key=True)
+    rdo_id = db.Column(db.ForeignKey("sf_rdo.id"), nullable=False)
+    equipamento_id = db.Column(db.ForeignKey("sf_equipamentos_terceiro.id"))
+    nome_livre = db.Column(db.String(160))
+    quantidade = db.Column(db.Integer, default=1)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    equipamento = db.relationship("EquipamentoTerceiro")
+
+    @property
+    def nome(self):
+        if self.equipamento_id and self.equipamento:
+            return self.equipamento.nome
+        return self.nome_livre or "—"
 
 

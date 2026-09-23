@@ -23,7 +23,7 @@ from .storage import salvar_imagem
 from .models import (ModeloChecklist, ItemChecklist, ProdutoAlmox, ExecucaoChecklist,
                      ItemFalhaAberta, Planta, Colaborador, Fornecedor, Predio, Feriado,
                      AtividadeGrupo, AtividadeColaborador, AtividadeDia, RegistroPreenchimento,
-                     EncarregadoEmpresa, RelatorioDiarioObra,
+                     EncarregadoEmpresa, RelatorioDiarioObra, RDOMaoDeObra, RDOEquipamento,
                      EquipamentoTerceiro, MaquinarioPesadoTerceiro, RegistroHorimetro,
                      HistoricoRetificacao,
                      UNIDADES_DURACAO_DIAS_UTEIS, OPCOES_RECORRENCIA)
@@ -1267,16 +1267,49 @@ def preencher_horimetro(data_str):
         flash(f"Já existe um registro de {tipo_registro.lower()} para este dia.", "warning")
         return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
-    valor_str = request.form.get("valor_horimetro")
+    valor_str = (request.form.get("valor_horimetro") or "").strip()
     fornecedor_id = request.form.get("fornecedor_id") or None
     if not valor_str:
         flash("Informe o valor do horímetro.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+    # [23/09 reformulacao RDO — item 12.iii] aceita vírgula OU ponto como separador decimal;
+    # rejeita letras/caracteres especiais (valida ANTES de trocar vírgula por ponto).
+    import re as _re
+    if not _re.fullmatch(r"[0-9]+([.,][0-9]+)?", valor_str):
+        flash("Valor de horímetro inválido — use só números (vírgula ou ponto para decimal).", "danger")
         return redirect(url_for("facilities.preencher_dia", data_str=data_str))
     try:
         valor_horimetro = float(valor_str.replace(",", "."))
     except ValueError:
         flash("Valor de horímetro inválido.", "danger")
         return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+    if tipo_registro == "INICIO":
+        # [23/09 reformulacao RDO — item 12.i] o INICIAL não pode ser menor que o FINAL do dia
+        # anterior da MESMA máquina (última RegistroHorimetro tipo FIM, em qualquer atividade,
+        # com data anterior à deste dia).
+        fim_anterior = (RegistroHorimetro.query.join(AtividadeDia, RegistroHorimetro.dia_id == AtividadeDia.id)
+                       .filter(RegistroHorimetro.maquina_id == dia.grupo.maquina_horimetro_id,
+                              RegistroHorimetro.tipo == "FIM", AtividadeDia.data < dia.data)
+                       .order_by(AtividadeDia.data.desc()).first())
+        if fim_anterior and valor_horimetro < fim_anterior.valor_horimetro:
+            flash(f"O horímetro inicial ({valor_horimetro}) não pode ser menor que o horímetro final "
+                  f"do dia anterior desta máquina ({fim_anterior.valor_horimetro}).", "danger")
+            return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+        # [23/09 reformulacao RDO — item 12.ii] bloqueia informar o INICIAL de hoje se o dia
+        # útil anterior desta MESMA atividade já teve um INICIO registrado mas nunca teve o
+        # FIM preenchido (report do dia anterior ficou pela metade).
+        dia_anterior_grupo = (AtividadeDia.query
+                              .filter(AtividadeDia.grupo_id == dia.grupo_id, AtividadeDia.data < dia.data)
+                              .order_by(AtividadeDia.data.desc()).first())
+        if dia_anterior_grupo:
+            tem_inicio_anterior = RegistroHorimetro.query.filter_by(dia_id=dia_anterior_grupo.id, tipo="INICIO").first()
+            tem_fim_anterior = RegistroHorimetro.query.filter_by(dia_id=dia_anterior_grupo.id, tipo="FIM").first()
+            if tem_inicio_anterior and not tem_fim_anterior:
+                flash("O horímetro FINAL do dia anterior desta atividade ainda não foi informado — "
+                      "preencha-o antes de registrar o inicial de hoje.", "danger")
+                return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
     # [22/09] a foto do painel é UMA SÓ, fora das 4 fotos normais da atividade — usa um campo
     # de formulário próprio ("foto_painel"), não o "fotos" usado no preenchimento normal.
@@ -1336,10 +1369,45 @@ def aprovacao():
     return render_template("facilities/aprovacao.html", pendentes=pendentes)
 
 
+def _validar_e_gravar_percentual_dia(dia, valor_atual_percentual=None):
+    """[23/09 reformulacao RDO] Grava o "% do dia" (AtividadeDia.percentual) informado pelo
+    ENCARREGADO na aprovação. Obrigatório pra atividade NORMAL; ignorado pra FIXA. Trava:
+    o acumulado do grupo (somando dias já APROVADOS + este que está sendo aprovado agora)
+    não pode ultrapassar 100. Retorna None em caso de sucesso, ou uma string com a mensagem
+    de erro pra ser exibida via flash (nesse caso, NADA é gravado)."""
+    if dia.grupo.eh_fixa:
+        dia.percentual = None
+        return None
+    percentual_str = request.form.get("percentual_dia")
+    if percentual_str in (None, ""):
+        return "Informe o % executado no dia pra aprovar esta atividade."
+    try:
+        percentual_novo = int(round(float(percentual_str.replace(",", "."))))
+    except ValueError:
+        return "% do dia inválido — use só números."
+    if percentual_novo < 0 or percentual_novo > 100:
+        return "% do dia deve estar entre 0 e 100."
+    # soma os dias já aprovados do grupo, EXCETO este (se ele já estava aprovado antes, ex.:
+    # retificação), pra não contar o valor antigo dele duas vezes.
+    acumulado_outros = sum(
+        d.percentual for d in dia.grupo.dias
+        if d.id != dia.id and d.status == "APROVADA" and d.percentual is not None
+    )
+    if acumulado_outros + percentual_novo > 100:
+        return (f"Essa atividade já tem {acumulado_outros}% acumulado; "
+                f"{percentual_novo}% ultrapassaria 100%.")
+    dia.percentual = percentual_novo
+    return None
+
+
 @facilities_bp.route("/aprovacao/<int:dia_id>/aprovar", methods=["POST"])
 @_ver_required
 def aprovar_dia(dia_id):
     dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    erro_percentual = _validar_e_gravar_percentual_dia(dia)
+    if erro_percentual:
+        flash(erro_percentual, "danger")
+        return redirect(url_for("facilities.aprovacao"))
     dia.status = "APROVADA"
     dia.aprovado_em = datetime.utcnow()
     _marcar_aprovado_por(dia)
@@ -1381,6 +1449,11 @@ def retificar_dia(dia_id):
                 pass
     descricao_depois = (request.form.get("descricao") or dia.descricao_execucao)
     dia.descricao_execucao = descricao_depois
+
+    erro_percentual = _validar_e_gravar_percentual_dia(dia)
+    if erro_percentual:
+        flash(erro_percentual, "danger")
+        return redirect(url_for("facilities.aprovacao"))
 
     # [23/09] só grava histórico se algo de fato mudou — evita poluir com retificações
     # que só re-salvaram o mesmo valor (ex.: só anexando foto extra, sem mudar nada mais).
@@ -1535,10 +1608,14 @@ def resumo_diario():
             # cresceu, duracao_dias_uteis do grupo já foi atualizada). Coluna extra avisa se
             # a atividade teve a duração alterada (algum dia do grupo nasceu por crescimento).
             if tipo == "fim":
+                # [23/09 reformulacao RDO] Antonio pediu pra % acumulada (soma dos dias já
+                # aprovados do grupo) substituir a exibição de "dias executados/total" aqui —
+                # atividade FIXA continua mostrando só a indicação de fixa, sem percentual.
                 if d.grupo.eh_fixa:
-                    linha["progresso"] = f"{d.ordem}/{d.grupo.duracao_dias_uteis} (fixa)"
+                    linha["progresso"] = "Atividade fixa"
                 else:
-                    linha["progresso"] = f"{d.ordem}/{d.grupo.duracao_dias_uteis}"
+                    acumulado = d.grupo.percentual_acumulado or 0
+                    linha["progresso"] = f"{acumulado}% concluído ({d.ordem}/{d.grupo.duracao_dias_uteis} dias)"
                 houve_alteracao = any(dg.gerado_por_crescimento for dg in d.grupo.dias)
                 linha["alteracao"] = "Sim — cresceu além do previsto" if houve_alteracao else "—"
                 linha["observacoes"] = d.descricao_execucao or "—"
@@ -1675,17 +1752,68 @@ def rdo():
 
         media = _calcular_media_ponderada_dia(dias_do_dia)
 
+        # [23/09 reformulacao RDO] clima_manha/clima_tarde substituem condicao_climatica pra
+        # RDOs novos — mas a coluna antiga continua NOT NULL (RDOs antigos a usam), então
+        # gravamos nela também um resumo (não trava nada, só mantém compatibilidade).
+        clima_manha = (request.form.get("clima_manha") or "Ensolarado").strip()
+        clima_tarde = (request.form.get("clima_tarde") or "Ensolarado").strip()
+
         rdo_novo = RelatorioDiarioObra(
             data=data_d, planta_id=int(planta_id), condicao_climatica=clima,
+            clima_manha=clima_manha, clima_tarde=clima_tarde,
             horario_inicio=(request.form.get("horario_inicio") or "07:00").strip(),
             horario_termino=(request.form.get("horario_termino") or "16:48").strip(),
-            mao_de_obra_texto=(request.form.get("mao_de_obra_texto") or "").strip(),
-            equipamentos_texto=(request.form.get("equipamentos_texto") or "").strip(),
+            horario_intervalo_inicio=(request.form.get("horario_intervalo_inicio") or "12:00").strip(),
+            horario_intervalo_fim=(request.form.get("horario_intervalo_fim") or "13:00").strip(),
             atividades_ids_json=json.dumps([d.grupo_id for d in dias_do_dia]),
             percentual_medio=media, observacoes=(request.form.get("observacoes") or "").strip(),
+            ocorrencias=(request.form.get("ocorrencias") or "").strip(),
+            comentarios=(request.form.get("comentarios") or "").strip(),
             status="PENDENTE")
         _marcar_autor(rdo_novo, "criado_por")
         db.session.add(rdo_novo)
+        db.session.flush()  # [data] precisa do rdo_novo.id antes de gravar mão de obra/equipamentos
+
+        # [23/09 reformulacao RDO] mão de obra: uma linha por colaborador (RDOMaoDeObra), em
+        # vez do texto livre antigo — arrays paralelos vindos do form (add-row em JS no template).
+        colab_ids = request.form.getlist("mo_colaborador_id")
+        colab_livres = request.form.getlist("mo_nome_livre")
+        funcoes = request.form.getlist("mo_funcao")
+        entradas = request.form.getlist("mo_entrada")
+        saidas = request.form.getlist("mo_saida")
+        for i in range(len(funcoes)):
+            cid = colab_ids[i] if i < len(colab_ids) else ""
+            nome_livre = colab_livres[i] if i < len(colab_livres) else ""
+            funcao = funcoes[i] if i < len(funcoes) else ""
+            if not cid and not nome_livre and not funcao:
+                continue  # linha em branco (sobrou do template) — ignora
+            db.session.add(RDOMaoDeObra(
+                rdo_id=rdo_novo.id,
+                colaborador_id=int(cid) if cid else None,
+                nome_livre=(nome_livre or None) if not cid else None,
+                funcao=funcao or None,
+                horario_entrada=(entradas[i] if i < len(entradas) and entradas[i] else "07:00"),
+                horario_saida=(saidas[i] if i < len(saidas) and saidas[i] else "16:48")))
+
+        # [23/09 reformulacao RDO] equipamentos: mesma lógica, RDOEquipamento em vez de texto livre.
+        equip_ids = request.form.getlist("eq_equipamento_id")
+        equip_livres = request.form.getlist("eq_nome_livre")
+        equip_qtds = request.form.getlist("eq_quantidade")
+        for i in range(len(equip_ids)):
+            eid = equip_ids[i]
+            nome_livre = equip_livres[i] if i < len(equip_livres) else ""
+            if not eid and not nome_livre:
+                continue
+            try:
+                qtd = max(1, int(equip_qtds[i])) if i < len(equip_qtds) and equip_qtds[i] else 1
+            except ValueError:
+                qtd = 1
+            db.session.add(RDOEquipamento(
+                rdo_id=rdo_novo.id,
+                equipamento_id=int(eid) if eid else None,
+                nome_livre=(nome_livre or None) if not eid else None,
+                quantidade=qtd))
+
         db.session.commit()
         flash("RDO registrado — confira o preview antes de confirmar o envio para aprovação.", "success")
         # [item 8] Preview: em vez de já cair na lista geral, mostra o RDO completo primeiro
@@ -1700,10 +1828,40 @@ def rdo():
     eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
                 or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
 
+    # [23/09 reformulacao RDO] lista de colaboradores ativos pra alimentar o combobox de mão
+    # de obra do form de criação (item 4/11 — busca em vez de rolar lista longa).
+    colaboradores_disp = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+
     return render_template("facilities/rdo.html", itens=itens, plantas_disp=plantas_disp,
                            hoje=date.today(), eh_gestor=eh_gestor,
+                           colaboradores_disp=colaboradores_disp,
                            eh_admin=(current_user.is_authenticated and (getattr(current_user, "is_admin", False)
                                      or getattr(current_user, "is_master", False))))
+
+
+@facilities_bp.route("/rdo/dados-planta")
+@_rdo_required
+def rdo_dados_planta():
+    """[23/09 reformulacao RDO] Endpoint AJAX: dado planta_id, devolve (a) os equipamentos
+    ativos cadastrados pra ela (EquipamentoTerceiro) e (b) os equipamentos+quantidades do RDO
+    MAIS RECENTE daquela mesma planta (pra pré-preencher o form de um RDO novo, item 4)."""
+    from flask import jsonify
+    planta_id = request.args.get("planta_id")
+    if not planta_id or not planta_id.isdigit():
+        return jsonify(equipamentos=[], sugestoes=[])
+    equipamentos = (EquipamentoTerceiro.query
+                   .filter_by(planta_id=int(planta_id), ativo=True)
+                   .order_by(EquipamentoTerceiro.nome).all())
+    rdo_anterior = (RelatorioDiarioObra.query
+                   .filter(RelatorioDiarioObra.planta_id == int(planta_id))
+                   .order_by(RelatorioDiarioObra.data.desc(), RelatorioDiarioObra.id.desc())
+                   .first())
+    sugestoes = []
+    if rdo_anterior:
+        sugestoes = [{"equipamento_id": e.equipamento_id, "nome": e.nome, "quantidade": e.quantidade}
+                    for e in rdo_anterior.equipamentos]
+    return jsonify(equipamentos=[{"id": e.id, "nome": e.nome} for e in equipamentos],
+                   sugestoes=sugestoes)
 
 
 @facilities_bp.route("/rdo/<int:rdo_id>/aprovar", methods=["POST"])

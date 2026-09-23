@@ -116,16 +116,21 @@
   <div class="secao-form">
     <div class="secao-head">Empresa e equipe</div>
     <div class="secao-body">
+      <!-- [23/09 reformulacao RDO — item 7/11] Empresa e Colaborador viram combobox PESQUISÁVEL
+           (input + <datalist>, filtra ao digitar) em vez de <select> simples com lista longa. -->
+      <datalist id="listaEmpresasProg">
+        {% for e in empresas_disp %}<option data-id="{{ e.id }}" value="{{ e.nome_fantasia or e.razao_social }}">{% endfor %}
+      </datalist>
       <div id="listaColaboradores">
         <div class="row g-2 align-items-end linha-colab-form">
           <div class="col-md-1"><span class="badge bg-primary">responsável</span></div>
-          <div class="col-md-5"><label class="form-label small">Empresa</label>
-            <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
-              <option value="">—</option>
-              {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
-            </select></div>
-          <div class="col-md-5"><label class="form-label small">Colaborador</label>
-            <select name="colaborador_id" class="form-select sel-colab"><option value="">— escolha a empresa —</option></select></div>
+          <div class="col-md-5"><label class="form-label small">Empresa (digite para buscar)</label>
+            <input type="text" class="form-control input-empresa" list="listaEmpresasProg" oninput="empresaAlterada(this)" autocomplete="off">
+          </div>
+          <div class="col-md-5"><label class="form-label small">Colaborador (digite para buscar)</label>
+            <input type="text" class="form-control input-colab" list="" placeholder="— escolha a empresa —" oninput="colabAlterado(this)" disabled autocomplete="off">
+            <input type="hidden" name="colaborador_id" class="hidden-colab-id">
+          </div>
         </div>
       </div>
       <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addColaboradorLinha()">＋ Adicionar colaborador</button>
@@ -142,13 +147,13 @@
 <template id="templateLinhaColab">
   <div class="row g-2 align-items-end linha-colab-form">
     <div class="col-md-1"><span class="badge bg-secondary">colaborador</span></div>
-    <div class="col-md-5"><label class="form-label small">Empresa</label>
-      <select class="form-select sel-empresa" onchange="carregarColaboradores(this)">
-        <option value="">—</option>
-        {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
-      </select></div>
-    <div class="col-md-5"><label class="form-label small">Colaborador</label>
-      <select name="colaborador_id" class="form-select sel-colab"><option value="">— escolha a empresa —</option></select></div>
+    <div class="col-md-5"><label class="form-label small">Empresa (digite para buscar)</label>
+      <input type="text" class="form-control input-empresa" list="listaEmpresasProg" oninput="empresaAlterada(this)" autocomplete="off">
+    </div>
+    <div class="col-md-5"><label class="form-label small">Colaborador (digite para buscar)</label>
+      <input type="text" class="form-control input-colab" list="" placeholder="— escolha a empresa —" oninput="colabAlterado(this)" disabled autocomplete="off">
+      <input type="hidden" name="colaborador_id" class="hidden-colab-id">
+    </div>
     <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.linha-colab-form').remove()">×</button></div>
   </div>
 </template>
@@ -169,17 +174,50 @@ function addColaboradorLinha(){
   const tpl = document.getElementById('templateLinhaColab').content.cloneNode(true);
   document.getElementById('listaColaboradores').appendChild(tpl);
 }
-function carregarColaboradores(selEmpresa){
-  const fornecedorId = selEmpresa.value;
-  const selColab = selEmpresa.closest('.linha-colab-form').querySelector('.sel-colab');
-  if(!fornecedorId){ selColab.innerHTML = '<option value="">— escolha a empresa —</option>'; return; }
-  selColab.innerHTML = '<option value="">Carregando...</option>';
+// [23/09 reformulacao RDO — item 7/11] Empresa e Colaborador agora são combobox pesquisável
+// (input + <datalist>): digitar filtra as opções em vez de rolar uma lista longa. O valor
+// "de verdade" enviado no submit é o ID, resolvido a partir do texto digitado (comparando com
+// o data-id da <option> do datalist que tiver esse mesmo texto).
+var _idsColabPorNomeContador = 0;
+function empresaAlterada(inputEmpresa){
+  const linha = inputEmpresa.closest('.linha-colab-form');
+  const inputColab = linha.querySelector('.input-colab');
+  const hiddenColabId = linha.querySelector('.hidden-colab-id');
+  const opts = document.querySelectorAll('#listaEmpresasProg option');
+  let fornecedorId = null;
+  opts.forEach(function(o){ if (o.value === inputEmpresa.value) fornecedorId = o.dataset.id; });
+  inputColab.value = '';
+  hiddenColabId.value = '';
+  if (!fornecedorId) {
+    inputColab.disabled = true;
+    inputColab.placeholder = '— escolha a empresa —';
+    if (inputColab._datalist) inputColab._datalist.innerHTML = '';
+    return;
+  }
+  inputColab.disabled = false;
+  inputColab.placeholder = 'Carregando...';
   fetch("{{ url_for('facilities.colaboradores_por_empresa', fornecedor_id=0) }}".replace('0', fornecedorId))
     .then(r => r.json()).then(function(d){
-      let opts = '<option value="">— selecione —</option>';
-      d.colaboradores.forEach(function(c){ opts += '<option value="'+c.id+'">'+c.nome+'</option>'; });
-      selColab.innerHTML = opts;
+      inputColab.placeholder = 'Digite para buscar...';
+      if (!inputColab._datalist) {
+        var dl = document.createElement('datalist');
+        dl.id = 'dl-colab-' + (++_idsColabPorNomeContador);
+        linha.appendChild(dl);
+        inputColab.setAttribute('list', dl.id);
+        inputColab._datalist = dl;
+      }
+      inputColab._datalist.innerHTML = d.colaboradores.map(function(c){
+        return '<option data-id="' + c.id + '" value="' + c.nome + '">';
+      }).join('');
     });
+}
+function colabAlterado(inputColab){
+  const linha = inputColab.closest('.linha-colab-form');
+  const hiddenColabId = linha.querySelector('.hidden-colab-id');
+  if (!inputColab._datalist) { hiddenColabId.value = ''; return; }
+  let achou = null;
+  inputColab._datalist.querySelectorAll('option').forEach(function(o){ if (o.value === inputColab.value) achou = o.dataset.id; });
+  hiddenColabId.value = achou || '';
 }
 function atualizarUnidade(){
   const unidade = document.getElementById('selUnidade').value;

@@ -187,17 +187,42 @@ def gerar_pdf_rdo(rdo):
     story.append(Spacer(1, 10))
 
     # ---- Dados gerais ----
+    # [23/09 reformulacao RDO] Removidos do PDF: Obra, Contratante, Responsável, Prazo
+    # contratual/decorrido/a vencer (nunca existiram nesta versão do RDO — o modelo de
+    # referência do Antonio tinha esses campos, mas o SIGA não usa essas entidades aqui).
+    # Clima agora é Manhã/Tarde (RDOs antigos sem clima_manha/clima_tarde caem no fallback
+    # da coluna antiga condicao_climatica, pra não quebrar PDF de relatório já salvo).
+    clima_manha = rdo.clima_manha or (rdo.condicao_climatica or "—")
+    clima_tarde = rdo.clima_tarde or (rdo.condicao_climatica or "—")
+    horario_txt = f"{rdo.horario_inicio or '—'} às {rdo.horario_termino or '—'}"
+    if rdo.horario_intervalo_inicio and rdo.horario_intervalo_fim:
+        horario_txt += f" (intervalo {rdo.horario_intervalo_inicio}-{rdo.horario_intervalo_fim})"
     story.append(_faixa_secao("Dados gerais"))
     story.append(_grade([
         [_campo("Data", rdo.data.strftime("%d/%m/%Y")), _campo("Planta", rdo.planta.nome if rdo.planta else "—"),
-         _campo("Condição climática", rdo.condicao_climatica)],
-        [_campo("Horário", f"{rdo.horario_inicio or '—'} às {rdo.horario_termino or '—'}"),
-         _campo("% média executada no dia", f"{rdo.percentual_medio}%" if rdo.percentual_medio is not None else "—"),
-         _campo("Aprovado (Encarregado / Admin)", f"{'Sim' if rdo.aprovado_encarregado_em else 'Não'} / {'Sim' if rdo.aprovado_admin_em else 'Não'}")],
+         _campo("% média executada no dia", f"{rdo.percentual_medio}%" if rdo.percentual_medio is not None else "—")],
+        [_campo("Clima — Manhã", clima_manha), _campo("Clima — Tarde", clima_tarde),
+         _campo("Horário de trabalho", horario_txt)],
     ]))
     story.append(Spacer(1, 8))
 
-    if rdo.mao_de_obra_texto:
+    # ---- Mão de obra (só PESSOAS — RDOMaoDeObra; sem misturar maquinário) ----
+    if rdo.mao_de_obra:
+        story.append(_faixa_secao(f"Mão de obra ({len(rdo.mao_de_obra)})"))
+        cab = ["Nome", "Função", "Entrada", "Saída"]
+        linhas_mo = [cab] + [[m.nome, m.funcao or "—", m.horario_entrada or "—", m.horario_saida or "—"]
+                             for m in rdo.mao_de_obra]
+        t = Table(linhas_mo, colWidths=[70 * mm, 60 * mm, 24 * mm, 24 * mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), AREIA), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA), ("LINEBELOW", (0, 0), (-1, -2), 0.4, AREIA_ESCURA),
+            ("TEXTCOLOR", (0, 1), (-1, -1), GRAFITE),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 8))
+    elif rdo.mao_de_obra_texto:   # [legado] RDOs antigos sem RDOMaoDeObra
         story.append(_faixa_secao("Mão de obra presente"))
         t = Table([[Paragraph(rdo.mao_de_obra_texto.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
         t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
@@ -205,9 +230,39 @@ def gerar_pdf_rdo(rdo):
         story.append(t)
         story.append(Spacer(1, 8))
 
-    if rdo.equipamentos_texto:
+    # ---- Equipamentos (caixa SEPARADA da mão de obra — RDOEquipamento) ----
+    if rdo.equipamentos:
+        story.append(_faixa_secao(f"Equipamentos ({len(rdo.equipamentos)})"))
+        linhas_eq = [["Equipamento", "Quantidade"]] + [[e.nome, str(e.quantidade or 1)] for e in rdo.equipamentos]
+        t = Table(linhas_eq, colWidths=[138 * mm, 40 * mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), AREIA), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA), ("LINEBELOW", (0, 0), (-1, -2), 0.4, AREIA_ESCURA),
+            ("TEXTCOLOR", (0, 1), (-1, -1), GRAFITE),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 8))
+    elif rdo.equipamentos_texto:   # [legado]
         story.append(_faixa_secao("Equipamentos usados no dia"))
         t = Table([[Paragraph(rdo.equipamentos_texto.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
+        t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
+        story.append(t)
+        story.append(Spacer(1, 8))
+
+    if rdo.ocorrencias:
+        story.append(_faixa_secao("Ocorrências"))
+        t = Table([[Paragraph(rdo.ocorrencias.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
+        t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
+        story.append(t)
+        story.append(Spacer(1, 8))
+
+    if rdo.comentarios:
+        story.append(_faixa_secao("Comentários"))
+        t = Table([[Paragraph(rdo.comentarios.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
         t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                                ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
         story.append(t)
@@ -234,16 +289,47 @@ def gerar_pdf_rdo(rdo):
         story.append(t)
         story.append(Spacer(1, 8))
 
-    # ---- Atividades do dia (com colaboradores, observações da equipe, % e fotos) ----
+    def _monta_grade_fotos(pares_bytes_url, n_colunas=2):
+        """[23/09 reformulacao RDO] Monta uma grade 2xN de fotos clicáveis, preenchendo com
+        células vazias (em branco) quando sobrar espaço na última linha — sem quebrar layout.
+        pares_bytes_url é uma lista de (bytes, url_original)."""
+        if not pares_bytes_url:
+            return None
+        largura = 84 * mm
+        linhas_grade = []
+        linha_atual = []
+        for fb, url_original in pares_bytes_url:
+            img_reader = ImageReader(BytesIO(fb))
+            iw, ih = img_reader.getSize()
+            altura = min(largura * ih / iw, 60 * mm)
+            linha_atual.append(_FotoClicavel(BytesIO(fb), largura, altura, url_original))
+            if len(linha_atual) == n_colunas:
+                linhas_grade.append(linha_atual)
+                linha_atual = []
+        if linha_atual:
+            while len(linha_atual) < n_colunas:
+                linha_atual.append(Paragraph("", _OBS))   # célula vazia em branco
+            linhas_grade.append(linha_atual)
+        grade = Table(linhas_grade, colWidths=[88 * mm] * n_colunas)
+        grade.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                                   ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                                   ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        return grade
+
+    # ---- Atividades do dia: título em cima (com % ou FIXO à direita), descrição, e as fotos
+    # EMBAIXO em grade 2x2 (até 4 normal / até 6 com horímetro — 4 da atividade + 2 do painel) ----
     story.append(_faixa_secao(f"Atividades do dia ({len(rdo.atividades)})"))
     story.append(Spacer(1, 4))
     for grupo in rdo.atividades:
         dia_do_grupo = next((d for d in grupo.dias if d.data == rdo.data), None)
         nomes = ", ".join(ac.colaborador.nome for ac in grupo.colaboradores if ac.colaborador)
+        # [23/09 reformulacao RDO] % do dia (AtividadeDia.percentual) substitui dias_restantes
+        # na exibição do RDO — cada RDO mostra a % daquele DIA específico, não acumulada.
+        # FIXA nunca tem %, mostra só "FIXO".
         if grupo.eh_fixa:
-            valor_progresso = "fixa"
-        elif dia_do_grupo and dia_do_grupo.dias_restantes is not None:
-            valor_progresso = f"{dia_do_grupo.dias_restantes} dia(s) restante(s)"
+            valor_progresso = "FIXO"
+        elif dia_do_grupo and dia_do_grupo.percentual is not None:
+            valor_progresso = f"{dia_do_grupo.percentual}%"
         else:
             valor_progresso = "—"
         linha_titulo = Table([[Paragraph(grupo.titulo, _ATV_TIT),
@@ -256,85 +342,74 @@ def gerar_pdf_rdo(rdo):
         story.append(linha_titulo)
         detalhes = f"<b>Local:</b> {grupo.predio.nome if grupo.predio else '—'} &nbsp;·&nbsp; <b>Colaboradores:</b> {nomes or '—'}"
         if dia_do_grupo and dia_do_grupo.descricao_execucao:
-            detalhes += f"<br/><b>Observações da equipe:</b> {dia_do_grupo.descricao_execucao}"
+            detalhes += f"<br/><b>Descrição:</b> {dia_do_grupo.descricao_execucao}"
         story.append(Paragraph(detalhes, _OBS))
         story.append(Spacer(1, 4))
 
-        # [22/09] Máquina com horímetro: mostra os valores de início/fim do dia + as fotos
-        # do painel (separadas das 4 fotos normais da atividade).
+        fotos_painel_urls = []
+        # [22/09] Máquina com horímetro: mostra horímetro inicial, final e horas trabalhadas
+        # NO DIA (calculado). As fotos do painel entram na MESMA grade das fotos da atividade
+        # (até 6 no total — 4 da atividade + 2 do painel).
         if grupo.tem_horimetro and dia_do_grupo:
             registros = {r.tipo: r for r in dia_do_grupo.registros_horimetro}
             if registros:
                 partes = [f"<b>🚜 Horímetro ({grupo.maquina_horimetro.nome if grupo.maquina_horimetro else '—'}):</b>"]
                 if "INICIO" in registros:
-                    partes.append(f"início {registros['INICIO'].valor_horimetro}h")
+                    partes.append(f"inicial {registros['INICIO'].valor_horimetro}h")
                 if "FIM" in registros:
-                    partes.append(f"fim {registros['FIM'].valor_horimetro}h")
+                    partes.append(f"final {registros['FIM'].valor_horimetro}h")
                 if "INICIO" in registros and "FIM" in registros:
                     diff = registros["FIM"].valor_horimetro - registros["INICIO"].valor_horimetro
-                    partes.append(f"(total: {round(diff, 1)}h)")
+                    partes.append(f"(horas trabalhadas no dia: {round(diff, 1)}h)")
                 story.append(Paragraph(" — ".join(partes), _OBS))
-
+                story.append(Spacer(1, 3))
                 fotos_painel_urls = [r.foto_painel_url for r in registros.values() if r.foto_painel_url]
-                if fotos_painel_urls:
-                    imgs_painel = []
-                    for u in fotos_painel_urls:
-                        fb = _baixar_foto(u)
-                        if fb:
-                            img_reader = ImageReader(BytesIO(fb))
-                            iw, ih = img_reader.getSize()
-                            largura = 42 * mm
-                            altura = largura * ih / iw
-                            imgs_painel.append(_FotoClicavel(BytesIO(fb), largura, altura, u))
-                    if imgs_painel:
-                        linha_painel = Table([imgs_painel], colWidths=[44 * mm] * len(imgs_painel))
-                        linha_painel.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 2),
-                                                          ("RIGHTPADDING", (0, 0), (-1, -1), 2)]))
-                        story.append(Spacer(1, 3))
-                        story.append(linha_painel)
-                story.append(Spacer(1, 4))
 
-        # [item 8] fotos do dia: 4 pequenas lado a lado, CLICÁVEIS (abre a URL original,
-        # sem compressão adicional, ao clicar em cima — usa um Flowable customizado porque o
-        # reportlab não tem link embutido em Image "de fábrica").
+        # [item 8] fotos: normal até 4, com horímetro até 6 (4 da atividade + 2 do painel) —
+        # grade 2x2 (ou 2x3), CLICÁVEIS (abre a URL original ao clicar).
+        max_fotos_atividade = 4
+        urls_atividade = []
         if dia_do_grupo and dia_do_grupo.fotos_json:
             try:
-                urls = _json.loads(dia_do_grupo.fotos_json)
+                urls_atividade = _json.loads(dia_do_grupo.fotos_json)
             except (ValueError, TypeError):
-                urls = []
-            imgs_ok = []
-            falhas = []
-            for u in urls[:4]:
-                foto_bytes = _baixar_foto(u)
-                if foto_bytes:
-                    imgs_ok.append((foto_bytes, u))
-                else:
-                    falhas.append(u)
-            if imgs_ok:
-                cel_imgs = []
-                for fb, url_original in imgs_ok:
-                    img_reader = ImageReader(BytesIO(fb))
-                    iw, ih = img_reader.getSize()
-                    largura = 42 * mm
-                    altura = largura * ih / iw
-                    cel_imgs.append(_FotoClicavel(BytesIO(fb), largura, altura, url_original))
-                linha_fotos = Table([cel_imgs], colWidths=[44 * mm] * len(cel_imgs))
-                linha_fotos.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 2),
-                                                 ("RIGHTPADDING", (0, 0), (-1, -1), 2)]))
-                story.append(linha_fotos)
-                story.append(Paragraph("Clique numa foto para abrir em tamanho grande.", _LABEL))
-            if falhas:
-                # [fix 22/09] antes uma foto que falhasse ao baixar simplesmente SUMIA do PDF
-                # sem nenhum rastro — impossível saber se ela existia ou não. Agora aparece um
-                # aviso explícito com o link direto, pra pessoa poder abrir manualmente e o
-                # problema fica visível em vez de silencioso.
-                aviso = f"⚠️ {len(falhas)} foto(s) não puderam ser incluídas automaticamente neste PDF. Abra o link diretamente: " + \
-                        " | ".join(f'<link href="{u}">{u[:50]}...</link>' for u in falhas)
-                story.append(Paragraph(aviso, _LABEL))
+                urls_atividade = []
+        urls_todas = list(urls_atividade[:max_fotos_atividade]) + list(fotos_painel_urls[:2])
+        imgs_ok = []
+        falhas = []
+        for u in urls_todas:
+            foto_bytes = _baixar_foto(u)
+            if foto_bytes:
+                imgs_ok.append((foto_bytes, u))
+            else:
+                falhas.append(u)
+        grade_fotos = _monta_grade_fotos(imgs_ok)
+        if grade_fotos:
+            story.append(grade_fotos)
+            story.append(Paragraph("Clique numa foto para abrir em tamanho grande.", _LABEL))
+        if falhas:
+            # [fix 22/09] antes uma foto que falhasse ao baixar simplesmente SUMIA do PDF
+            # sem nenhum rastro — impossível saber se ela existia ou não. Agora aparece um
+            # aviso explícito com o link direto, pra pessoa poder abrir manualmente e o
+            # problema fica visível em vez de silencioso.
+            aviso = f"⚠️ {len(falhas)} foto(s) não puderam ser incluídas automaticamente neste PDF. Abra o link diretamente: " + \
+                    " | ".join(f'<link href="{u}">{u[:50]}...</link>' for u in falhas)
+            story.append(Paragraph(aviso, _LABEL))
         story.append(Spacer(1, 10))
 
     if not rdo.atividades:
         story.append(Paragraph("Nenhuma atividade vinculada.", _OBS))
+
+    # ---- Aprovação (Encarregado E Admin — as duas, quando existirem) ----
+    story.append(Spacer(1, 6))
+    story.append(_faixa_secao("Aprovação"))
+    txt_encarregado = "Pendente"
+    if rdo.aprovado_encarregado_em:
+        txt_encarregado = f"{rdo.aprovado_encarregado_nome or '—'} em {rdo.aprovado_encarregado_em.strftime('%d/%m/%Y %H:%M')}"
+    txt_admin = "Pendente"
+    if rdo.aprovado_admin_em:
+        txt_admin = f"{rdo.aprovado_admin_nome or '—'} em {rdo.aprovado_admin_em.strftime('%d/%m/%Y %H:%M')}"
+    story.append(_grade([[_campo("Encarregado", txt_encarregado), _campo("Admin", txt_admin)]]))
 
     doc.build(story)
     buf.seek(0)

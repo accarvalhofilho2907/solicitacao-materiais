@@ -16,6 +16,7 @@
     {% else %}
       Dias restantes informados: <b>{{ d.dias_restantes if d.dias_restantes is not none else '—' }}</b>
       {% if d.dias_restantes_esperado is not none %}(esperado: {{ d.dias_restantes_esperado }}){% endif %}
+      · % acumulado do grupo até agora: <b>{{ d.grupo.percentual_acumulado }}%</b>
     {% endif %}
     · {{ d.data.strftime('%d/%m/%Y') }} · <b>{{ d.grupo.colaboradores|length }}</b> colaborador(es) na equipe
   </p>
@@ -50,6 +51,10 @@
   <div class="collapse mt-2" id="aprov{{ d.id }}">
     <form method="post" action="{{ url_for('facilities.aprovar_dia', dia_id=d.id) }}" enctype="multipart/form-data" class="border rounded p-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if not d.grupo.eh_fixa %}
+      <label class="form-label small">% executada NESTE DIA (obrigatório) — acumulado até agora: {{ d.grupo.percentual_acumulado }}%</label>
+      <input type="number" name="percentual_dia" class="form-control form-control-sm mb-2" min="0" max="100" required>
+      {% endif %}
       {% if fotos_do_dia|length < 4 %}
       <label class="form-label small">Anexar foto(s) extra (opcional, até {{ 4 - fotos_do_dia|length }} restante(s))</label>
       <input type="file" name="fotos" class="form-control form-control-sm mb-2" accept="image/*" multiple>
@@ -64,6 +69,8 @@
       {% if not d.grupo.eh_fixa %}
       <label class="form-label small">Dias restantes (corrigir se necessário)</label>
       <input type="number" name="dias_restantes" class="form-control form-control-sm mb-2" min="0" value="{{ d.dias_restantes }}">
+      <label class="form-label small">% executada NESTE DIA (obrigatório) — acumulado até agora: {{ d.grupo.percentual_acumulado }}%</label>
+      <input type="number" name="percentual_dia" class="form-control form-control-sm mb-2" min="0" max="100" value="{{ d.percentual if d.percentual is not none else '' }}" required>
       {% endif %}
       <label class="form-label small">Descrição (opcional)</label>
       <textarea name="descricao" class="form-control form-control-sm mb-2">{{ d.descricao_execucao or '' }}</textarea>

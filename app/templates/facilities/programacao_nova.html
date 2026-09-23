@@ -22,6 +22,22 @@
         </div>
       </div>
     </div>
+    <div class="row g-2 mt-2">
+      <div class="col-md-12">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="tem_horimetro" id="chkHorimetro" value="1" onchange="document.getElementById('areaMaquina').classList.toggle('d-none', !this.checked)">
+          <label class="form-check-label small" for="chkHorimetro"><b>Máquina com horímetro</b> — ativa 2 reports diários (início com horímetro inicial + foto do painel, fim com horímetro final + foto do painel)</label>
+        </div>
+        <div id="areaMaquina" class="d-none mt-2">
+          <label class="form-label small">Máquina *</label>
+          <select name="maquina_horimetro_id" class="form-select">
+            <option value="">— selecione —</option>
+            {% for m in maquinas_disp %}<option value="{{ m.id }}">{{ m.nome }}{% if m.planta %} ({{ m.planta.nome }}){% endif %}</option>{% endfor %}
+          </select>
+          {% if not maquinas_disp %}<p class="text-muted small mt-1">Nenhuma máquina cadastrada — cadastre em Cadastro &gt; Cadastro Geral Terceiro &gt; Maquinário Pesado Terceiro.</p>{% endif %}
+        </div>
+      </div>
+    </div>
     <div class="row g-2 mt-1">
       <div class="col-md-3"><label class="form-label small">Duração — unidade</label>
         <select name="unidade_duracao" class="form-select" id="selUnidade" onchange="atualizarUnidade()">

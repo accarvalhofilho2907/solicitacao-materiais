@@ -221,6 +221,19 @@ def gerar_pdf_rdo(rdo):
         story.append(t)
         story.append(Spacer(1, 8))
 
+    # ---- Maquinário Pesado (22/09) — só os NOMES das máquinas usadas neste dia, conforme
+    # pedido explícito do Antonio ("somente virá o nome da máquina mesmo") ----
+    nomes_maquinas = sorted({g.maquina_horimetro.nome for g in rdo.atividades
+                            if g.tem_horimetro and g.maquina_horimetro})
+    if nomes_maquinas:
+        story.append(_faixa_secao("Maquinário Pesado"))
+        texto_maquinas = ", ".join(nomes_maquinas)
+        t = Table([[Paragraph(texto_maquinas, _OBS)]], colWidths=[178 * mm])
+        t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
+        story.append(t)
+        story.append(Spacer(1, 8))
+
     # ---- Atividades do dia (com colaboradores, observações da equipe, % e fotos) ----
     story.append(_faixa_secao(f"Atividades do dia ({len(rdo.atividades)})"))
     story.append(Spacer(1, 4))
@@ -246,6 +259,40 @@ def gerar_pdf_rdo(rdo):
             detalhes += f"<br/><b>Observações da equipe:</b> {dia_do_grupo.descricao_execucao}"
         story.append(Paragraph(detalhes, _OBS))
         story.append(Spacer(1, 4))
+
+        # [22/09] Máquina com horímetro: mostra os valores de início/fim do dia + as fotos
+        # do painel (separadas das 4 fotos normais da atividade).
+        if grupo.tem_horimetro and dia_do_grupo:
+            registros = {r.tipo: r for r in dia_do_grupo.registros_horimetro}
+            if registros:
+                partes = [f"<b>🚜 Horímetro ({grupo.maquina_horimetro.nome if grupo.maquina_horimetro else '—'}):</b>"]
+                if "INICIO" in registros:
+                    partes.append(f"início {registros['INICIO'].valor_horimetro}h")
+                if "FIM" in registros:
+                    partes.append(f"fim {registros['FIM'].valor_horimetro}h")
+                if "INICIO" in registros and "FIM" in registros:
+                    diff = registros["FIM"].valor_horimetro - registros["INICIO"].valor_horimetro
+                    partes.append(f"(total: {round(diff, 1)}h)")
+                story.append(Paragraph(" — ".join(partes), _OBS))
+
+                fotos_painel_urls = [r.foto_painel_url for r in registros.values() if r.foto_painel_url]
+                if fotos_painel_urls:
+                    imgs_painel = []
+                    for u in fotos_painel_urls:
+                        fb = _baixar_foto(u)
+                        if fb:
+                            img_reader = ImageReader(BytesIO(fb))
+                            iw, ih = img_reader.getSize()
+                            largura = 42 * mm
+                            altura = largura * ih / iw
+                            imgs_painel.append(_FotoClicavel(BytesIO(fb), largura, altura, u))
+                    if imgs_painel:
+                        linha_painel = Table([imgs_painel], colWidths=[44 * mm] * len(imgs_painel))
+                        linha_painel.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 2),
+                                                          ("RIGHTPADDING", (0, 0), (-1, -1), 2)]))
+                        story.append(Spacer(1, 3))
+                        story.append(linha_painel)
+                story.append(Spacer(1, 4))
 
         # [item 8] fotos do dia: 4 pequenas lado a lado, CLICÁVEIS (abre a URL original,
         # sem compressão adicional, ao clicar em cima — usa um Flowable customizado porque o

@@ -520,6 +520,61 @@ class Predio(db.Model):
     planta = db.relationship("Planta")
 
 
+class EquipamentoTerceiro(db.Model):
+    """[22/09] Cadastro geral de Terceiro — Equipamentos (diferente de MaquinarioPesadoTerceiro,
+    que tem o fluxo de horímetro). Cadastro básico: nome, planta, empresa/fornecedor."""
+    __tablename__ = "sf_equipamentos_terceiro"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(160), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    planta = db.relationship("Planta")
+    fornecedor = db.relationship("Fornecedor")
+
+
+class MaquinarioPesadoTerceiro(db.Model):
+    """[22/09] Cadastro de máquina pesada de terceiro (ex.: escavadeira, trator) — vinculada a
+    uma AtividadeGrupo com horimetro=True. Planta é fixa no cadastro; a EMPRESA que opera a
+    máquina pode variar por relatório (RegistroHorimetro.fornecedor_id), por isso o fornecedor
+    aqui é só um "padrão" sugerido, não obrigatório por relatório."""
+    __tablename__ = "sf_maquinario_pesado_terceiro"
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(160), nullable=False)
+    planta_id = db.Column(db.ForeignKey("almox_plantas.id"))
+    fornecedor_padrao_id = db.Column(db.ForeignKey("fornecedores.id"))
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    planta = db.relationship("Planta")
+    fornecedor_padrao = db.relationship("Fornecedor")
+
+
+class RegistroHorimetro(db.Model):
+    """[22/09] Um lançamento de horímetro (início OU fim do dia) de uma AtividadeDia cuja
+    atividade tem horimetro=True. Cada AtividadeDia de uma atividade com horímetro tem, no
+    máximo, 2 registros: tipo=INICIO (feito ao começar o dia) e tipo=FIM (feito ao encerrar,
+    junto com o report normal de fotos/descrição da atividade). A empresa (fornecedor) é
+    informada em CADA registro — pode variar dia a dia, mesmo sendo a mesma máquina."""
+    __tablename__ = "sf_registros_horimetro"
+    id = db.Column(db.Integer, primary_key=True)
+    dia_id = db.Column(db.ForeignKey("sf_atividade_dias.id"), nullable=False)
+    maquina_id = db.Column(db.ForeignKey("sf_maquinario_pesado_terceiro.id"), nullable=False)
+    tipo = db.Column(db.String(10), nullable=False)   # INICIO | FIM
+    valor_horimetro = db.Column(db.Float, nullable=False)
+    foto_painel_url = db.Column(db.Text)   # 1 foto só, fora das 4 fotos normais da atividade
+    fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"))   # empresa operando NESTE dia
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    maquina = db.relationship("MaquinarioPesadoTerceiro")
+    fornecedor = db.relationship("Fornecedor")
+    dia = db.relationship("AtividadeDia", backref="registros_horimetro")
+
+
 class Armazem(db.Model):
     """Galpão dentro de uma planta (ex.: Galpão D6)."""
     __tablename__ = "almox_armazens"
@@ -1447,12 +1502,14 @@ class AtividadeGrupo(db.Model):
     fotos_antes_json = db.Column(db.Text)   # até 4 caminhos de arquivo
     status_cadastro = db.Column(db.String(20), default="COMPLETO")  # COMPLETO|INCOMPLETO
     motivo_cancelamento = db.Column(db.Text)
+    maquina_horimetro_id = db.Column(db.ForeignKey("sf_maquinario_pesado_terceiro.id"))  # [22/09] se preenchido, ativa o fluxo de 2 reports/dia com horímetro
     criado_por = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     planta = db.relationship("Planta")
     predio = db.relationship("Predio")
     produto = db.relationship("ProdutoAlmox")
+    maquina_horimetro = db.relationship("MaquinarioPesadoTerceiro")
     dias = db.relationship("AtividadeDia", backref="grupo", order_by="AtividadeDia.data",
                            cascade="all, delete-orphan")
     colaboradores = db.relationship("AtividadeColaborador", backref="grupo",
@@ -1462,6 +1519,10 @@ class AtividadeGrupo(db.Model):
     def responsavel(self):
         r = next((c for c in self.colaboradores if c.eh_responsavel), None)
         return r.colaborador if r else None
+
+    @property
+    def tem_horimetro(self):
+        return self.maquina_horimetro_id is not None
 
     @property
     def eh_fixa(self):
@@ -1514,6 +1575,7 @@ class AtividadeDia(db.Model):
     aprovado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     retificado = db.Column(db.Boolean, default=False)
     gerado_por_crescimento = db.Column(db.Boolean, default=False)  # [19/09] esta linha nasceu de um report que precisou de mais dias
+    aviso_conflito_agenda = db.Column(db.Text)  # [fix 22/09] antes só aparecia 1x pro colaborador; agora fica salvo e visível pro Encarregado na aprovação
 
     preenchimentos = db.relationship("RegistroPreenchimento", backref="dia",
                                      order_by="RegistroPreenchimento.criado_em",

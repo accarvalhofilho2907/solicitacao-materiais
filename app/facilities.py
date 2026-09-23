@@ -24,6 +24,7 @@ from .models import (ModeloChecklist, ItemChecklist, ProdutoAlmox, ExecucaoCheck
                      ItemFalhaAberta, Planta, Colaborador, Fornecedor, Predio, Feriado,
                      AtividadeGrupo, AtividadeColaborador, AtividadeDia, RegistroPreenchimento,
                      EncarregadoEmpresa, RelatorioDiarioObra,
+                     EquipamentoTerceiro, MaquinarioPesadoTerceiro, RegistroHorimetro,
                      UNIDADES_DURACAO_DIAS_UTEIS, OPCOES_RECORRENCIA)
 
 facilities_bp = Blueprint("facilities", __name__, url_prefix="/facilities")
@@ -292,7 +293,10 @@ def inspecionar():
     resultado = "OK"
     if any(v == "falha" for v in respostas.values()):
         resultado = "ATENCAO"
-    fotos = _salvar_fotos("fotos", maximo=4)
+    fotos, fotos_fallback_local = _salvar_fotos("fotos", maximo=4)
+    if fotos_fallback_local:
+        flash("⚠️ Atenção: as fotos foram salvas num armazenamento temporário (Cloudinary indisponível no momento) — "
+              "podem se perder no próximo deploy. Avise o administrador.", "warning")
     execucao = ExecucaoChecklist(produto_id=produto.id, modelo_id=modelo.id,
                                  planta_id=produto.planta_id,
                                  executado_por_usuario_id=usuario_id,
@@ -397,16 +401,24 @@ def _salvar_fotos(campo_form, maximo=4):
     """[v3] Salva até `maximo` fotos enviadas no campo `campo_form` do request (usa o mesmo
     salvar_imagem() já usado pelo resto do sistema — Cloudinary se CLOUDINARY_URL estiver
     configurado, senão cai no disco local do Render, que é volátil). Devolve uma lista de
-    URLs (para gravar como JSON em fotos_json / fotos_antes_json)."""
+    URLs (para gravar como JSON em fotos_json / fotos_antes_json).
+    [fix 22/09] Antes, se o Cloudinary falhasse silenciosamente (credencial errada, fora do
+    ar, etc.), a foto caía pro disco local sem NINGUÉM perceber — o colaborador via "salvo
+    com sucesso" e só descobria dias depois, no RDO, que a foto tinha sumido (disco do
+    Render não é persistente). Agora, se qualquer foto cair no fallback local, isso fica
+    registrado para o chamador poder avisar a pessoa NA HORA."""
     arquivos = request.files.getlist(campo_form)[:maximo]
     urls = []
+    caiu_no_fallback_local = False
     for arq in arquivos:
         if not arq or not arq.filename:
             continue
         url = salvar_imagem(arq)
         if url:
             urls.append(url)
-    return urls
+            if url.startswith("/uploads/"):
+                caiu_no_fallback_local = True
+    return urls, caiu_no_fallback_local
 
 
 def _marcar_aprovado_por(dia):
@@ -463,6 +475,54 @@ def _colaboradores_ids_visiveis_preencher(colab_id):
         outros = Colaborador.query.filter(Colaborador.empresa.in_(empresas), Colaborador.ativo == True).all()
         ids.update(c.id for c in outros)
     return list(ids)
+
+
+# ============================================================================
+# CADASTRO GERAL TERCEIRO (22/09) — Equipamentos Terceiro + Maquinário Pesado Terceiro
+# ============================================================================
+
+@facilities_bp.route("/cadastro-terceiro/equipamentos", methods=["GET", "POST"])
+@_gerir_required
+def equipamentos_terceiro():
+    plantas_disp, ids_permitidas = _plantas_ctx()
+    fornecedores_disp = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all()
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip()
+        planta_id = request.form.get("planta_id") or None
+        fornecedor_id = request.form.get("fornecedor_id") or None
+        if not nome:
+            flash("Informe o nome do equipamento.", "danger")
+        else:
+            db.session.add(EquipamentoTerceiro(nome=nome, planta_id=int(planta_id) if planta_id else None,
+                                               fornecedor_id=int(fornecedor_id) if fornecedor_id else None))
+            db.session.commit()
+            flash("Equipamento terceiro cadastrado.", "success")
+        return redirect(url_for("facilities.equipamentos_terceiro"))
+    itens = EquipamentoTerceiro.query.filter_by(ativo=True).order_by(EquipamentoTerceiro.nome).all()
+    return render_template("facilities/equipamentos_terceiro.html", itens=itens, plantas_disp=plantas_disp,
+                           fornecedores_disp=fornecedores_disp)
+
+
+@facilities_bp.route("/cadastro-terceiro/maquinario-pesado", methods=["GET", "POST"])
+@_gerir_required
+def maquinario_pesado_terceiro():
+    plantas_disp, ids_permitidas = _plantas_ctx()
+    fornecedores_disp = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all()
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip()
+        planta_id = request.form.get("planta_id") or None
+        fornecedor_id = request.form.get("fornecedor_padrao_id") or None
+        if not nome:
+            flash("Informe o nome da máquina.", "danger")
+        else:
+            db.session.add(MaquinarioPesadoTerceiro(nome=nome, planta_id=int(planta_id) if planta_id else None,
+                                                     fornecedor_padrao_id=int(fornecedor_id) if fornecedor_id else None))
+            db.session.commit()
+            flash("Máquina cadastrada.", "success")
+        return redirect(url_for("facilities.maquinario_pesado_terceiro"))
+    itens = MaquinarioPesadoTerceiro.query.filter_by(ativo=True).order_by(MaquinarioPesadoTerceiro.nome).all()
+    return render_template("facilities/maquinario_pesado_terceiro.html", itens=itens, plantas_disp=plantas_disp,
+                           fornecedores_disp=fornecedores_disp)
 
 
 # ============================================================================
@@ -561,14 +621,19 @@ def programacao_nova():
         materiais = ProdutoAlmox.query.filter_by(ativo=True).order_by(ProdutoAlmox.nome).all()
         predios_disp = Predio.query.filter_by(ativo=True).order_by(Predio.nome).all()
         empresas_disp = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
+        maquinas_disp = MaquinarioPesadoTerceiro.query.filter_by(ativo=True).order_by(MaquinarioPesadoTerceiro.nome).all()
         return render_template("facilities/programacao_nova.html", plantas_disp=plantas_disp,
                                materiais=materiais, predios_disp=predios_disp, empresas_disp=empresas_disp,
-                               opcoes_recorrencia=OPCOES_RECORRENCIA)
+                               maquinas_disp=maquinas_disp, opcoes_recorrencia=OPCOES_RECORRENCIA)
 
     titulo = (request.form.get("titulo") or "").strip()
     tipo_atividade = request.form.get("tipo_atividade") or "NORMAL"
     if tipo_atividade not in ("NORMAL", "FIXA"):
         tipo_atividade = "NORMAL"
+    tem_horimetro = request.form.get("tem_horimetro") == "1"
+    maquina_horimetro_id = request.form.get("maquina_horimetro_id") or None
+    if not tem_horimetro:
+        maquina_horimetro_id = None
     data_inicio_str = request.form.get("data_inicio")
     unidade = request.form.get("unidade_duracao") or "dias"
     if not titulo or not data_inicio_str:
@@ -599,7 +664,10 @@ def programacao_nova():
     produto_id = request.form.get("produto_id") or None
 
     faltando_campo = not (titulo and data_inicio_str and planta_id and predio_id)
-    fotos_antes = _salvar_fotos("fotos_antes", maximo=4)
+    fotos_antes, fotos_antes_fallback_local = _salvar_fotos("fotos_antes", maximo=4)
+    if fotos_antes_fallback_local:
+        flash("⚠️ Atenção: as fotos foram salvas num armazenamento temporário (Cloudinary indisponível no momento) — "
+              "podem se perder no próximo deploy. Avise o administrador.", "warning")
 
     grupo = AtividadeGrupo(titulo=titulo or "(sem título)", descricao=(request.form.get("descricao") or "").strip(),
                            tipo=tipo_atividade, data_inicio=data_inicio, unidade_duracao=unidade, duracao_dias_uteis=duracao,
@@ -608,6 +676,7 @@ def programacao_nova():
                            produto_id=int(produto_id) if produto_id else None,
                            fotos_antes_json=json.dumps(fotos_antes) if fotos_antes else None,
                            status_cadastro="INCOMPLETO" if faltando_campo else "COMPLETO",
+                           maquina_horimetro_id=int(maquina_horimetro_id) if maquina_horimetro_id else None,
                            criado_por=current_user.id if current_user.is_authenticated else None)
     db.session.add(grupo)
     db.session.commit()
@@ -922,6 +991,16 @@ def preencher_dia(data_str):
         else:
             dias_restantes_anterior_por_dia[at.id] = at.dias_restantes_esperado
 
+    # [22/09] pra atividades com horímetro, verifica se já existe registro de INICIO/FIM do
+    # dia — usado no template pra saber qual dos dois formulários mostrar (ou os dois, se
+    # nenhum foi feito ainda; ou nenhum, se já fez os dois).
+    registros_horimetro_por_dia = {}
+    for at in minhas_atividades:
+        if not at.grupo.tem_horimetro:
+            continue
+        existentes = RegistroHorimetro.query.filter_by(dia_id=at.id).all()
+        registros_horimetro_por_dia[at.id] = {r.tipo: r for r in existentes}
+
     if request.method == "POST":
         dia_id = int(request.form.get("dia_id"))
         dia = db.session.get(AtividadeDia, dia_id) or abort(404)
@@ -936,7 +1015,9 @@ def preencher_dia(data_str):
             abort(403)
 
         descricao = (request.form.get("descricao") or "").strip()
-        fotos = _salvar_fotos("fotos", maximo=4)
+        fotos, fotos_fallback_local = _salvar_fotos("fotos", maximo=4)
+        aviso_fallback = ("⚠️ Atenção: foto(s) salvas num armazenamento temporário (Cloudinary indisponível "
+                          "no momento) — podem se perder no próximo deploy. Avise o administrador.")
 
         if dia.grupo.eh_fixa:
             # [19/09] Atividade FIXA: sem nenhuma métrica de progresso — só fotos + descrição,
@@ -950,6 +1031,8 @@ def preencher_dia(data_str):
             dia.status = "AGUARDANDO_APROVACAO"
             db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id, percentual=0))
             db.session.commit()
+            if fotos_fallback_local:
+                flash(aviso_fallback, "warning")
             flash("Preenchido — aguardando aprovação do Encarregado de Campo.", "success")
             return redirect(url_for("facilities.preencher_dia", data_str=data_str, compartilhar=dia.id))
 
@@ -971,14 +1054,19 @@ def preencher_dia(data_str):
                         AtividadeDia.ordem < dia.ordem).order_by(AtividadeDia.ordem.desc()).first())
         justificativa = (request.form.get("justificativa") or "").strip()
 
-        # [19/09] Regra de justificativa: compara contra o esperado, que é
+        # [fix 22/09 CRÍTICO] Regra de justificativa: compara contra o esperado, que é
         # (dias_restantes do dia anterior - 1) — o dia que passou "consumiu" 1 dia da
-        # estimativa. No PRIMEIRO dia da atividade (sem dia_anterior), usa
-        # dias_restantes_esperado (calculado na criação a partir da duração original) —
-        # não exige justificativa nesse caso (nada com que comparar de verdade ainda).
+        # estimativa. No PRIMEIRO dia da atividade (sem dia_anterior — inclusive quando a
+        # atividade INTEIRA tem só 1 dia, o caso mais comum de "estimei errado"), usa
+        # dia.dias_restantes_esperado (calculado na CRIAÇÃO a partir da duração original)
+        # — ANTES o código só olhava dia_anterior e nunca usava esse campo, então uma
+        # atividade de 1 dia único NUNCA disparava a lógica de crescimento, mesmo que o
+        # colaborador reportasse precisar de vários dias a mais.
         esperado = None
         if dia_anterior and dia_anterior.dias_restantes is not None:
             esperado = max(0, dia_anterior.dias_restantes - 1)
+        elif not dia_anterior and dia.dias_restantes_esperado is not None:
+            esperado = dia.dias_restantes_esperado
         cresceu_alem_do_previsto = esperado is not None and dias_restantes_novo > esperado
         if cresceu_alem_do_previsto and not justificativa:
             flash(f"A atividade precisa de mais dias do que o previsto (esperado: {esperado}, "
@@ -995,6 +1083,7 @@ def preencher_dia(data_str):
         db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id, percentual=0))
 
         conflito_gerado = None
+        conflitos_todos = []
         if cresceu_alem_do_previsto:
             # [19/09] Gera o(s) dia(s) extra necessário(s) — a atividade cresceu, então
             # precisamos de mais linhas além das já existentes. A nova linha nasce como
@@ -1024,10 +1113,19 @@ def preencher_dia(data_str):
                         conflito_gerado = {"colaborador_id": ac.colaborador_id, "colaborador_nome": ac.colaborador.nome,
                                           "grupo_titulo": conflito["grupo"].titulo, "grupo_id": conflito["grupo"].id,
                                           "nova_data": proxima_data.isoformat()}
+                        aviso_txt = (f"{ac.colaborador.nome} já tem outra atividade ('{conflito['grupo'].titulo}') "
+                                    f"em {proxima_data.strftime('%d/%m')}")
+                        conflitos_todos.append(aviso_txt)
+                        # [fix 22/09] grava no DIA NOVO (que é quem tem o conflito de verdade),
+                        # não no dia original que está sendo preenchido — antes gravava no lugar
+                        # errado, o que funcionava por acaso mas confundia qual dia tinha o problema.
+                        novo_dia.aviso_conflito_agenda = aviso_txt
             dia.grupo.duracao_dias_uteis = dia.grupo.duracao_dias_uteis + qtd_dias_extra
             dia.grupo.status_cadastro = "INCOMPLETO"  # [item 4] fica visível pro Encarregado revisar na aprovação
 
         db.session.commit()
+        if fotos_fallback_local:
+            flash(aviso_fallback, "warning")
         if conflito_gerado:
             flash(f"Preenchido — atenção: {conflito_gerado['colaborador_nome']} já tem outra atividade "
                   f"('{conflito_gerado['grupo_titulo']}') na nova data gerada. Resolva na tela da atividade.", "warning")
@@ -1037,7 +1135,67 @@ def preencher_dia(data_str):
 
     return render_template("facilities/preencher_dia.html", data_d=data_d, atividades=minhas_atividades,
                            dias_restantes_anterior_por_dia=dias_restantes_anterior_por_dia,
+                           registros_horimetro_por_dia=registros_horimetro_por_dia,
+                           fornecedores_disp=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all(),
                            compartilhar_id=request.args.get("compartilhar"))
+
+
+@facilities_bp.route("/preencher/<data_str>/horimetro", methods=["POST"])
+@_logado_required
+def preencher_horimetro(data_str):
+    """[22/09] Registro de horímetro (INICIO ou FIM) — separado do preenchimento normal da
+    atividade porque é um momento distinto do dia (manhã vs. tarde) e tem seus próprios
+    campos (valor do horímetro + foto do painel, fora das 4 fotos normais da atividade)."""
+    dia_id = int(request.form.get("dia_id"))
+    tipo_registro = request.form.get("tipo_registro")
+    if tipo_registro not in ("INICIO", "FIM"):
+        abort(400)
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    if not dia.grupo.tem_horimetro:
+        abort(400)
+
+    colab_id, usuario_id = _quem_preencheu()
+    ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
+    eh_participante = colab_id and any(ac.colaborador_id in ids_visiveis for ac in dia.grupo.colaboradores)
+    eh_gestor = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))
+    if not eh_participante and not eh_gestor:
+        abort(403)
+
+    # não deixa duplicar: só 1 registro de cada tipo por dia
+    ja_existe = RegistroHorimetro.query.filter_by(dia_id=dia_id, tipo=tipo_registro).first()
+    if ja_existe:
+        flash(f"Já existe um registro de {tipo_registro.lower()} para este dia.", "warning")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+    valor_str = request.form.get("valor_horimetro")
+    fornecedor_id = request.form.get("fornecedor_id") or None
+    if not valor_str:
+        flash("Informe o valor do horímetro.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+    try:
+        valor_horimetro = float(valor_str.replace(",", "."))
+    except ValueError:
+        flash("Valor de horímetro inválido.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+    # [22/09] a foto do painel é UMA SÓ, fora das 4 fotos normais da atividade — usa um campo
+    # de formulário próprio ("foto_painel"), não o "fotos" usado no preenchimento normal.
+    fotos_painel, foto_fallback_local = _salvar_fotos("foto_painel", maximo=1)
+    foto_painel_url = fotos_painel[0] if fotos_painel else None
+
+    registro = RegistroHorimetro(dia_id=dia_id, maquina_id=dia.grupo.maquina_horimetro_id,
+                                 tipo=tipo_registro, valor_horimetro=valor_horimetro,
+                                 foto_painel_url=foto_painel_url,
+                                 fornecedor_id=int(fornecedor_id) if fornecedor_id else None,
+                                 criado_por_colaborador_id=colab_id, criado_por_usuario_id=usuario_id)
+    db.session.add(registro)
+    db.session.commit()
+    if foto_fallback_local:
+        flash("⚠️ Atenção: a foto do painel foi salva num armazenamento temporário (Cloudinary indisponível "
+              "no momento) — pode se perder no próximo deploy. Avise o administrador.", "warning")
+    flash(f"Horímetro de {'início' if tipo_registro == 'INICIO' else 'fim'} do dia registrado.", "success")
+    return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
 
 # ============================================================================
@@ -1091,10 +1249,15 @@ def aprovar_dia(dia_id):
     fotos_existentes = json.loads(dia.fotos_json) if dia.fotos_json else []
     vagas = max(0, 4 - len(fotos_existentes))
     if vagas:
-        novas_fotos = _salvar_fotos("fotos", maximo=vagas)
+        novas_fotos, novas_fallback_local = _salvar_fotos("fotos", maximo=vagas)
         if novas_fotos:
             dia.fotos_json = json.dumps(fotos_existentes + novas_fotos)
+    else:
+        novas_fallback_local = False
     db.session.commit()
+    if novas_fallback_local:
+        flash("⚠️ Atenção: foto(s) salvas num armazenamento temporário (Cloudinary indisponível no momento) — "
+              "podem se perder no próximo deploy.", "warning")
     flash("Aprovado.", "success")
     return redirect(url_for("facilities.aprovacao"))
 
@@ -1120,10 +1283,15 @@ def retificar_dia(dia_id):
     fotos_existentes = json.loads(dia.fotos_json) if dia.fotos_json else []
     vagas = max(0, 4 - len(fotos_existentes))
     if vagas:
-        novas_fotos = _salvar_fotos("fotos", maximo=vagas)
+        novas_fotos, novas_fallback_local = _salvar_fotos("fotos", maximo=vagas)
         if novas_fotos:
             dia.fotos_json = json.dumps(fotos_existentes + novas_fotos)
+    else:
+        novas_fallback_local = False
     db.session.commit()
+    if novas_fallback_local:
+        flash("⚠️ Atenção: foto(s) salvas num armazenamento temporário (Cloudinary indisponível no momento) — "
+              "podem se perder no próximo deploy.", "warning")
     flash("Retificado e aprovado.", "success")
     return redirect(url_for("facilities.aprovacao"))
 
@@ -1208,10 +1376,14 @@ def resumo_diario():
         flash("O resumo de FIM só fica disponível após as 14h (ou em dias anteriores).", "warning")
         return redirect(url_for("facilities.programacao", data=data_str))
 
-    dias = AtividadeDia.query.filter_by(data=data_d).all()
-    # [fix] atividades com cadastro incompleto (falta planta/prédio/data) NÃO entram no resumo —
-    # o resumo é um documento formal pra empresa, não faz sentido sair com dado faltando.
-    dias_completos = [d for d in dias if d.grupo.status_cadastro != "INCOMPLETO"]
+    dias = AtividadeDia.query.filter(AtividadeDia.data == data_d, AtividadeDia.status != "CANCELADA").all()
+    # [fix 22/09] status_cadastro=INCOMPLETO tem DOIS motivos possíveis: (1) faltou preencher
+    # planta/prédio na criação — esse SIM deve sair do resumo, é dado real faltando; (2) a
+    # atividade cresceu além do previsto (gerado_por_crescimento) — esse continua com todos os
+    # dados preenchidos, só está marcado incompleto pro Encarregado revisar a extensão; NÃO deve
+    # ser excluído do resumo, senão o aviso de "alterou duração" pedido por Antonio nunca apareceria.
+    dias_completos = [d for d in dias if d.grupo.status_cadastro != "INCOMPLETO"
+                     or any(dg.gerado_por_crescimento for dg in d.grupo.dias)]
     n_incompletas_no_dia = len(dias) - len(dias_completos)
     dias = dias_completos
 
@@ -1233,16 +1405,18 @@ def resumo_diario():
             nomes_fmt = ", ".join(_remover_particulas_sobrenome(n) for n in colaboradores_da_empresa)
             linha = {"local": d.grupo.predio.nome if d.grupo.predio else "—",
                     "titulo": d.grupo.titulo, "colaboradores": nomes_fmt}
-            # [19/09] no resumo de FIM, traz o que os colaboradores de fato reportaram: dias
-            # restantes (pra NORMAL) ou nada (pra FIXA, só a descrição) — substitui a antiga
-            # % + meta, que não existe mais na lógica nova.
+            # [fix 22/09] Antonio pediu pra trocar "Progresso" por "dias executados/total" —
+            # mais claro que "faltam X dias" sozinho. dias_executados = a ordem deste dia (ele
+            # é o dia N de cumprimento); duracao_total já reflete crescimento (se a atividade
+            # cresceu, duracao_dias_uteis do grupo já foi atualizada). Coluna extra avisa se
+            # a atividade teve a duração alterada (algum dia do grupo nasceu por crescimento).
             if tipo == "fim":
                 if d.grupo.eh_fixa:
-                    linha["progresso"] = "atividade fixa"
-                elif d.dias_restantes is not None:
-                    linha["progresso"] = f"faltam {d.dias_restantes} dia(s)"
+                    linha["progresso"] = f"{d.ordem}/{d.grupo.duracao_dias_uteis} (fixa)"
                 else:
-                    linha["progresso"] = "—"
+                    linha["progresso"] = f"{d.ordem}/{d.grupo.duracao_dias_uteis}"
+                houve_alteracao = any(dg.gerado_por_crescimento for dg in d.grupo.dias)
+                linha["alteracao"] = "Sim — cresceu além do previsto" if houve_alteracao else "—"
                 linha["observacoes"] = d.descricao_execucao or "—"
             linhas.append(linha)
 
@@ -1639,3 +1813,45 @@ def rdo_excluir_lote(rdo_id=None):
         msg += f" {bloqueados} ignorado(s) por estarem aprovados (reabra antes de excluir)."
     flash(msg, "success" if excluidos else "warning")
     return redirect(url_for("facilities.rdo"))
+
+
+# ============================================================================
+# PAINEL DE HORÍMETROS (22/09) — todos os lançamentos, com filtro de período e total de horas
+# ============================================================================
+
+@facilities_bp.route("/painel-horimetros")
+@_ver_programacao_required
+def painel_horimetros():
+    """[22/09] Tabela dinâmica com todos os lançamentos de horímetro — INICIO e FIM de cada
+    dia de atividades com horímetro. Filtro de período (semana/mês/trimestre/semestre) com
+    total de horas calculado (fim - início, por máquina, somado no período)."""
+    periodo = request.args.get("periodo", "mes")
+    hoje = date.today()
+    if periodo == "semana":
+        data_ini_filtro = hoje - timedelta(days=hoje.weekday())
+    elif periodo == "trimestre":
+        mes_ini = ((hoje.month - 1) // 3) * 3 + 1
+        data_ini_filtro = date(hoje.year, mes_ini, 1)
+    elif periodo == "semestre":
+        mes_ini = 1 if hoje.month <= 6 else 7
+        data_ini_filtro = date(hoje.year, mes_ini, 1)
+    else:  # mes (padrão)
+        data_ini_filtro = date(hoje.year, hoje.month, 1)
+
+    registros = (RegistroHorimetro.query.join(AtividadeDia, RegistroHorimetro.dia_id == AtividadeDia.id)
+                .filter(AtividadeDia.data >= data_ini_filtro).order_by(AtividadeDia.data.desc()).all())
+
+    # total de horas: pra cada (maquina, dia), pega o par INICIO/FIM e soma (fim - inicio)
+    por_dia_maquina = {}
+    for r in registros:
+        chave = (r.maquina_id, r.dia_id)
+        por_dia_maquina.setdefault(chave, {})[r.tipo] = r.valor_horimetro
+    total_horas = 0.0
+    for valores in por_dia_maquina.values():
+        if "INICIO" in valores and "FIM" in valores:
+            total_horas += max(0.0, valores["FIM"] - valores["INICIO"])
+
+    maquinas_disp = MaquinarioPesadoTerceiro.query.filter_by(ativo=True).order_by(MaquinarioPesadoTerceiro.nome).all()
+    return render_template("facilities/painel_horimetros.html", registros=registros, periodo=periodo,
+                           total_horas=round(total_horas, 1), maquinas_disp=maquinas_disp,
+                           data_ini_filtro=data_ini_filtro, hoje=hoje)

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Equipamentos Terceiro{% endblock %}
+{% block content %}
+<h4 class="mb-3">Equipamentos Terceiro</h4>
+<div class="alert alert-secondary small py-2">Cadastro geral de equipamentos de empresas terceirizadas.</div>
+
+<div class="card mb-3"><div class="card-body">
+  <form method="post" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-5"><label class="form-label small">Nome do equipamento</label>
+      <input name="nome" class="form-control form-control-sm" required></div>
+    <div class="col-md-3"><label class="form-label small">Planta</label>
+      <select name="planta_id" class="form-select form-select-sm">
+        <option value="">—</option>
+        {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-3"><label class="form-label small">Empresa</label>
+      <select name="fornecedor_id" class="form-select form-select-sm">
+        <option value="">—</option>
+        {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-1"><button class="btn btn-primary btn-sm w-100">+</button></div>
+  </form>
+</div></div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Equipamento</th><th>Planta</th><th>Empresa</th></tr></thead>
+  <tbody>
+    {% for eq in itens %}
+    <tr><td>{{ eq.nome }}</td><td class="small">{{ eq.planta.nome if eq.planta else '—' }}</td>
+      <td class="small">{{ (eq.fornecedor.nome_fantasia or eq.fornecedor.razao_social) if eq.fornecedor else '—' }}</td></tr>
+    {% else %}
+    <tr><td colspan="3" class="text-muted text-center py-3">Nenhum equipamento cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

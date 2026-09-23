@@ -38,7 +38,7 @@
     <table style="width:100%;font-size:12px">
       <tr style="background:#FF5246;color:#fff">
         <th style="padding:6px">Local</th><th style="padding:6px">Título</th><th style="padding:6px">Colaboradores</th>
-        {% if tipo == 'fim' %}<th style="padding:6px">Progresso</th><th style="padding:6px">Observações</th>{% endif %}
+        {% if tipo == 'fim' %}<th style="padding:6px">Dias executados/Total</th><th style="padding:6px">Alterou duração?</th><th style="padding:6px">Observações</th>{% endif %}
       </tr>
       {% for l in linhas %}
       <tr>
@@ -47,11 +47,12 @@
         <td style="padding:6px;border-bottom:1px solid #eee">{{ l.colaboradores }}</td>
         {% if tipo == 'fim' %}
         <td style="padding:6px;border-bottom:1px solid #eee">{{ l.progresso }}</td>
+        <td style="padding:6px;border-bottom:1px solid #eee">{{ l.alteracao }}</td>
         <td style="padding:6px;border-bottom:1px solid #eee">{{ l.observacoes }}</td>
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="{{ 5 if tipo=='fim' else 3 }}" style="padding:10px;text-align:center;color:#999">Sem atividades dessa empresa neste dia.</td></tr>
+      <tr><td colspan="{{ 6 if tipo=='fim' else 3 }}" style="padding:10px;text-align:center;color:#999">Sem atividades dessa empresa neste dia.</td></tr>
       {% endfor %}
     </table>
     {% if ausentes_da_empresa %}

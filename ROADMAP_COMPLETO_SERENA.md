@@ -3851,3 +3851,153 @@ PENDENTE (fora do escopo desta rodada, para o Antonio confirmar depois do deploy
 
 Smoke test geral (8 telas) 200. Filtro do RDO testado com clique real (jsdom): sem erros de JS,
 checkboxes de selecao presentes, filtro reconhecendo os valores distintos de Status.
+
+### ================== CORRECOES A PARTIR DO PRINT (22/09) ==================
+
+1) FOTO DO COLABORADOR NAO APARECEU NO PDF -> CAUSA RAIZ ENCONTRADA: o print mostrou a URL da
+   foto como "/uploads/c391a...jpg" — ou seja, a foto caiu no FALLBACK LOCAL do Render (disco
+   volatil), nao no Cloudinary. Isso acontece quando cloudinary.uploader.upload() falha por
+   qualquer motivo (credencial, servico fora do ar, etc.) — o codigo ja tinha um try/except que
+   caia pro disco local SILENCIOSAMENTE, sem avisar ninguem. CORRIGIDO: _salvar_fotos() agora
+   detecta quando uma foto caiu no fallback local e AVISA o usuario NA HORA (flash de aviso),
+   em todos os pontos que usam essa funcao (checklist, criar atividade, preencher dia, aprovar,
+   retificar) — assim, se o Cloudinary falhar de novo, a pessoa fica sabendo IMEDIATAMENTE, nao
+   so' dias depois quando for gerar o RDO e a foto ja tiver sumido do disco volatil.
+
+2) BUG CRITICO ENCONTRADO E CORRIGIDO (explica o "nao acusou choque" e "nao consta no dia 23"):
+   a regra de "cresceu alem do previsto" comparava dias_restantes SO contra dia_anterior — mas
+   numa atividade de 1 UNICO DIA (o caso do Antonio: "lancei atividade de apenas 1 dia"), NAO HA
+   dia_anterior, entao a comparacao NUNCA disparava, e o sistema NUNCA gerava os dias extra,
+   mesmo com o colaborador reportando precisar de +2 dias. Usava dias_restantes_esperado (campo
+   calculado na criacao) so' quando ha dia_anterior por engano — o proprio comentario do codigo
+   dizia pra usar esse campo no 1o dia, mas o codigo nunca fazia isso de fato. CORRIGIDO: agora
+   usa dia.dias_restantes_esperado quando NAO ha dia_anterior (cobre tanto o 1o dia de uma
+   atividade de varios dias quanto — o caso mais comum — uma atividade de 1 UNICO dia inteira).
+   TESTADO reproduzindo o cenario EXATO do Antonio (ativ de 1 dia, relatou +2 dias): agora
+   BLOQUEIA sem justificativa, e COM justificativa GERA as 2 linhas extra corretamente (dias
+   23 e 24), atualiza duracao_dias_uteis, e abrir o dia 23 agora MOSTRA a atividade.
+
+3) AVISO DE CONFLITO DE AGENDA NAO PERSISTIA: o aviso so aparecia 1x pro colaborador que
+   preencheu (flash da resposta HTTP, some depois) — o Encarregado, ao abrir a aprovacao depois,
+   NUNCA via que tinha havido conflito. Novo campo AtividadeDia.aviso_conflito_agenda: gravado
+   permanentemente no DIA EXTRA gerado (corrigido depois de descobrir que a 1a tentativa gravava
+   no dia ERRADO — no dia original, nao no novo), visivel na tela de Aprovacao com destaque
+   vermelho. TESTADO: Encarregado abre Aprovacao bem depois do preenchimento e ve o aviso
+   completo (nome do colaborador + atividade conflitante) mesmo sem nenhum flash de sessao.
+
+4) RESUMO DIARIO TRAZENDO CANCELADAS: a query nunca filtrava por status != CANCELADA. CORRIGIDO.
+
+5) COLUNA "PROGRESSO" -> "Dias executados/Total": mostra ordem_do_dia/duracao_total (ex: "1/2",
+   "2/3") ao inves de "faltam X dias". NOVA COLUNA "Alterou duração?": mostra "Sim — cresceu além
+   do previsto" se algum dia do grupo tem gerado_por_crescimento=True, senao "—".
+   BUG DESCOBERTO NO CAMINHO: atividades que cresceram ficam com status_cadastro=INCOMPLETO (pro
+   Encarregado revisar), e a regra JA EXISTENTE de "incompleto nao entra no resumo" estava
+   excluindo justamente as atividades que Antonio queria VER o aviso de alteracao. CORRIGIDO:
+   separada a distincao entre "incompleto por FALTAR DADO" (continua fora do resumo) e
+   "incompleto por CRESCIMENTO" (agora entra, com o aviso). TESTADO com 3 cenarios: atividade
+   sem alteracao (mostra 1/2), atividade com alteracao (mostra 1/3 + aviso), atividade REALMENTE
+   incompleta por falta de predio (continua fora do resumo, como deve ser).
+
+6) "FECHAR TELA APOS SALVAR NOVA ATIVIDADE" — investigado A FUNDO de novo: confirmado que o
+   backend redireciona corretamente (302 -> /facilities/programacao), o formulario e' um submit
+   HTML normal sem nenhum JS interceptando, sem campos required bloqueando envio silencioso.
+   NAO FOI POSSIVEL REPRODUZIR o problema com os testes disponiveis. Pode ser um comportamento
+   especifico do navegador/dispositivo do Antonio, cache, ou uma versao anterior do sistema —
+   PRECISA DE MAIS DETALHES (qual navegador, o que exatamente aparece na tela apos salvar) pra
+   investigar further.
+
+Smoke test geral (7 telas) 200.
+
+PENDENTE (ainda nesta rodada, nao comecado):
+- Checkbox de HORIMETRO na criacao de atividade + os 2 reports diarios (inicio com horimetro
+  inicial, fim com fotos+descricao+horimetro final) + campo de foto do painel (fora das 4 fotos
+  normais da atividade)
+
+### ================== ESPECIFICACAO FECHADA: HORIMETRO / MAQUINARIO PESADO (22/09) ==================
+Modulo novo, mais amplo que so' um checkbox. Fechado com Antonio via perguntas:
+
+1) CADASTRO NOVO: em Cadastro, nova sub-secao "CADASTRO GERAL TERCEIRO", com dois cadastros:
+   - EQUIPAMENTOS TERCEIRO (cadastro simples, nome + talvez planta/empresa — Antonio nao detalhou
+     esse a fundo, tratar como cadastro basico similar ao de Maquinario)
+   - MAQUINARIO PESADO TERCEIRO: nome da maquina, PLANTA (fixa no cadastro), EMPRESA/fornecedor
+     PADRAO (mas pode ser sobrescrita por relatorio, ver item 4)
+
+2) ATIVIDADE COM HORIMETRO: checkbox na criacao de atividade (/programacao/nova). Quando marcado,
+   a atividade e' VINCULADA A UMA MAQUINA especifica do cadastro (escolhida na criacao, campo
+   obrigatorio se o checkbox estiver marcado).
+
+3) 2 REPORTS POR DIA (nao 1): pra atividade com horimetro, TODO DIA da atividade tem:
+   - Report de INICIO do dia: horimetro INICIAL (numero) + foto do painel da maquina com o
+     horimetro visivel (fora das 4 fotos normais da atividade — e' uma foto A MAIS, especifica).
+   - Report de FIM do dia: fotos da atividade (as 4 normais) + descricao + horimetro FINAL + foto
+     do painel com o horimetro final (tambem fora das 4).
+   Isso muda a TELA de Preencher: pra atividade com horimetro, aparecem os DOIS momentos do dia
+   como preenchimentos separados (nao um so' formulario).
+
+4) EMPRESA POR RELATORIO: cada relatorio de horimetro (inicio OU fim) indica qual EMPRESA
+   (Fornecedor) esta operando a maquina NAQUELE dia especifico — pode mudar de relatorio pra
+   relatorio (a mesma maquina, dias diferentes, empresas diferentes). Planta continua fixa no
+   cadastro da maquina.
+
+5) PAINEL DE HORIMETROS (nova tela em Facilities): tabela dinamica com TODOS os lancamentos de
+   horimetro (de todas as maquinas/atividades), permitindo ver todas as fotos de inicio/fim, e um
+   RESUMO no topo com o TOTAL DE HORAS calculado (horimetro_fim - horimetro_inicio, somado), com
+   filtro de periodo: semana / mes / trimestre / semestre (Antonio quer escolher o periodo, nao so'
+   um numero fixo).
+
+6) NO RDO: DUAS secoes novas.
+   - "MAQUINARIO PESADO": lista so' os NOMES das maquinas usadas naquele dia (nada mais — so' o
+     nome, conforme Antonio foi explicito: "somente virá o nome da máquina mesmo").
+   - Dentro da secao de Atividades (a que ja existe), as atividades com horimetro trazem tambem
+     as fotos do painel + os valores de horimetro inicio/fim daquele dia, alem do que ja mostra
+     hoje (fotos da atividade, descricao, dias restantes/fixa).
+
+STATUS: especificacao fechada, comecando a implementar agora (modelo de dados primeiro).
+
+### ================== MODULO HORIMETRO/MAQUINARIO PESADO CONCLUIDO (22/09) ==================
+Continuacao e finalizacao do modulo iniciado no checkpoint anterior:
+
+FLUXO DOS 2 REPORTS DIARIOS (o coracao do pedido): nova rota preencher_horimetro(), separada do
+preenchimento normal — a tela de Preencher agora detecta grupo.tem_horimetro e mostra 2 blocos de
+formulario lado a lado (Inicio / Fim), cada um com: valor do horimetro, empresa operando NAQUELE dia
+(fornecedor_id, pode mudar dia a dia mesmo pra mesma maquina), e foto do painel OBRIGATORIA (campo
+"foto_painel", separado das 4 fotos normais da atividade). Trava contra duplicar (so' 1 registro de
+cada tipo por dia). Quando um dos dois ja foi feito, mostra o valor registrado + link pra foto ao
+inves do formulario. TESTADO fluxo completo: tela mostra os 2 formularios vazios -> registra INICIO
+(1200.5h + foto + empresa) -> tela atualiza mostrando "Inicio registrado: 1200.5h" e ainda o form de
+Fim -> tenta duplicar INICIO -> bloqueado -> registra FIM (1208.0h) -> tudo salvo corretamente.
+
+PAINEL DE HORIMETROS: nova tela /facilities/painel-horimetros, com filtro de periodo (semana/mes/
+trimestre/semestre) e um resumo no topo com o TOTAL DE HORAS calculado (soma de fim-inicio de todos
+os pares completos no periodo). TESTADO: com um par INICIO=1200.5/FIM=1208.0, o painel mostra
+corretamente "7.5h" de total.
+
+NO RDO: duas secoes novas, exatamente como pedido.
+  - "MAQUINARIO PESADO": lista SO' OS NOMES das maquinas usadas naquele dia (nada mais, conforme
+    Antonio foi explicito). Nomes unicos, ordenados.
+  - Dentro de "Atividades do dia": pra atividade com horimetro, mostra os valores de inicio/fim +
+    o TOTAL calculado daquele dia especifico, e as FOTOS DO PAINEL (inicio e fim) lado a lado,
+    clicaveis (mesmo mecanismo _FotoClicavel ja usado nas fotos normais).
+TESTADO com pypdf (extracao de texto real e confiavel — meu metodo anterior de regex+zlib nos bytes
+brutos e' fragil e deu falso-negativo numa das validacoes; pypdf confirma que TUDO esta no PDF: RDO
+com maquina cadastrada, horimetro 500.0/508.5, total 8.5h calculado, secao MAQUINARIO PESADO com o
+nome da maquina, tudo presente e legivel).
+
+CADASTRO GERAL TERCEIRO: nova sub-secao no menu (Cadastro > Cadastro Geral Terceiro), com dois
+cadastros — Equipamentos Terceiro (nome+planta+empresa) e Maquinario Pesado Terceiro (nome+planta+
+empresa padrao, usada nas atividades com horimetro). Ambos testados de ponta a ponta.
+
+Modelo de dados: EquipamentoTerceiro, MaquinarioPesadoTerceiro, RegistroHorimetro (dia_id, maquina_id,
+tipo INICIO|FIM, valor_horimetro, foto_painel_url, fornecedor_id — a empresa e' por REGISTRO, nao
+fixa na maquina, conforme Antonio pediu explicitamente). AtividadeGrupo ganhou maquina_horimetro_id +
+property tem_horimetro.
+
+BUG ENCONTRADO E CORRIGIDO NO CAMINHO: o link do Painel de Horimetros foi adicionado ao menu ANTES da
+rota existir — isso quebrava QUALQUER pagina do sistema (base.html usa url_for em todo lugar). Achado
+via teste real (nao só smoke test raso) e corrigido criando a rota imediatamente.
+
+Smoke test geral final (11 telas, cobrindo o modulo completo) 200.
+
+=== MODULO HORIMETRO/MAQUINARIO PESADO: CONCLUIDO ===
+Cadastro, criacao de atividade vinculada, os 2 reports diarios, painel dedicado, e as 2 secoes no
+RDO — tudo implementado e testado. Pronto pra revisao e deploy.

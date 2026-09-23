@@ -15,6 +15,63 @@
   </h6>
   <p class="text-muted small mb-3">{{ d.grupo.planta.nome if d.grupo.planta else '—' }}{% if d.grupo.predio %} · {{ d.grupo.predio.nome }}{% endif %} · Responsável: {{ d.grupo.responsavel.nome if d.grupo.responsavel else '—' }}</p>
 
+  {% if d.grupo.tem_horimetro %}
+  {% set regs = registros_horimetro_por_dia.get(d.id, {}) %}
+  <div class="border rounded p-2 mb-3" style="background:rgba(255,82,70,.06)">
+    <p class="small mb-2"><b>🚜 Máquina: {{ d.grupo.maquina_horimetro.nome }}</b> — este dia precisa de 2 registros: horímetro de início e de fim.</p>
+    <div class="row g-2">
+      <div class="col-md-6">
+        {% if 'INICIO' in regs %}
+        <div class="alert alert-success small py-2 mb-0">✓ Início registrado: {{ regs['INICIO'].valor_horimetro }}h
+          {% if regs['INICIO'].foto_painel_url %}<br><a href="{{ regs['INICIO'].foto_painel_url }}" target="_blank">ver foto do painel</a>{% endif %}
+        </div>
+        {% else %}
+        <form method="post" action="{{ url_for('facilities.preencher_horimetro', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data" class="border rounded p-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="dia_id" value="{{ d.id }}">
+          <input type="hidden" name="tipo_registro" value="INICIO">
+          <p class="small mb-1"><b>Horímetro de início do dia</b></p>
+          <label class="form-label small">Valor do horímetro *</label>
+          <input type="number" step="0.1" name="valor_horimetro" class="form-control form-control-sm mb-2" required>
+          <label class="form-label small">Empresa operando hoje</label>
+          <select name="fornecedor_id" class="form-select form-select-sm mb-2">
+            <option value="">—</option>
+            {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
+          </select>
+          <label class="form-label small">Foto do painel (horímetro) *</label>
+          <input type="file" name="foto_painel" class="form-control form-control-sm mb-2" accept="image/*" required>
+          <button class="btn btn-sm btn-primary">Registrar início</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="col-md-6">
+        {% if 'FIM' in regs %}
+        <div class="alert alert-success small py-2 mb-0">✓ Fim registrado: {{ regs['FIM'].valor_horimetro }}h
+          {% if regs['FIM'].foto_painel_url %}<br><a href="{{ regs['FIM'].foto_painel_url }}" target="_blank">ver foto do painel</a>{% endif %}
+        </div>
+        {% else %}
+        <form method="post" action="{{ url_for('facilities.preencher_horimetro', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data" class="border rounded p-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="dia_id" value="{{ d.id }}">
+          <input type="hidden" name="tipo_registro" value="FIM">
+          <p class="small mb-1"><b>Horímetro de fim do dia</b></p>
+          <label class="form-label small">Valor do horímetro *</label>
+          <input type="number" step="0.1" name="valor_horimetro" class="form-control form-control-sm mb-2" required>
+          <label class="form-label small">Empresa operando hoje</label>
+          <select name="fornecedor_id" class="form-select form-select-sm mb-2">
+            <option value="">—</option>
+            {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
+          </select>
+          <label class="form-label small">Foto do painel (horímetro) *</label>
+          <input type="file" name="foto_painel" class="form-control form-control-sm mb-2" accept="image/*" required>
+          <button class="btn btn-sm btn-primary">Registrar fim</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if d.status == 'APROVADA' %}
   <div class="alert alert-success small py-2">
     Já aprovado.

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Maquinário Pesado Terceiro{% endblock %}
+{% block content %}
+<h4 class="mb-3">Maquinário Pesado Terceiro</h4>
+<div class="alert alert-secondary small py-2">Máquinas usadas em atividades com controle de horímetro (Programação de Atividades).</div>
+
+<div class="card mb-3"><div class="card-body">
+  <form method="post" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-5"><label class="form-label small">Nome da máquina</label>
+      <input name="nome" class="form-control form-control-sm" placeholder="Ex.: Escavadeira 01" required></div>
+    <div class="col-md-3"><label class="form-label small">Planta</label>
+      <select name="planta_id" class="form-select form-select-sm">
+        <option value="">—</option>
+        {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-3"><label class="form-label small">Empresa padrão</label>
+      <select name="fornecedor_padrao_id" class="form-select form-select-sm">
+        <option value="">—</option>
+        {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-1"><button class="btn btn-primary btn-sm w-100">+</button></div>
+  </form>
+  <p class="text-muted small mt-2 mb-0">A empresa padrão é só uma sugestão — pode ser alterada em cada relatório de horímetro.</p>
+</div></div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Máquina</th><th>Planta</th><th>Empresa padrão</th></tr></thead>
+  <tbody>
+    {% for m in itens %}
+    <tr><td>{{ m.nome }}</td><td class="small">{{ m.planta.nome if m.planta else '—' }}</td>
+      <td class="small">{{ (m.fornecedor_padrao.nome_fantasia or m.fornecedor_padrao.razao_social) if m.fornecedor_padrao else '—' }}</td></tr>
+    {% else %}
+    <tr><td colspan="3" class="text-muted text-center py-3">Nenhuma máquina cadastrada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

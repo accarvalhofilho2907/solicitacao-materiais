@@ -22,6 +22,9 @@
   {% if d.justificativa_queda %}
   <div class="alert alert-warning small py-2"><b>⚠️ A atividade precisou de mais dias do que o previsto — justificativa:</b><br>{{ d.justificativa_queda }}</div>
   {% endif %}
+  {% if d.aviso_conflito_agenda %}
+  <div class="alert alert-danger small py-2"><b>⚠️ Conflito de agenda ao gerar o dia extra:</b><br>{{ d.aviso_conflito_agenda }}</div>
+  {% endif %}
   {% if d.gerado_por_crescimento %}
   <div class="alert alert-secondary small py-2">
     Esta linha foi gerada automaticamente porque a atividade cresceu além do previsto.

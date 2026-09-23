@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Painel de Horímetros{% endblock %}
+{% block content %}
+<h4 class="mb-3">Painel de Horímetros</h4>
+
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="btn-group btn-group-sm">
+      <a class="btn {{ 'btn-primary' if periodo=='semana' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_horimetros', periodo='semana') }}">Semana</a>
+      <a class="btn {{ 'btn-primary' if periodo=='mes' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_horimetros', periodo='mes') }}">Mês</a>
+      <a class="btn {{ 'btn-primary' if periodo=='trimestre' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_horimetros', periodo='trimestre') }}">Trimestre</a>
+      <a class="btn {{ 'btn-primary' if periodo=='semestre' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_horimetros', periodo='semestre') }}">Semestre</a>
+    </div>
+    <div class="text-end">
+      <span class="text-muted small">Total de horas no período (desde {{ data_ini_filtro.strftime('%d/%m/%Y') }})</span><br>
+      <span class="h4 mb-0">{{ total_horas }}h</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="card"><div class="card-body">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr>
+    <th>Data</th><th>Máquina</th><th>Tipo</th><th>Horímetro</th><th>Empresa</th><th>Atividade</th><th>Foto</th>
+  </tr></thead>
+  <tbody>
+    {% for r in registros %}
+    <tr>
+      <td class="small">{{ r.dia.data.strftime('%d/%m/%Y') }}</td>
+      <td class="small">{{ r.maquina.nome if r.maquina else '—' }}</td>
+      <td><span class="badge {{ 'bg-primary' if r.tipo == 'INICIO' else 'bg-success' }}">{{ r.tipo }}</span></td>
+      <td class="small">{{ r.valor_horimetro }}</td>
+      <td class="small">{{ (r.fornecedor.nome_fantasia or r.fornecedor.razao_social) if r.fornecedor else '—' }}</td>
+      <td class="small">{{ r.dia.grupo.titulo if r.dia and r.dia.grupo else '—' }}</td>
+      <td>{% if r.foto_painel_url %}<a href="{{ r.foto_painel_url }}" target="_blank"><img src="{{ r.foto_painel_url }}" style="width:50px;height:50px;object-fit:cover;border-radius:6px"></a>{% else %}—{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="text-muted text-center py-3">Nenhum lançamento de horímetro neste período.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

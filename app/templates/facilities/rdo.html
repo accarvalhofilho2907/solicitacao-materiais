@@ -57,25 +57,28 @@
       </td>
       <td data-valor="{{ 'Aprovado' if r.status == 'APROVADO' else 'Pendente' }}">
         {% if r.status == 'APROVADO' %}<span class="badge bg-success">aprovado</span>
-        {% else %}<span class="badge bg-warning text-dark">pendente
-          {% if r.aprovado_encarregado_em %} (falta Admin){% elif r.aprovado_admin_em %} (falta Encarregado){% endif %}
-        </span>{% endif %}
+        {% elif r.aprovado_encarregado_em %}<span class="badge bg-warning text-dark">pendente (falta Admin)</span>
+        {% else %}<span class="badge bg-secondary">aguardando Encarregado</span>{% endif %}
       </td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('facilities.rdo_preview', rdo_id=r.id) }}">👁 Ver</a>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo_pdf', rdo_id=r.id) }}" target="_blank">📄 PDF</a>
         {% if eh_gestor and r.status != 'APROVADO' %}
-        {% if eh_admin and not r.aprovado_admin_em %}
-        <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}" style="display:inline">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-success">Aprovar (Admin)</button>
-        </form>
-        {% endif %}
         {% if not eh_admin and not r.aprovado_encarregado_em %}
         <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-sm btn-success">Aprovar (Encarregado)</button>
         </form>
+        {% endif %}
+        {% if eh_admin and not r.aprovado_admin_em %}
+        {% if r.aprovado_encarregado_em %}
+        <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-success">Aprovar (Admin)</button>
+        </form>
+        {% else %}
+        <span class="text-muted small">Aguardando Encarregado</span>
+        {% endif %}
         {% endif %}
         {% endif %}
       </td>

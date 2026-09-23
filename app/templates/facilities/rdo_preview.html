@@ -9,7 +9,7 @@
 <div class="alert {{ 'alert-success' if r.status == 'APROVADO' else 'alert-warning' }} small py-2">
   Status: <b>{{ r.status }}</b>
   {% if r.status == 'PENDENTE' %}
-    {% if r.aprovado_encarregado_em %} — falta aprovação do Admin{% elif r.aprovado_admin_em %} — falta aprovação do Encarregado{% endif %}
+    {% if r.aprovado_encarregado_em %} — falta aprovação do Admin{% else %} — aguardando aprovação do Encarregado de Campo{% endif %}
   {% endif %}
 </div>
 
@@ -24,10 +24,14 @@
   </form>
   {% endif %}
   {% if eh_gestor and r.status != 'APROVADO' %}
-  <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button class="btn btn-sm btn-success">✓ Aprovar</button>
-  </form>
+    {% if eh_admin and not r.aprovado_encarregado_em %}
+    <span class="text-muted small align-self-center">Aguardando aprovação do Encarregado de Campo antes do Admin poder aprovar.</span>
+    {% else %}
+    <form method="post" action="{{ url_for('facilities.rdo_aprovar', rdo_id=r.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-success">✓ Aprovar</button>
+    </form>
+    {% endif %}
   {% endif %}
 </div>
 
@@ -63,6 +67,11 @@
     <div class="d-flex gap-2">
       {% for f in fotos %}<a href="{{ f }}" target="_blank"><img src="{{ f }}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"></a>{% endfor %}
     </div>
+    {% endif %}
+    {% if dia_do_grupo and dia_do_grupo.historico_retificacoes %}
+    <a href="{{ url_for('facilities.historico_retificacoes', dia_id=dia_do_grupo.id) }}" class="small d-inline-block mt-2">
+      ✎ Ver edições feitas nesta atividade ({{ dia_do_grupo.historico_retificacoes|length }})
+    </a>
     {% endif %}
   </div>
   {% else %}

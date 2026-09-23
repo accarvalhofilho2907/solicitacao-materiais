@@ -67,7 +67,7 @@
     </div></div>
     <div class="card"><div class="card-body">
       <h6>Mensagens</h6>
-      {% for c in s.comentarios %}<div class="border rounded p-2 mb-2 {{ 'bg-light' if c.autor.is_admin }}"><div class="small text-muted">{{ c.autor.nome }} &mdash; {{ c.criado_em.strftime('%d/%m %H:%M') }}</div>{{ c.texto }}</div>{% else %}<p class="text-muted small">Sem mensagens.</p>{% endfor %}
+      {% for c in s.comentarios %}<div class="border rounded p-2 mb-2 {{ 'bg-light' if c.autor_eh_admin }}"><div class="small text-muted">{{ c.autor_nome }} &mdash; {{ c.criado_em.strftime('%d/%m %H:%M') }}</div>{{ c.texto }}</div>{% else %}<p class="text-muted small">Sem mensagens.</p>{% endfor %}
       <form method="post" action="{{ url_for('admin.comentar', sid=s.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <textarea name="texto" class="form-control mb-2" rows="2" placeholder="Mensagem ao solicitante..."></textarea>
         <button class="btn btn-sm btn-primary">Enviar</button></form>

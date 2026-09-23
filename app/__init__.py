@@ -41,6 +41,34 @@ def _light_migrate():
             db.session.commit()
         except Exception:
             db.session.rollback()
+    # [fix 23/09] comentarios.autor_id era NOT NULL desde a criação original da tabela — agora
+    # o autor é gravado em autor_usuario_id/autor_colaborador_id (colunas novas), então
+    # autor_id nunca mais é preenchido. Sem relaxar o NOT NULL aqui, TODO comentário novo
+    # falharia com IntegrityError (mesmo com as colunas novas já migradas corretamente).
+    if insp.has_table("comentarios"):
+        colunas_comentarios = insp.get_columns("comentarios")
+        autor_id_col = next((c for c in colunas_comentarios if c["name"] == "autor_id"), None)
+        if autor_id_col is not None and not autor_id_col.get("nullable", True):
+            try:
+                if db.engine.dialect.name == "postgresql":
+                    db.session.execute(text('ALTER TABLE comentarios ALTER COLUMN autor_id DROP NOT NULL'))
+                    db.session.commit()
+                else:
+                    # SQLite não suporta ALTER COLUMN DROP NOT NULL — só usado no ambiente de
+                    # teste local; em produção (Postgres) o ramo acima já resolve de verdade.
+                    db.session.execute(text("PRAGMA foreign_keys=off"))
+                    db.session.execute(text(
+                        "CREATE TABLE comentarios_novo (id INTEGER PRIMARY KEY, "
+                        "solicitacao_id INTEGER NOT NULL, autor_id INTEGER, "
+                        "autor_usuario_id INTEGER, autor_colaborador_id INTEGER, "
+                        "texto TEXT NOT NULL, criado_em DATETIME)"))
+                    db.session.execute(text("INSERT INTO comentarios_novo SELECT * FROM comentarios"))
+                    db.session.execute(text("DROP TABLE comentarios"))
+                    db.session.execute(text("ALTER TABLE comentarios_novo RENAME TO comentarios"))
+                    db.session.execute(text("PRAGMA foreign_keys=on"))
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
     # Fornecedores antigos com 'nome' nulo/vazio quebram telas que ordenam por nome
     # (Coletas próprias, Histórico de preços). Preenche a partir de fantasia/razão/email.
     if insp.has_table("fornecedores") and "nome" in {c["name"] for c in insp.get_columns("fornecedores")}:

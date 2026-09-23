@@ -26,7 +26,10 @@ def sugerir():
     if request.method == "POST":
         texto = request.form.get("texto", "").strip()
         if texto:
-            db.session.add(Sugestao(autor_id=current_user.id, texto=texto))
+            sugestao = Sugestao(texto=texto)
+            from .facilities import _marcar_autor
+            _marcar_autor(sugestao, "autor")
+            db.session.add(sugestao)
             db.session.commit()
             enviar_email(current_app.config.get("ADMIN_EMAIL"), "Nova sugestão de melhoria",
                          f"{current_user.nome} sugeriu:\n\n{texto}")

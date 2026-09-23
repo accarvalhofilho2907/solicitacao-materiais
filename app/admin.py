@@ -88,9 +88,15 @@ def _prazo_cotacao():
 
 
 def _log(s, evento):
-    """Registra um evento na linha do tempo da solicitação (e no log do sistema)."""
-    db.session.add(LogSolicitacao(solicitacao_id=s.id, evento=evento,
-                                  autor_id=current_user.id if current_user.is_authenticated else None))
+    """Registra um evento na linha do tempo da solicitação (e no log do sistema).
+    [fix 23/09] autor_id é FK só pra usuarios.id — current_user pode ser um Colaborador
+    (com permissão is_admin via tarefa perm_total, por exemplo), cujo ID não existe na
+    tabela de usuários. Só grava autor_id quando for de fato um Usuario; sempre grava
+    autor_nome como snapshot em texto (existe pra isso — ver LogSolicitacao.autor_display)."""
+    from .models import Usuario as _U
+    autor_id_seguro = current_user.id if (current_user.is_authenticated and isinstance(current_user, _U)) else None
+    db.session.add(LogSolicitacao(solicitacao_id=s.id, evento=evento, autor_id=autor_id_seguro,
+                                  autor_nome=getattr(current_user, "nome", None)))
     try:
         from .logsys import registrar as _logsys
         _logsys("Solicitação", f"#{s.id}: {evento}")
@@ -363,7 +369,10 @@ def comentar(sid):
     s = db.session.get(Solicitacao, sid) or abort(404)
     texto = request.form.get("texto", "").strip()
     if texto:
-        db.session.add(Comentario(solicitacao_id=s.id, autor_id=current_user.id, texto=texto))
+        comentario1 = Comentario(solicitacao_id=s.id, texto=texto)
+        from .facilities import _marcar_autor
+        _marcar_autor(comentario1, "autor")
+        db.session.add(comentario1)
         db.session.commit()
         _mail_solic(s, f"Solicitação Nº {s.id} — nova mensagem",
                      f"{texto}\n\n{current_app.config['BASE_URL']}/solicitante/solicitacao/{s.id}")
@@ -387,7 +396,10 @@ def enviar_pedido(sid):
     pdf = gerar_pdf_pedido(s)
     emails = [f.email for f in fornecedores]
     enviar_email(emails, f"Solicitação de Cotação Nº {s.id}", corpo, anexo_bytes=pdf, anexo_nome=f"cotacao_{s.id}.pdf")
-    db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id, destinatarios=", ".join(emails)))
+    pedido1 = PedidoCompra(solicitacao_id=s.id, destinatarios=", ".join(emails))
+    from .facilities import _marcar_autor
+    _marcar_autor(pedido1, "enviado_por")
+    db.session.add(pedido1)
     s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
     s.prazo_cotacao = _prazo_cotacao()[0]
     _log(s, f"Cotação enviada por e-mail ({len(emails)} fornecedor(es))")
@@ -571,9 +583,11 @@ def enviar_lote_email():
         return jsonify({"ok": False, "erro": "Fornecedor sem e-mail ou nenhum item selecionado."})
     seq = _seq_str(_proximo_num_cotacao())
     prazo_d, _ = _prazo_cotacao()
+    from .facilities import _marcar_autor
     for s in itens:
-        db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
-                                    destinatarios=f.email, cotacao_seq=seq))
+        pedido2 = PedidoCompra(solicitacao_id=s.id, destinatarios=f.email, cotacao_seq=seq)
+        _marcar_autor(pedido2, "enviado_por")
+        db.session.add(pedido2)
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
         s.prazo_cotacao = prazo_d
         spe_txt = f" (SPE: {spe})" if spe else ""
@@ -605,10 +619,12 @@ def enviar_lote_confirmar():
             enviadas.setdefault(s.id, set()).add(f.email)
             seqs.setdefault(s.id, seq)
     prazo_d, _ = _prazo_cotacao()
+    from .facilities import _marcar_autor
     for sid, emails in enviadas.items():
         s = db.session.get(Solicitacao, sid)
-        db.session.add(PedidoCompra(solicitacao_id=sid, enviado_por=current_user.id,
-                                    destinatarios=", ".join(sorted(emails)), cotacao_seq=seqs.get(sid)))
+        pedido3 = PedidoCompra(solicitacao_id=sid, destinatarios=", ".join(sorted(emails)), cotacao_seq=seqs.get(sid))
+        _marcar_autor(pedido3, "enviado_por")
+        db.session.add(pedido3)
         s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
         s.prazo_cotacao = prazo_d
         _log(s, f"Cotação {seqs.get(sid)} enviada por e-mail (lote)")
@@ -636,9 +652,12 @@ def lancar_orcamento(sid):
         flash("Informe o nome do item como o fornecedor descreveu (obrigatório).", "danger")
         return redirect(url_for("admin.solicitacao", sid=s.id))
     anexo = salvar_imagem(request.files.get("anexo")) if request.files.get("anexo") else None
-    db.session.add(Orcamento(solicitacao_id=s.id, fornecedor_id=int(request.form["fornecedor_id"]), valor_total=valor,
+    orcamento1 = Orcamento(solicitacao_id=s.id, fornecedor_id=int(request.form["fornecedor_id"]), valor_total=valor,
         prazo_entrega=request.form.get("prazo_entrega", "").strip(), item_fornecedor=item,
-        observacoes=request.form.get("observacoes", "").strip(), anexo_url=anexo, registrado_por=current_user.id))
+        observacoes=request.form.get("observacoes", "").strip(), anexo_url=anexo)
+    from .facilities import _marcar_autor
+    _marcar_autor(orcamento1, "registrado_por")
+    db.session.add(orcamento1)
     _apos_orcamento(s)
     _log(s, f"Orçamento lançado: {item} — R$ {valor:.2f}")
     db.session.commit()
@@ -837,7 +856,8 @@ def alterar_quantidade(sid):
             s.quantidade_original = s.quantidade
         anterior = s.quantidade
         s.quantidade = nova
-        s.quantidade_alterada_por = current_user.id
+        from .facilities import _marcar_autor
+        _marcar_autor(s, "quantidade_alterada_por")
         s.quantidade_alterada_em = datetime.utcnow()
         _log(s, f"Quantidade alterada de {anterior} para {nova}")
         db.session.commit()
@@ -911,9 +931,11 @@ def marcar_cotacao_enviada(fid):
     finalizar = request.form.get("finalizar") == "1"
     seq = _seq_str(_proximo_num_cotacao())
     prazo_d, _ = _prazo_cotacao()
+    from .facilities import _marcar_autor
     for s in itens:
-        db.session.add(PedidoCompra(solicitacao_id=s.id, enviado_por=current_user.id,
-                                    destinatarios=(f.email or f.nome), cotacao_seq=seq))
+        pedido4 = PedidoCompra(solicitacao_id=s.id, destinatarios=(f.email or f.nome), cotacao_seq=seq)
+        _marcar_autor(pedido4, "enviado_por")
+        db.session.add(pedido4)
         if finalizar:
             s.status = "AGUARDANDO_RECEBIMENTO_COTACAO"
             s.prazo_cotacao = prazo_d
@@ -988,8 +1010,11 @@ def confirmar_orcamento_pdf():
             _log(nova, "Item criado a partir de linha do orçamento importado (aguardando cotação)")
             sid = nova.id
             novos += 1
-        db.session.add(Orcamento(solicitacao_id=int(sid), fornecedor_id=fid, valor_total=valor,
-            item_fornecedor=desc[:300], observacoes=desc[:200], registrado_por=current_user.id))
+        orcamento2 = Orcamento(solicitacao_id=int(sid), fornecedor_id=fid, valor_total=valor,
+            item_fornecedor=desc[:300], observacoes=desc[:200])
+        from .facilities import _marcar_autor
+        _marcar_autor(orcamento2, "registrado_por")
+        db.session.add(orcamento2)
         s = db.session.get(Solicitacao, int(sid))
         if s:
             _apos_orcamento(s)

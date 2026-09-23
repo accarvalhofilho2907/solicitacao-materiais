@@ -115,7 +115,10 @@ def detalhe(sid):
             abort(403)
         texto = request.form.get("texto", "").strip()
         if texto:
-            db.session.add(Comentario(solicitacao_id=s.id, autor_id=current_user.id, texto=texto))
+            comentario2 = Comentario(solicitacao_id=s.id, texto=texto)
+            from .facilities import _marcar_autor
+            _marcar_autor(comentario2, "autor")
+            db.session.add(comentario2)
             db.session.commit()
             enviar_email(current_app.config.get("ADMIN_EMAIL"),
                          f"Resposta na solicitação Nº {s.id}",

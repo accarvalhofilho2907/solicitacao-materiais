@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Histórico de edições{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Histórico de edições — {{ dia.grupo.titulo }} (dia {{ dia.ordem }})</h4>
+  <a class="btn btn-sm btn-outline-secondary" href="javascript:history.back()">← Voltar</a>
+</div>
+<p class="text-muted small">Data: {{ dia.data.strftime('%d/%m/%Y') }} · Toda vez que um Encarregado retifica o que o colaborador apontou, fica registrado aqui — o valor antes, o valor depois, e quem fez.</p>
+
+{% if not historico %}
+<div class="alert alert-secondary">Nenhuma retificação foi feita neste dia — o valor atual é exatamente o que o colaborador apontou originalmente.</div>
+{% else %}
+{% for h in historico %}
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <b>{{ h.retificado_por_nome }}</b>
+    <span class="text-muted small">{{ h.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+  </div>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label small text-muted">Antes</label>
+      {% if h.dias_restantes_antes is not none %}<p class="small mb-1">Dias restantes: <b>{{ h.dias_restantes_antes }}</b></p>{% endif %}
+      {% if h.descricao_antes %}<p class="small mb-0">{{ h.descricao_antes }}</p>{% endif %}
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small text-muted">Depois</label>
+      {% if h.dias_restantes_depois is not none %}<p class="small mb-1">Dias restantes: <b>{{ h.dias_restantes_depois }}</b></p>{% endif %}
+      {% if h.descricao_depois %}<p class="small mb-0">{{ h.descricao_depois }}</p>{% endif %}
+    </div>
+  </div>
+</div></div>
+{% endfor %}
+{% endif %}
+{% endblock %}

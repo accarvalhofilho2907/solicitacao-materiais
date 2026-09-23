@@ -4193,3 +4193,81 @@ Smoke test geral (6 telas) 200.
 
 === FIX CRITICO DE ROBUSTEZ NA MIGRACAO AUTOMATICA — deve eliminar de vez os erros recorrentes de
     "coluna faltando" que apareciam em rodadas anteriores mesmo com colunas ja criadas no modelo ===
+
+### ================== BUG CRITICO SISTEMICO: criado_por como FK unica (23/09) ==================
+NOVO erro 500 real reportado, dessa vez o log COMPLETO do Postgres (nao cortado) confirmou com
+certeza: psycopg2.errors.ForeignKeyViolation: insert or update on table "sf_atividades_grupo"
+violates foreign key constraint "sf_atividades_grupo_criado_por_fkey" DETAIL: Key (criado_por)=(31)
+is not present in table "usuarios".
+
+CAUSA: EXATAMENTE o mesmo padrao de bug ja corrigido antes em AtividadeDia.aprovado_por (Colaborador
+logado normalmente pelo site tem ID na tabela de COLABORADORES, nao USUARIOS — usar current_user.id
+direto numa FK UNICA pra usuarios.id quebra sempre que quem faz a acao e' um Colaborador), mas dessa
+vez no campo criado_por, presente em VARIOS modelos diferentes — nunca tinha sido corrigido ali.
+
+VARREDURA COMPLETA DO SISTEMA: encontradas 6 ocorrencias do mesmo padrao (criado_por como FK unica
+pra usuarios.id), em 4 modelos diferentes: AtividadeGrupo (criar atividade nova E duplicar atividade
+— 2 pontos), RelatorioDiarioObra (criar RDO — EXATAMENTE o erro relatado por Antonio), ModeloChecklist,
+Notinha (modulo separado, nem checava is_authenticated antes), AusenciaColaborador (Ferias).
+
+FIX: criado novo helper GENERICO _marcar_autor(obj, prefixo_campo) em facilities.py — reaproveita a
+mesma logica de _marcar_aprovado_por, mas parametrizado pra funcionar com QUALQUER par de colunas
+<prefixo>_usuario_id / <prefixo>_colaborador_id, evitando repetir a logica condicional em cada
+lugar. Todos os 4 modelos tiveram criado_por separado em criado_por_usuario_id +
+criado_por_colaborador_id (mesmo padrao ja usado com sucesso em aprovado_por), e todas as 6 chamadas
+foram atualizadas pra usar o helper generico (incluindo em almox.py e notinhas.py, via import local
+de _marcar_autor pra evitar import circular).
+
+TESTADO O CENARIO EXATO DO ERRO REAL: Encarregado de Campo logado NORMALMENTE (nao QR) criando uma
+atividade nova -> sucesso, criado_por_colaborador_id preenchido corretamente; gerando um RDO (com a
+planta corretamente vinculada ao Encarregado) -> sucesso, criado_por_colaborador_id preenchido;
+aprovando uma atividade -> ja funcionava desde a correcao anterior, reconfirmado.
+
+Smoke test geral (12 telas, cobrindo Facilities + Notinhas + Colaboradores) 200.
+
+=== BUG SISTEMICO DE criado_por: TODAS AS 6 OCORRENCIAS CORRIGIDAS COM O MESMO HELPER GENERICO ===
+Nota para o futuro: qualquer modelo novo que precise registrar "quem criou/fez X" deve usar
+_marcar_autor(obj, "nome_do_campo") em vez de atribuir current_user.id direto — evita reintroduzir
+esse mesmo bug.
+
+### ================== VARREDURA PREVENTIVA COMPLETA: bug de criado_por/autor_id (23/09) ==================
+Apos confirmar o fix do erro relatado (criado_por em Facilities), fiz uma varredura preventiva em
+TODO o sistema atras do MESMO padrao de bug (campo que grava current_user.id numa FK UNICA pra
+usuarios.id, quebrando quando quem esta logado e' um Colaborador com a permissao certa) — antes que
+aparecesse como erro real em producao, como aconteceu varias vezes com criado_por/aprovado_por.
+
+ENCONTRADOS E CORRIGIDOS 9 PONTOS ADICIONAIS, fora de Facilities:
+- Comentario.autor_id (admin.py comentar() E solicitante.py) — protegido por is_admin/pode_solicitar,
+  AMBAS as propriedades existem em Colaborador tambem (is_admin via tarefa perm_total)
+- PedidoCompra.enviado_por (4 ocorrencias em admin.py, fluxo de cotacao)
+- Orcamento.registrado_por (2 ocorrencias em admin.py)
+- Sugestao.autor_id (geral.py /sugerir — protegido so' por @login_required, QUALQUER Colaborador
+  logado acessa)
+- Solicitacao.quantidade_alterada_por e .chegada_confirmada_por (admin.py e almox.py)
+- LogSolicitacao.autor_id (almox.py, 2 ocorrencias — corrigido reaproveitando o padrao de snapshot
+  em texto autor_nome que ja existia no modelo, mas nao era usado nessas 2 chamadas)
+- A funcao _log() generica do admin.py, usada em VARIOS lugares do fluxo de solicitacao
+
+NAO CORRIGIDO (confirmado que NAO tem o bug, verificacao explicita feita): HistoricoPapel.
+alterado_por — protegido por logica que exige is_master, e Colaborador.is_master e' SEMPRE False
+(confirmado lendo o codigo) — nenhum Colaborador jamais passaria por essa tela.
+
+Todos os modelos corrigidos pro padrao de duas colunas (_usuario_id/_colaborador_id), reaproveitando
+o helper generico _marcar_autor() ja criado. 3 templates que exibiam .autor.nome/.autor.is_admin
+diretamente foram atualizados pra usar as novas properties (autor_nome, autor_eh_admin, editor_qtd,
+confirmador_chegada).
+
+BUG MAIS SERIO ENCONTRADO NO CAMINHO: a coluna ANTIGA comentarios.autor_id tinha NOT NULL desde a
+criacao original da tabela — como ela nunca mais e' preenchida (o autor agora vai pras colunas
+novas), TODO comentario novo quebraria com IntegrityError mesmo com as colunas novas ja migradas
+corretamente. CORRIGIDO: nova secao em _light_migrate() que relaxa esse NOT NULL — no Postgres via
+ALTER COLUMN DROP NOT NULL, no SQLite (que nao suporta isso diretamente) recriando a tabela sem a
+constraint. TESTADO: confirmado que o schema fica correto apos a migracao (autor_id sem NOT NULL),
+e que o cenario real (Colaborador com perm_total comentando) funciona de ponta a ponta depois disso
+— antes desse fix especifico, o mesmo teste dava erro 500 mesmo com todas as outras correcoes.
+
+Smoke test geral final (15 telas, cobrindo TODAS as areas tocadas: Facilities, Admin, Solicitante,
+Almoxarifado, Notinhas, Sugestoes) 200.
+
+=== VARREDURA PREVENTIVA CONCLUIDA: todos os 9 pontos adicionais corrigidos e testados, incluindo
+    um bug de NOT NULL mais serio descoberto no caminho ===

@@ -44,7 +44,10 @@ def editar_data_chegada(sid):
     try:
         d = datetime.strptime(nova_data, "%Y-%m-%d")
         s.chegada_em = d.replace(hour=s.chegada_em.hour, minute=s.chegada_em.minute, second=s.chegada_em.second)
-        db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=current_user.id,
+        from .models import Usuario as _U
+        autor_id_seguro = current_user.id if isinstance(current_user, _U) else None
+        db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=autor_id_seguro,
+                                      autor_nome=getattr(current_user, "nome", None),
                                       evento=f"Data de chegada corrigida para {d:%d/%m/%Y}"))
         db.session.commit()
         flash("Data de chegada atualizada.", "success")
@@ -87,7 +90,8 @@ def marcar_chegada(sid):
 
     if total >= s.quantidade:
         s.status = "CONCLUIDO"
-        s.chegada_confirmada_por = current_user.id
+        from .facilities import _marcar_autor
+        _marcar_autor(s, "chegada_confirmada_por")
         s.chegada_em = momento_chegada
         evento = f"Chegada confirmada — recebido {total} de {s.quantidade} (Concluído) — data: {momento_chegada:%d/%m/%Y}"
         assunto = f"Solicitação Nº {s.id} — material recebido (completo)"
@@ -98,7 +102,10 @@ def marcar_chegada(sid):
         assunto = f"Solicitação Nº {s.id} — chegada parcial"
         msg = f"Chegada parcial: recebido {total} de {s.quantidade} ({s.material})."
         flash(f"Chegada parcial registrada: {total} de {s.quantidade}.", "success")
-    db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=current_user.id, evento=evento))
+    from .models import Usuario as _U
+    autor_id_seguro = current_user.id if isinstance(current_user, _U) else None
+    db.session.add(LogSolicitacao(solicitacao_id=s.id, autor_id=autor_id_seguro,
+                                  autor_nome=getattr(current_user, "nome", None), evento=evento))
     db.session.commit()
     enviar_email([s.solicitante.email, current_app.config.get("ADMIN_EMAIL")], assunto,
                  f"A confirmação de chegada da solicitação Nº {s.id} foi registrada. {msg}")
@@ -1867,9 +1874,11 @@ def colaborador_ausencia_nova(cid):
     retorno = ultimo_dia + timedelta(days=1)
     while retorno.weekday() >= 5:
         retorno += timedelta(days=1)
-    db.session.add(AusenciaColaborador(colaborador_id=c.id, motivo=motivo, data_inicio=data_inicio,
-                                       dias_uteis=dias_uteis, data_retorno=retorno,
-                                       criado_por=current_user.id if current_user.is_authenticated else None))
+    ausencia = AusenciaColaborador(colaborador_id=c.id, motivo=motivo, data_inicio=data_inicio,
+                                   dias_uteis=dias_uteis, data_retorno=retorno)
+    from .facilities import _marcar_autor
+    _marcar_autor(ausencia, "criado_por")
+    db.session.add(ausencia)
     db.session.commit()
     flash(f"Ausência registrada: {motivo}, de {data_inicio.strftime('%d/%m')} até {ultimo_dia.strftime('%d/%m')} "
           f"(retorno previsto {retorno.strftime('%d/%m')}).", "success")

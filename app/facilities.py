@@ -25,6 +25,7 @@ from .models import (ModeloChecklist, ItemChecklist, ProdutoAlmox, ExecucaoCheck
                      AtividadeGrupo, AtividadeColaborador, AtividadeDia, RegistroPreenchimento,
                      EncarregadoEmpresa, RelatorioDiarioObra,
                      EquipamentoTerceiro, MaquinarioPesadoTerceiro, RegistroHorimetro,
+                     HistoricoRetificacao,
                      UNIDADES_DURACAO_DIAS_UTEIS, OPCOES_RECORRENCIA)
 
 facilities_bp = Blueprint("facilities", __name__, url_prefix="/facilities")
@@ -181,8 +182,8 @@ def modelo_novo():
     if not nome:
         flash("Informe o nome do modelo.", "danger")
         return redirect(url_for("facilities.modelo_novo"))
-    modelo = ModeloChecklist(nome=nome, descricao=(request.form.get("descricao") or "").strip(),
-                             criado_por=current_user.id if current_user.is_authenticated else None)
+    modelo = ModeloChecklist(nome=nome, descricao=(request.form.get("descricao") or "").strip())
+    _marcar_autor(modelo, "criado_por")
     db.session.add(modelo)
     db.session.commit()
     _salvar_itens_do_form(modelo, request.form)
@@ -310,6 +311,22 @@ def inspecionar():
     db.session.commit()
     flash("Checklist registrado.", "success")
     return redirect(url_for("facilities.inspecionar"))
+
+
+def _agora_brasil():
+    """[fix 23/09] O servidor (Render) roda em UTC, não no horário de Brasília — usar
+    datetime.now()/date.today() direto faz o sistema achar que é um dia (ou uma hora)
+    diferente do que realmente é no Brasil, causando bugs como o Resumo Diário achando
+    que ainda não são 14h quando já são (ou o contrário). Este helper centraliza a
+    conversão pro fuso correto (America/Sao_Paulo, UTC-3, sem horário de verão desde
+    2019) usando zoneinfo (nativo do Python 3.9+, sem dependência nova)."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Sao_Paulo"))
+
+
+def _hoje_brasil():
+    """[fix 23/09] date.today() no fuso do Brasil, não no fuso do servidor (UTC)."""
+    return _agora_brasil().date()
 
 
 def _dia_util(d):
@@ -445,24 +462,41 @@ def _salvar_fotos(campo_form, maximo=4):
     return urls, caiu_no_fallback_local
 
 
+def _marcar_autor(obj, prefixo_campo):
+    """[fix CRÍTICO 23/09] Helper GENÉRICO pro mesmo padrão de bug que já apareceu em vários
+    lugares (AtividadeDia.aprovado_por, AtividadeGrupo.criado_por, RelatorioDiarioObra.
+    criado_por, ModeloChecklist.criado_por): sempre que o "autor" de uma ação é gravado numa
+    FK ÚNICA pra usuarios.id, isso quebra com ForeignKeyViolation quando quem faz a ação é
+    um Colaborador (Encarregado logado normalmente pelo site, não via QR) — o ID dele existe
+    na tabela de COLABORADORES, não na de usuários.
+    Define obj.<prefixo>_usuario_id OU obj.<prefixo>_colaborador_id (nunca os dois), a partir
+    de quem está de fato logado agora (current_user ou sessão de QR). Uso:
+        _marcar_autor(grupo, "criado_por")   -> grupo.criado_por_usuario_id / _colaborador_id
+        _marcar_autor(rdo, "criado_por")     -> rdo.criado_por_usuario_id / _colaborador_id
+    """
+    from .almox import _colab_sessao
+    campo_usuario = f"{prefixo_campo}_usuario_id"
+    campo_colaborador = f"{prefixo_campo}_colaborador_id"
+    if current_user.is_authenticated and isinstance(current_user, Colaborador):
+        setattr(obj, campo_colaborador, current_user.id)
+        setattr(obj, campo_usuario, None)
+    elif current_user.is_authenticated:
+        setattr(obj, campo_usuario, current_user.id)
+        setattr(obj, campo_colaborador, None)
+    else:
+        colab = _colab_sessao()
+        if colab:
+            setattr(obj, campo_colaborador, colab.id)
+            setattr(obj, campo_usuario, None)
+
+
 def _marcar_aprovado_por(dia):
     """[fix crítico 22/09] Marca dia.aprovado_por_usuario_id OU aprovado_por_colaborador_id
     (nunca os dois) — current_user pode ser um Usuario (Admin/staff) OU um Colaborador
     (Encarregado logado normalmente pelo site). Usar current_user.id direto numa FK única
     pra usuarios.id quebrava (violação de integridade) sempre que quem aprovava era um
     Colaborador, já que o ID dele não existe na tabela de usuários."""
-    from .almox import _colab_sessao
-    if current_user.is_authenticated and isinstance(current_user, Colaborador):
-        dia.aprovado_por_colaborador_id = current_user.id
-        dia.aprovado_por_usuario_id = None
-    elif current_user.is_authenticated:
-        dia.aprovado_por_usuario_id = current_user.id
-        dia.aprovado_por_colaborador_id = None
-    else:
-        colab = _colab_sessao()
-        if colab:
-            dia.aprovado_por_colaborador_id = colab.id
-            dia.aprovado_por_usuario_id = None
+    _marcar_autor(dia, "aprovado_por")
 
 
 def _quem_preencheu():
@@ -707,8 +741,8 @@ def programacao_nova():
                            produto_id=int(produto_id) if produto_id else None,
                            fotos_antes_json=json.dumps(fotos_antes) if fotos_antes else None,
                            status_cadastro="INCOMPLETO" if faltando_campo else "COMPLETO",
-                           maquina_horimetro_id=int(maquina_horimetro_id) if maquina_horimetro_id else None,
-                           criado_por=current_user.id if current_user.is_authenticated else None)
+                           maquina_horimetro_id=int(maquina_horimetro_id) if maquina_horimetro_id else None)
+    _marcar_autor(grupo, "criado_por")
     db.session.add(grupo)
     db.session.commit()
 
@@ -898,8 +932,8 @@ def atividade_detalhe(grupo_id):
                 titulo=grupo.titulo + " (cópia)", descricao=grupo.descricao,
                 data_inicio=nova_data_ini, unidade_duracao="dias", duracao_dias_uteis=duracao_nova,
                 recorrencia_dias=grupo.recorrencia_dias, planta_id=grupo.planta_id,
-                predio_id=grupo.predio_id, produto_id=grupo.produto_id, status_cadastro="COMPLETO",
-                criado_por=current_user.id if current_user.is_authenticated else None)
+                predio_id=grupo.predio_id, produto_id=grupo.produto_id, status_cadastro="COMPLETO")
+            _marcar_autor(novo_grupo, "criado_por")
             db.session.add(novo_grupo)
             db.session.commit()
             for ac in grupo.colaboradores:
@@ -1330,16 +1364,40 @@ def aprovar_dia(dia_id):
 @facilities_bp.route("/aprovacao/<int:dia_id>/retificar", methods=["POST"])
 @_ver_required
 def retificar_dia(dia_id):
-    """[v3] Não existe mais "reprovar": o Encarregado edita direto e já sai aprovado."""
+    """[v3] Não existe mais "reprovar": o Encarregado edita direto e já sai aprovado.
+    [23/09] Antes de sobrescrever o que o colaborador apontou, grava um HistoricoRetificacao
+    com o valor ANTES e DEPOIS — visível pro Admin depois, a partir do RDO (ver rdo_preview)."""
     dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    dias_restantes_antes = dia.dias_restantes
+    descricao_antes = dia.descricao_execucao
+    dias_restantes_depois = dias_restantes_antes
     if not dia.grupo.eh_fixa:
         dias_restantes_str = request.form.get("dias_restantes")
         if dias_restantes_str not in (None, ""):
             try:
-                dia.dias_restantes = max(0, int(dias_restantes_str))
+                dias_restantes_depois = max(0, int(dias_restantes_str))
+                dia.dias_restantes = dias_restantes_depois
             except ValueError:
                 pass
-    dia.descricao_execucao = (request.form.get("descricao") or dia.descricao_execucao)
+    descricao_depois = (request.form.get("descricao") or dia.descricao_execucao)
+    dia.descricao_execucao = descricao_depois
+
+    # [23/09] só grava histórico se algo de fato mudou — evita poluir com retificações
+    # que só re-salvaram o mesmo valor (ex.: só anexando foto extra, sem mudar nada mais).
+    if dias_restantes_antes != dias_restantes_depois or descricao_antes != descricao_depois:
+        from .almox import _colab_sessao
+        colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+        hist = HistoricoRetificacao(dia_id=dia.id, dias_restantes_antes=dias_restantes_antes,
+                                    dias_restantes_depois=dias_restantes_depois,
+                                    descricao_antes=descricao_antes, descricao_depois=descricao_depois)
+        if current_user.is_authenticated and isinstance(current_user, Colaborador):
+            hist.retificado_por_colaborador_id = current_user.id
+        elif current_user.is_authenticated:
+            hist.retificado_por_usuario_id = current_user.id
+        elif colab_atual:
+            hist.retificado_por_colaborador_id = colab_atual.id
+        db.session.add(hist)
+
     dia.retificado = True
     dia.status = "APROVADA"
     dia.aprovado_em = datetime.utcnow()
@@ -1435,8 +1493,9 @@ def resumo_diario():
     data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
     tipo = request.args.get("tipo", "inicio")
 
-    agora = datetime.now()
-    fim_liberado = data_d < date.today() or (data_d == date.today() and agora.hour >= 14)
+    agora = _agora_brasil()
+    hoje_brasil = _hoje_brasil()
+    fim_liberado = data_d < hoje_brasil or (data_d == hoje_brasil and agora.hour >= 14)
     if tipo == "fim" and not fim_liberado:
         flash("O resumo de FIM só fica disponível após as 14h (ou em dias anteriores).", "warning")
         return redirect(url_for("facilities.programacao", data=data_str))
@@ -1624,8 +1683,8 @@ def rdo():
             equipamentos_texto=(request.form.get("equipamentos_texto") or "").strip(),
             atividades_ids_json=json.dumps([d.grupo_id for d in dias_do_dia]),
             percentual_medio=media, observacoes=(request.form.get("observacoes") or "").strip(),
-            status="PENDENTE",
-            criado_por=current_user.id if current_user.is_authenticated else None)
+            status="PENDENTE")
+        _marcar_autor(rdo_novo, "criado_por")
         db.session.add(rdo_novo)
         db.session.commit()
         flash("RDO registrado — confira o preview antes de confirmar o envio para aprovação.", "success")
@@ -1651,19 +1710,26 @@ def rdo():
 @_rdo_required
 def rdo_aprovar(rdo_id):
     """[item novo] Aprovação em duas etapas: um Encarregado aprova, e um Admin aprova — o RDO
-    só sai de PENDENTE quando os dois tiverem aprovado."""
+    só sai de PENDENTE quando os dois tiverem aprovado.
+    [fix 23/09] A ordem agora é FORÇADA: o Encarregado precisa aprovar PRIMEIRO — o Admin só
+    consegue aprovar depois que a aprovação do Encarregado já existir."""
     from .almox import _colab_sessao
     r = db.session.get(RelatorioDiarioObra, rdo_id) or abort(404)
     colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
     eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))
-    eh_encarregado = eh_admin or getattr(colab_atual, "eh_encarregado_campo", False)
+    eh_encarregado_de_verdade = colab_atual and getattr(colab_atual, "eh_encarregado_campo", False)
+    eh_encarregado = eh_admin or eh_encarregado_de_verdade
     if not eh_encarregado:
         abort(403)
 
-    if eh_admin:
+    if eh_admin and not eh_encarregado_de_verdade:
+        # Admin tentando aprovar — só pode se o Encarregado já tiver aprovado antes.
+        if not r.aprovado_encarregado_em:
+            flash("O Encarregado de Campo precisa aprovar este RDO antes do Admin.", "danger")
+            return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))
         r.aprovado_admin_em = datetime.utcnow()
         r.aprovado_admin_por = current_user.id
-    if colab_atual and getattr(colab_atual, "eh_encarregado_campo", False):
+    if eh_encarregado_de_verdade:
         r.aprovado_encarregado_em = datetime.utcnow()
         r.aprovado_encarregado_por = colab_atual.id
     if r.totalmente_aprovado:
@@ -1845,6 +1911,18 @@ def rdo_preview(rdo_id):
     eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))
     return render_template("facilities/rdo_preview.html", r=r, pode_editar=_pode_editar_rdo(r, colab_atual),
                            eh_gestor=eh_gestor, eh_admin=eh_admin)
+
+
+@facilities_bp.route("/atividade-dia/<int:dia_id>/historico")
+@_rdo_required
+def historico_retificacoes(dia_id):
+    """[23/09] Mostra todas as edições (retificações) feitas num dia específico de atividade
+    — o que o colaborador apontou originalmente, o que o Encarregado mudou, e quem mudou.
+    Acessado a partir do "Ver" no RDO, clicando na atividade específica."""
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    historico = (HistoricoRetificacao.query.filter_by(dia_id=dia_id)
+                .order_by(HistoricoRetificacao.criado_em.desc()).all())
+    return render_template("facilities/historico_retificacoes.html", dia=dia, historico=historico)
 
 
 @facilities_bp.route("/rdo/<int:rdo_id>/editar", methods=["GET", "POST"])

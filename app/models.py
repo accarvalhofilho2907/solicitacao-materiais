@@ -263,7 +263,9 @@ class Solicitacao(db.Model):
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     quantidade_original = db.Column(db.Integer)
-    quantidade_alterada_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    quantidade_alterada_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    quantidade_alterada_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     quantidade_alterada_em = db.Column(db.DateTime)
     quantidade_recebida = db.Column(db.Integer, default=0)   # chegada parcial acumulada
 
@@ -274,11 +276,12 @@ class Solicitacao(db.Model):
     transportadora_id = db.Column(db.ForeignKey("transportadoras.id"))
     cidade_retirada_id = db.Column(db.ForeignKey("cidades.id"))
     prazo_recebimento = db.Column(db.Date)
-    chegada_confirmada_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    chegada_confirmada_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    chegada_confirmada_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     chegada_em = db.Column(db.DateTime)
 
     tipo = db.relationship("TipoMaterial")
-    editor_qtd = db.relationship("Usuario", foreign_keys=[quantidade_alterada_por])
     fornecedor_definido = db.relationship("Fornecedor", foreign_keys=[fornecedor_definido_id])
     transportadora = db.relationship("Transportadora")
     cidade_retirada = db.relationship("Cidade")
@@ -316,6 +319,24 @@ class Solicitacao(db.Model):
         return bool(self.status == "AGUARDANDO_CHEGADA"
                     and self.prazo_recebimento and self.prazo_recebimento < _d.today())
 
+    @property
+    def editor_qtd(self):
+        """[fix 23/09] Quem alterou a quantidade — Usuario OU Colaborador, o que existir."""
+        if self.quantidade_alterada_por_usuario_id:
+            return db.session.get(Usuario, self.quantidade_alterada_por_usuario_id)
+        if self.quantidade_alterada_por_colaborador_id:
+            return db.session.get(Colaborador, self.quantidade_alterada_por_colaborador_id)
+        return None
+
+    @property
+    def confirmador_chegada(self):
+        """[fix 23/09] Quem confirmou a chegada — Usuario OU Colaborador, o que existir."""
+        if self.chegada_confirmada_por_usuario_id:
+            return db.session.get(Usuario, self.chegada_confirmada_por_usuario_id)
+        if self.chegada_confirmada_por_colaborador_id:
+            return db.session.get(Colaborador, self.chegada_confirmada_por_colaborador_id)
+        return None
+
 
 class Imagem(db.Model):
     __tablename__ = "imagens"
@@ -329,10 +350,38 @@ class Comentario(db.Model):
     __tablename__ = "comentarios"
     id = db.Column(db.Integer, primary_key=True)
     solicitacao_id = db.Column(db.ForeignKey("solicitacoes.id"), nullable=False)
-    autor_id = db.Column(db.ForeignKey("usuarios.id"), nullable=False)
+    # [fix CRÍTICO 23/09] autor_id era FK ÚNICA pra usuarios.id, NULLABLE=FALSE — quebrava com
+    # ForeignKeyViolation sempre que quem comenta é um Colaborador (ex.: com permissão de
+    # is_admin via tarefa perm_total, ou pode_solicitar). Separado em duas colunas, nenhuma
+    # delas NOT NULL (senão travaria de novo pro caso oposto).
+    autor_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    autor_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     texto = db.Column(db.Text, nullable=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
     autor = db.relationship("Usuario")
+
+    @property
+    def autor_nome(self):
+        if self.autor_usuario_id:
+            u = db.session.get(Usuario, self.autor_usuario_id)
+            return u.nome if u else "—"
+        if self.autor_colaborador_id:
+            c = db.session.get(Colaborador, self.autor_colaborador_id)
+            return c.nome if c else "—"
+        return "—"
+
+    @property
+    def autor_eh_admin(self):
+        """[fix 23/09] Substitui o antigo `c.autor.is_admin` do template — o autor agora pode
+        ser Usuario OU Colaborador, cada um com sua própria noção de is_admin."""
+        if self.autor_usuario_id:
+            u = db.session.get(Usuario, self.autor_usuario_id)
+            return bool(u and u.is_admin)
+        if self.autor_colaborador_id:
+            c = db.session.get(Colaborador, self.autor_colaborador_id)
+            return bool(c and c.is_admin)
+        return False
 
 
 class PedidoCompra(db.Model):
@@ -340,7 +389,9 @@ class PedidoCompra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     solicitacao_id = db.Column(db.ForeignKey("solicitacoes.id"), nullable=False)
     enviado_em = db.Column(db.DateTime, default=datetime.utcnow)
-    enviado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    enviado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    enviado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     destinatarios = db.Column(db.String(1000))
     cotacao_seq = db.Column(db.String(20))   # sequencial da cotação (ex.: COT-2026-001)
     solicitacao = db.relationship("Solicitacao")
@@ -359,7 +410,9 @@ class Orcamento(db.Model):
     item_fornecedor = db.Column(db.String(300))   # nome do item como o fornecedor descreveu
     anexo_url = db.Column(db.String(500))
     escolhido = db.Column(db.Boolean, default=False)
-    registrado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    registrado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    registrado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     recebido_em = db.Column(db.DateTime, default=datetime.utcnow)
     fornecedor = db.relationship("Fornecedor")
 
@@ -373,7 +426,9 @@ class Notinha(db.Model):
     fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"), nullable=False)
     atividade_id = db.Column(db.ForeignKey("atividades.id"))
     valor = db.Column(db.Numeric(12, 2), nullable=False)
-    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     fornecedor = db.relationship("Fornecedor")
@@ -399,10 +454,22 @@ class LogSolicitacao(db.Model):
 class Sugestao(db.Model):
     __tablename__ = "sugestoes"
     id = db.Column(db.Integer, primary_key=True)
-    autor_id = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    autor_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    autor_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     texto = db.Column(db.Text, nullable=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     autor = db.relationship("Usuario")
+
+    @property
+    def autor_nome(self):
+        if self.autor_usuario_id:
+            u = db.session.get(Usuario, self.autor_usuario_id)
+            return u.nome if u else "—"
+        if self.autor_colaborador_id:
+            c = db.session.get(Colaborador, self.autor_colaborador_id)
+            return c.nome if c else "—"
+        return "Anônimo"
 
 
 # ==================== MÓDULO ALMOXARIFADO (item novo) ====================
@@ -1114,7 +1181,9 @@ class AusenciaColaborador(db.Model):
     data_inicio = db.Column(db.Date, nullable=False)
     dias_uteis = db.Column(db.Integer, nullable=False)
     data_retorno = db.Column(db.Date, nullable=False)     # calculada (próximo dia útil após o período)
-    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix 23/09] mesmo padrão de bug corrigido em outros modelos — separado em duas colunas.
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     colaborador = db.relationship("Colaborador", foreign_keys=[colaborador_id])
@@ -1358,13 +1427,17 @@ TIPO_ITEM_CHECKLIST = ("IMPEDITIVO", "ATENCAO", "TEMPORARIO")
 class ModeloChecklist(db.Model):
     """Um "formulário" de checklist reutilizável (ex.: "Inspeção de Gerador",
     "Ronda de Veículo"). Só o Admin/Master cria e edita. [M2] Escolhido livremente
-    na hora de executar — não há vínculo fixo gravado no cadastro de Material."""
+    na hora de executar — não há vínculo fixo gravado no cadastro de Material.
+    [fix 23/09] criado_por separado em duas colunas (mesmo padrão de AtividadeDia.
+    aprovado_por) — mesmo sendo raro um Colaborador criar isso, evita o mesmo tipo de
+    ForeignKeyViolation."""
     __tablename__ = "sf_modelos_checklist"
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(160), nullable=False)
     descricao = db.Column(db.String(300))
     ativo = db.Column(db.Boolean, default=True)
-    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     itens = db.relationship("ItemChecklist", backref="modelo", order_by="ItemChecklist.ordem",
@@ -1514,7 +1587,12 @@ class AtividadeGrupo(db.Model):
     maquina_horimetro_id = db.Column(db.ForeignKey("sf_maquinario_pesado_terceiro.id"))  # [22/09] se preenchido, ativa o fluxo de 2 reports/dia com horímetro
     encerrada = db.Column(db.Boolean, default=False)   # [23/09] só relevante pra FIXA — para a geração automática de novos dias
     encerrada_em = db.Column(db.DateTime)
-    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix CRÍTICO 23/09] criado_por era uma FK ÚNICA pra usuarios.id — quebrava sempre que
+    # quem cria a atividade é um Colaborador (Encarregado logado normalmente, não via QR),
+    # cujo ID não existe na tabela de usuários. Mesmo padrão de bug já corrigido em
+    # AtividadeDia.aprovado_por — separado em duas colunas.
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     planta = db.relationship("Planta")
@@ -1607,6 +1685,36 @@ class AtividadeDia(db.Model):
         return "—"
 
 
+class HistoricoRetificacao(db.Model):
+    """[23/09] Registra toda vez que um Encarregado (ou Admin) RETIFICA o que um colaborador
+    apontou (dias_restantes, descrição) — guarda o valor ANTES e DEPOIS da mudança, e quem fez.
+    Visível pro Admin a partir do RDO: clicar em "Ver" numa atividade específica mostra todas
+    as edições feitas nela e por quem (pedido explícito do Antonio — antes a retificação
+    simplesmente sobrescrevia o valor original sem deixar rastro)."""
+    __tablename__ = "sf_historico_retificacao"
+    id = db.Column(db.Integer, primary_key=True)
+    dia_id = db.Column(db.ForeignKey("sf_atividade_dias.id"), nullable=False)
+    dias_restantes_antes = db.Column(db.Integer)
+    dias_restantes_depois = db.Column(db.Integer)
+    descricao_antes = db.Column(db.Text)
+    descricao_depois = db.Column(db.Text)
+    retificado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    retificado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    dia = db.relationship("AtividadeDia", backref="historico_retificacoes")
+
+    @property
+    def retificado_por_nome(self):
+        if self.retificado_por_colaborador_id:
+            c = db.session.get(Colaborador, self.retificado_por_colaborador_id)
+            return c.nome if c else "—"
+        if self.retificado_por_usuario_id:
+            u = db.session.get(Usuario, self.retificado_por_usuario_id)
+            return u.nome if u else "—"
+        return "—"
+
+
 class RegistroPreenchimento(db.Model):
     """[v3] Histórico de QUEM preencheu a % de cada AtividadeDia (mais de um colaborador
     pode preencher a mesma atividade/dia ao longo do tempo — guardamos todos os registros,
@@ -1659,7 +1767,9 @@ class RelatorioDiarioObra(db.Model):
     aprovado_encarregado_por = db.Column(db.ForeignKey("almox_colaboradores.id"))
     aprovado_admin_em = db.Column(db.DateTime)
     aprovado_admin_por = db.Column(db.ForeignKey("usuarios.id"))
-    criado_por = db.Column(db.ForeignKey("usuarios.id"))
+    # [fix CRÍTICO 23/09] mesmo bug de criado_por como FK única — separado em duas colunas.
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     planta = db.relationship("Planta")

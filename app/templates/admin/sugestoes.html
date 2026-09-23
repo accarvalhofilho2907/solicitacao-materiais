@@ -5,7 +5,7 @@
 <div class="card"><div class="list-group list-group-flush">
   {% for s in lista %}
   <div class="list-group-item">
-    <div class="small text-muted">{{ s.autor.nome if s.autor else 'Anônimo' }} — {{ s.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+    <div class="small text-muted">{{ s.autor_nome }} — {{ s.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
     {{ s.texto }}
   </div>
   {% else %}<div class="list-group-item text-muted">Nenhuma sugestão ainda.</div>{% endfor %}

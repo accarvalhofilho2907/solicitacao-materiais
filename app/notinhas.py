@@ -103,9 +103,12 @@ def nova():
         flash("Preencha Data, Fornecedor, Atividade e Valor (use só números e vírgula).", "danger")
         return redirect(url_for("notinhas.index"))
     comp = _competencia_de(data_str)   # competência sempre derivada da data (item 79)
-    db.session.add(Notinha(
+    nova_notinha = Notinha(
         data=datetime.strptime(data_str, "%Y-%m-%d").date(), competencia=comp,
-        fornecedor_id=int(fid), atividade_id=int(aid), valor=valor, criado_por=current_user.id))
+        fornecedor_id=int(fid), atividade_id=int(aid), valor=valor)
+    from .facilities import _marcar_autor
+    _marcar_autor(nova_notinha, "criado_por")
+    db.session.add(nova_notinha)
     db.session.commit()
     flash("Notinha lançada.", "success")
     return redirect(url_for("notinhas.index"))

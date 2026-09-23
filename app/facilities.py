@@ -1732,15 +1732,38 @@ def diagnostico_cloudinary():
         # nunca expõe a chave secreta inteira — só o suficiente pra confirmar o formato
         diagnostico["formato_parece_valido"] = valor.startswith("cloudinary://") and "@" in valor
         diagnostico["comeco_do_valor"] = valor[:20] + "..." if len(valor) > 20 else valor
+        # [fix] Parseia a URL manualmente e expõe cloud_name (não sensível) + os primeiros/
+        # últimos caracteres da api_key e o TAMANHO do secret (sem expor o secret em si) —
+        # "Invalid Signature" quase sempre significa que api_key e api_secret não são do
+        # MESMO par de credenciais (ex.: colou o secret de outra conta, ou sobrou/faltou um
+        # caractere ao copiar). Isso ajuda a pessoa comparar com o que está no painel do
+        # Cloudinary sem eu nunca ver o secret completo.
+        try:
+            sem_prefixo = valor.replace("cloudinary://", "", 1)
+            credenciais, cloud_name = sem_prefixo.rsplit("@", 1)
+            api_key, api_secret = credenciais.split(":", 1)
+            diagnostico["cloud_name_lido"] = cloud_name
+            diagnostico["api_key_lida"] = api_key
+            diagnostico["api_secret_tamanho"] = len(api_secret)
+            diagnostico["api_secret_tem_espaco_ou_quebra_linha"] = (" " in api_secret or "\n" in api_secret or "\r" in api_secret)
+            diagnostico["api_key_tem_caracteres_suspeitos"] = any(c in api_key for c in "<>\"' \n\r")
+        except Exception:
+            diagnostico["aviso_parse"] = "Não consegui separar a URL em partes — formato pode estar quebrado (falta @ ou :)."
     if not diagnostico["cloudinary_url_configurada"]:
         diagnostico["diagnostico"] = "CLOUDINARY_URL não está definida no ambiente do Render — toda foto vai cair no disco local (volátil)."
         return jsonify(diagnostico)
     try:
         import cloudinary
         import cloudinary.uploader
+        import cloudinary.api
         from io import BytesIO
         cloudinary.config(secure=True)
-        # sobe uma imagem mínima de teste (1x1 pixel) e apaga em seguida — testa a config real
+        # [fix] cloudinary.api.ping() é uma checagem MAIS SIMPLES que só confirma se a
+        # assinatura/credenciais batem, sem precisar de upload — se ISSO já falhar com
+        # "Invalid Signature", confirma 100% que é a credencial (api_key/api_secret), não
+        # algo relacionado ao upload em si (permissão de pasta, plano, etc.).
+        cloudinary.api.ping()
+        diagnostico["ping_funcionou"] = True
         pixel_1x1 = bytes.fromhex("47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b")
         res = cloudinary.uploader.upload(BytesIO(pixel_1x1), folder="_teste_diagnostico", public_id="teste_conexao")
         diagnostico["upload_de_teste_funcionou"] = True

@@ -3,6 +3,8 @@
 > Documento de retomada. Guarda TODO o histórico e as decisões do projeto.
 > **Regra de ouro:** todo pedido vai primeiro para este roadmap; só é implementado
 > no código após ordem explícita do Antonio ("pode rodar" / "manda bala").
+> **Regra fixa (23/09, Cowork):** toda entrega de código vem SEMPRE junto com a mensagem
+> de commit pronta, para o Antonio colar no GitHub Desktop.
 
 ---
 
@@ -4271,3 +4273,76 @@ Almoxarifado, Notinhas, Sugestoes) 200.
 
 === VARREDURA PREVENTIVA CONCLUIDA: todos os 9 pontos adicionais corrigidos e testados, incluindo
     um bug de NOT NULL mais serio descoberto no caminho ===
+
+### ================== SOLICITACAO REGISTRADA: REFORMULACAO GRANDE DO RDO (23/09) — RETOMADA DO ZERO ==================
+CONTEXTO: projeto transferido para o Cowork nesta data, conectado ao clone local via GitHub Desktop
+(pasta `solicitacao-materiais`). Uma sessao anterior (Claude.ai) tinha fechado a especificacao
+completa desta reformulacao e reportado os itens 1 e 2 como "FEITO e testado" (modelos
+RDOMaoDeObra/RDOEquipamento, campo de % obrigatorio por dia com trava de 100% acumulado). CONFERIDO
+NESTE REPO: nenhum desses modelos/campos existe em app/models.py, nem no ultimo commit (f4ed0cc) nem
+no ROADMAP local ate' este ponto — ou seja, esse trabalho NUNCA chegou a ser commitado aqui (ficou
+em outra maquina/sessao, ou se perdeu). Antonio confirmou: RECOMECAR DO ZERO, com o modelo atual do
+sistema (AtividadeGrupo/AtividadeDia/RelatorioDiarioObra em app/models.py, linhas ~1564-1791) como
+ponto de partida real.
+
+STATUS DESTA ENTRADA: SOLICITACAO REGISTRADA NO ROADMAP, CONFORME REGRA FIXA DO PROJETO. NADA DESTA
+LISTA DEVE SER IMPLEMENTADO ATE' ORDEM EXPLICITA DO ANTONIO (ex.: "pode rodar o item 1", "executa
+tudo"). Esta secao existe so' pra nao perder a especificacao antes de come'car a trabalhar nela.
+
+ESPECIFICACAO (reconstituida a partir do resumo de contexto trazido por Antonio — os detalhes finos
+de cada resposta dele ficaram no ROADMAP antigo que nao chegou a este repo; ao iniciar cada item,
+confirmar com ele os pontos que gerarem duvida em vez de supor):
+
+1) MODELO DE DADOS
+   - Reaproveitar o campo `percentual` (hoje "legado", nao usado por NORMAL) em AtividadeDia como
+     "% do dia" — informada pelo ENCARREGADO na aprovacao (nao mais o colaborador via dias_restantes;
+     os dois campos CONVIVEM, dias_restantes continua existindo e sendo usado como esta hoje).
+   - Novas properties em AtividadeGrupo: `percentual_acumulado` (soma de AtividadeDia.percentual dos
+     dias ja aprovados daquele grupo) e `percentual_restante` (100 - acumulado).
+   - Novos modelos: `RDOMaoDeObra` (rdo_id, colaborador, funcao, horario_inicio/fim individual) e
+     `RDOEquipamento` (rdo_id, equipamento, quantidade) — substituem os campos de texto livre
+     `mao_de_obra_texto` / `equipamentos_texto` hoje em RelatorioDiarioObra.
+   - Novos campos em RelatorioDiarioObra: `ocorrencias`, `comentarios`, `horario_intervalo_inicio`,
+     `horario_intervalo_fim`.
+   - ATENCAO ao padrao de bug ja conhecido: qualquer FK nova pra "quem fez X" usa o helper
+     `_marcar_autor(obj, prefixo)` (duas colunas usuario_id/colaborador_id) desde o inicio.
+
+2) APROVACAO COM % OBRIGATORIA
+   - Campo de % obrigatorio na aprovacao de cada AtividadeDia (exceto pra atividade tipo FIXA, que
+     nao usa percentual). Trava de 100% acumulado por grupo (ex.: 20% + 50% = 70%, bloqueia se
+     ultrapassar 100%).
+
+3) RESUMO DIARIO — somar `percentual_acumulado` por atividade (hoje so' mostra dias_restantes).
+
+4) FORMULARIO DE CRIACAO DO RDO — reescrever para: pre-marcar os mesmos equipamentos (com
+   quantidade) do RDO anterior da MESMA planta; campos de ocorrencias/comentarios; mao de obra com
+   funcao + horario individual por colaborador (via RDOMaoDeObra).
+
+5) PDF DO RDO — reescrever layout completo (modelo de referencia TG Melo, anexado por Antonio em
+   sessao anterior — pedir o PDF de novo se necessario):
+   - Remover: Obra, Contratante, Responsavel, Prazo contratual/decorrido/a vencer.
+   - Clima simplificado: so' Manha/Tarde, padrao "Ensolarado".
+   - Adicionar campo de intervalo (horario_intervalo_inicio/fim).
+   - Equipamentos e mao de obra em caixas visuais separadas.
+   - Grade de fotos 2x2 (ate' 6 fotos em atividades com horimetro).
+   - Nova pagina de aprovacao (Encarregado + Admin).
+   - Mostrar % do dia por atividade (nao mais dias restantes) no PDF.
+
+6) TELA DIGITAL DO RDO (`rdo_preview.html`) — layout de DUAS COLUNAS por atividade (atividade de um
+   lado, fotos clicaveis do outro).
+
+7) COMBOBOX PESQUISAVEL — na criacao de atividade, selects de Empresa e Colaborador viram combobox
+   com busca (em vez do <select> simples atual).
+
+8) TRAVAS DE HORIMETRO:
+   i. horimetro inicial nao pode ser menor que o final do dia anterior;
+   ii. bloquear informar o inicial de hoje se o final de ontem nao foi informado;
+   iii. aceitar virgula OU ponto como separador decimal, sem letras;
+   iv. esconder a secao de horimetro final enquanto o inicial ainda nao foi preenchido.
+
+ORDEM DE EXECUCAO SUGERIDA (a confirmar com Antonio antes de comecar): 1 -> 2 -> 3 -> 4 -> 5 -> 6 ->
+7 -> 8, pois os itens 3-6 dependem do modelo de dados do item 1. Itens 7 e 8 sao independentes e
+podem ser feitos em qualquer ordem/paralelo se Antonio preferir priorizar.
+
+PROXIMO PASSO: aguardando ordem explicita de Antonio pra iniciar (pode ser por item ou tudo de uma
+vez). Nenhum codigo sera alterado ate' la'.

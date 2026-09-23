@@ -557,7 +557,9 @@ class RegistroHorimetro(db.Model):
     atividade tem horimetro=True. Cada AtividadeDia de uma atividade com horímetro tem, no
     máximo, 2 registros: tipo=INICIO (feito ao começar o dia) e tipo=FIM (feito ao encerrar,
     junto com o report normal de fotos/descrição da atividade). A empresa (fornecedor) é
-    informada em CADA registro — pode variar dia a dia, mesmo sendo a mesma máquina."""
+    informada em CADA registro — pode variar dia a dia, mesmo sendo a mesma máquina.
+    [23/09] status: PENDENTE|APROVADO — mesmo espírito do RDO. Só pode ser excluído enquanto
+    PENDENTE (ver painel_horimetros_excluir)."""
     __tablename__ = "sf_registros_horimetro"
     id = db.Column(db.Integer, primary_key=True)
     dia_id = db.Column(db.ForeignKey("sf_atividade_dias.id"), nullable=False)
@@ -566,6 +568,10 @@ class RegistroHorimetro(db.Model):
     valor_horimetro = db.Column(db.Float, nullable=False)
     foto_painel_url = db.Column(db.Text)   # 1 foto só, fora das 4 fotos normais da atividade
     fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"))   # empresa operando NESTE dia
+    status = db.Column(db.String(20), default="PENDENTE")   # [23/09] PENDENTE | APROVADO
+    aprovado_em = db.Column(db.DateTime)
+    aprovado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    aprovado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
     criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)

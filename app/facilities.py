@@ -1715,6 +1715,51 @@ def rdo_pdf_lote():
                      download_name=f"RDOs_{date.today().strftime('%Y%m%d')}.pdf")
 
 
+@facilities_bp.route("/diagnostico-cloudinary")
+def diagnostico_cloudinary():
+    """[TEMPORÁRIO — diagnóstico] Só Admin/Master. Testa a configuração do Cloudinary DE
+    VERDADE (faz um upload de teste, não só olha se a variável existe) — pra confirmar de
+    uma vez por todas se CLOUDINARY_URL está configurada corretamente em produção. Isso
+    explica por que as fotos continuam caindo no disco local (/uploads/...) mesmo depois
+    dos avisos: se o Cloudinary nunca funcionou de verdade, toda foto sempre caiu ali,
+    silenciosamente, antes dos avisos existirem."""
+    if not (current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))):
+        abort(403)
+    from flask import jsonify
+    diagnostico = {"cloudinary_url_configurada": bool(current_app.config.get("CLOUDINARY_URL"))}
+    valor = current_app.config.get("CLOUDINARY_URL") or ""
+    if valor:
+        # nunca expõe a chave secreta inteira — só o suficiente pra confirmar o formato
+        diagnostico["formato_parece_valido"] = valor.startswith("cloudinary://") and "@" in valor
+        diagnostico["comeco_do_valor"] = valor[:20] + "..." if len(valor) > 20 else valor
+    if not diagnostico["cloudinary_url_configurada"]:
+        diagnostico["diagnostico"] = "CLOUDINARY_URL não está definida no ambiente do Render — toda foto vai cair no disco local (volátil)."
+        return jsonify(diagnostico)
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        from io import BytesIO
+        cloudinary.config(secure=True)
+        # sobe uma imagem mínima de teste (1x1 pixel) e apaga em seguida — testa a config real
+        pixel_1x1 = bytes.fromhex("47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b")
+        res = cloudinary.uploader.upload(BytesIO(pixel_1x1), folder="_teste_diagnostico", public_id="teste_conexao")
+        diagnostico["upload_de_teste_funcionou"] = True
+        diagnostico["url_gerada"] = res.get("secure_url")
+        diagnostico["diagnostico"] = "Cloudinary está funcionando corretamente."
+        try:
+            cloudinary.uploader.destroy(res["public_id"])
+        except Exception:
+            pass
+    except Exception as e:
+        diagnostico["upload_de_teste_funcionou"] = False
+        diagnostico["erro_tipo"] = type(e).__name__
+        diagnostico["erro_mensagem"] = str(e)
+        diagnostico["diagnostico"] = ("O Cloudinary está CONFIGURADO mas o upload de teste FALHOU — "
+                                      "é por isso que as fotos caem no disco local. Veja erro_mensagem "
+                                      "acima para o motivo exato (credencial errada, conta suspensa, etc.).")
+    return jsonify(diagnostico)
+
+
 @facilities_bp.route("/rdo/<int:rdo_id>/diagnostico-fotos")
 def rdo_diagnostico_fotos(rdo_id):
     """[TEMPORÁRIO — diagnóstico] Só Admin/Master. Testa, passo a passo, por que as fotos não
@@ -1888,9 +1933,11 @@ def rdo_excluir_lote(rdo_id=None):
 @_ver_programacao_required
 def painel_horimetros():
     """[22/09] Tabela dinâmica com todos os lançamentos de horímetro — INICIO e FIM de cada
-    dia de atividades com horímetro. Filtro de período (semana/mês/trimestre/semestre) com
-    total de horas calculado (fim - início, por máquina, somado no período)."""
+    dia de atividades com horímetro. Filtro de período (semana/mês/trimestre/semestre) +
+    [23/09] filtro por MÁQUINA específica, com total de horas calculado (fim - início, por
+    máquina, somado no período e já considerando o filtro de máquina se houver)."""
     periodo = request.args.get("periodo", "mes")
+    maquina_filtro_id = request.args.get("maquina_id") or None
     hoje = date.today()
     if periodo == "semana":
         data_ini_filtro = hoje - timedelta(days=hoje.weekday())
@@ -1903,8 +1950,11 @@ def painel_horimetros():
     else:  # mes (padrão)
         data_ini_filtro = date(hoje.year, hoje.month, 1)
 
-    registros = (RegistroHorimetro.query.join(AtividadeDia, RegistroHorimetro.dia_id == AtividadeDia.id)
-                .filter(AtividadeDia.data >= data_ini_filtro).order_by(AtividadeDia.data.desc()).all())
+    q = (RegistroHorimetro.query.join(AtividadeDia, RegistroHorimetro.dia_id == AtividadeDia.id)
+        .filter(AtividadeDia.data >= data_ini_filtro))
+    if maquina_filtro_id:
+        q = q.filter(RegistroHorimetro.maquina_id == int(maquina_filtro_id))
+    registros = q.order_by(AtividadeDia.data.desc()).all()
 
     # total de horas: pra cada (maquina, dia), pega o par INICIO/FIM e soma (fim - inicio)
     por_dia_maquina = {}
@@ -1917,6 +1967,56 @@ def painel_horimetros():
             total_horas += max(0.0, valores["FIM"] - valores["INICIO"])
 
     maquinas_disp = MaquinarioPesadoTerceiro.query.filter_by(ativo=True).order_by(MaquinarioPesadoTerceiro.nome).all()
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False)))
     return render_template("facilities/painel_horimetros.html", registros=registros, periodo=periodo,
                            total_horas=round(total_horas, 1), maquinas_disp=maquinas_disp,
-                           data_ini_filtro=data_ini_filtro, hoje=hoje)
+                           maquina_filtro_id=int(maquina_filtro_id) if maquina_filtro_id else None,
+                           data_ini_filtro=data_ini_filtro, hoje=hoje, eh_gestor=eh_gestor)
+
+
+@facilities_bp.route("/painel-horimetros/<int:registro_id>/aprovar", methods=["POST"])
+@_ver_programacao_required
+def painel_horimetros_aprovar(registro_id):
+    """[23/09] Aprovação do registro de horímetro — mesmo espírito do RDO (Encarregado ou
+    Admin aprova). Aqui é aprovação única (não em 2 etapas como o RDO), já que é um registro
+    simples de um valor, não um documento com múltiplas partes envolvidas."""
+    registro = db.session.get(RegistroHorimetro, registro_id) or abort(404)
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_gestor:
+        abort(403)
+    registro.status = "APROVADO"
+    registro.aprovado_em = datetime.utcnow()
+    if current_user.is_authenticated and isinstance(current_user, Colaborador):
+        registro.aprovado_por_colaborador_id = current_user.id
+    elif current_user.is_authenticated:
+        registro.aprovado_por_usuario_id = current_user.id
+    elif colab_atual:
+        registro.aprovado_por_colaborador_id = colab_atual.id
+    db.session.commit()
+    flash("Registro de horímetro aprovado.", "success")
+    return redirect(url_for("facilities.painel_horimetros"))
+
+
+@facilities_bp.route("/painel-horimetros/<int:registro_id>/excluir", methods=["POST"])
+@_ver_programacao_required
+def painel_horimetros_excluir(registro_id):
+    """[23/09] Exclui um registro de horímetro — só permitido enquanto PENDENTE (mesma regra
+    do RDO: precisa estar sem aprovação pra poder excluir)."""
+    registro = db.session.get(RegistroHorimetro, registro_id) or abort(404)
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_gestor:
+        abort(403)
+    if registro.status == "APROVADO":
+        flash("Este registro já está aprovado — não pode ser excluído.", "danger")
+        return redirect(url_for("facilities.painel_horimetros"))
+    db.session.delete(registro)
+    db.session.commit()
+    flash("Registro de horímetro excluído.", "success")
+    return redirect(url_for("facilities.painel_horimetros"))

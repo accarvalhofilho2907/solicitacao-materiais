@@ -4086,3 +4086,41 @@ Smoke test geral (8 telas) 200.
    trocar o tipo.
 
 === ATIVIDADE FIXA (conceito corrigido) + tooltip + layout: CONCLUIDOS E TESTADOS ===
+
+### ================== FOTOS NO PDF (INVESTIGACAO FINAL) + PAINEL DE HORIMETROS COMPLETO (23/09) ==================
+
+1) FOTOS NO PDF DO RDO — NOVO PRINT confirma o MESMO padrao do primeiro print (URL comeca com
+   /uploads/..., nao https://res.cloudinary.com/...). Isso fecha a investigacao: NAO E' BUG DE
+   LOGICA (ja testado e confirmado 2x que a associacao/exibicao funciona perfeitamente quando o
+   download da imagem funciona) — E' A CONFIGURACAO REAL DO CLOUDINARY EM PRODUCAO que nunca foi
+   corrigida (o log de setup ja mencionava que Antonio colou o valor de exemplo <your_api_key> no
+   Render em vez da URL real). Toda foto SEMPRE cai no disco local (volatil) porque o Cloudinary
+   nunca chegou a funcionar de verdade.
+   NOVA ROTA DE DIAGNOSTICO DEFINITIVA: /facilities/diagnostico-cloudinary (so Admin/Master) — nao
+   so' verifica se a variavel existe, faz um UPLOAD DE TESTE REAL (sobe um pixel minusculo, confirma,
+   apaga em seguida) e diz exatamente: se CLOUDINARY_URL nao esta definida, ou se esta definida mas o
+   upload falhou (com o erro exato: credencial errada, conta suspensa, etc). ANTONIO PRECISA ACESSAR
+   ESSA ROTA (nao a de diagnostico de fotos do RDO, que so' confirma o sintoma) pra descobrir e
+   corrigir a causa raiz de uma vez. Testado localmente (sem CLOUDINARY_URL): reporta corretamente
+   "CLOUDINARY_URL não está definida".
+
+2) PAINEL DE HORIMETROS — 3 melhorias pedidas, todas implementadas:
+   - FILTRO POR MAQUINA: novo dropdown ao lado dos botoes de periodo (Todas / maquina especifica).
+     Combina com o filtro de periodo (mes/semana/trimestre/semestre). TESTADO: com 2 maquinas e um
+     registro de cada, filtrar por uma delas mostra so' aquela na TABELA (confirmado que "aparecer"
+     no <select> de opcoes disponiveis nao conta como falha do filtro — e' o dropdown listando as
+     opcoes, nao a tabela).
+   - FILTRO ESTILO EXCEL: mesmo mecanismo ja usado em Programacao e RDO (funil por coluna, checkbox
+     de valores, busca, ordenar) replicado na tabela do painel.
+   - APROVACAO + TRAVA DE EXCLUSAO: novo status (PENDENTE|APROVADO) em RegistroHorimetro, rotas
+     painel_horimetros_aprovar e painel_horimetros_excluir. Aprovacao e' de UMA ETAPA (Encarregado
+     OU Admin, nao as 2 como o RDO — e' um registro simples, nao um documento complexo). Exclusao SO
+     permitida enquanto PENDENTE. TESTADO: aprovar funciona; tentar excluir um registro APROVADO e'
+     bloqueado com a mensagem certa e o registro continua existindo; excluir um PENDENTE funciona
+     normalmente.
+
+Smoke test geral (5 telas) 200.
+
+=== PAINEL DE HORIMETROS: TODAS AS 3 MELHORIAS CONCLUIDAS E TESTADAS ===
+=== FOTOS NO PDF: CAUSA RAIZ IDENTIFICADA COM CERTEZA — DEPENDE DE ANTONIO CORRIGIR A CONFIGURACAO
+    REAL DO CLOUDINARY NO RENDER, USANDO A NOVA ROTA DE DIAGNOSTICO PRA CONFIRMAR ===

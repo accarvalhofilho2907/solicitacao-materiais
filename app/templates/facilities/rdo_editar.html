@@ -30,8 +30,7 @@
     <textarea name="mao_de_obra_texto" class="form-control mb-2" rows="3">{{ r.mao_de_obra_texto or '' }}</textarea>
     <label class="form-label small">Equipamentos usados no dia</label>
     <textarea name="equipamentos_texto" class="form-control mb-2" rows="2">{{ r.equipamentos_texto or '' }}</textarea>
-    <label class="form-label small">Observações</label>
-    <textarea name="observacoes" class="form-control mb-2" rows="2">{{ r.observacoes or '' }}</textarea>
+    <!-- [23/09 segunda leva] campo "Observações" removido da tela (pedido do Antonio). -->
   </div></div>
   <button class="btn btn-primary mt-3">Salvar edição</button>
   <a class="btn btn-outline-secondary mt-3" href="{{ url_for('facilities.rdo_preview', rdo_id=r.id) }}">Cancelar</a>

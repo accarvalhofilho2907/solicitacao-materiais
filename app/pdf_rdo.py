@@ -160,6 +160,26 @@ def _baixar_foto(url, max_lado=1400, quality=85):
         return None
 
 
+def _ausentes_do_dia_pdf(rdo):
+    """[23/09 segunda leva] Mesma lógica de app/facilities.py::_ausentes_do_dia, reimplementada
+    aqui pra não criar import circular (pdf_rdo é importado por facilities) — colaboradores das
+    atividades do RDO que estão de férias/ausência na data do RDO."""
+    from .models import AusenciaColaborador, Colaborador
+    from .extensions import db
+    colaboradores_ids = {ac.colaborador_id for grupo in rdo.atividades for ac in grupo.colaboradores}
+    if not colaboradores_ids:
+        return []
+    ausentes = []
+    for cid in colaboradores_ids:
+        aus = (AusenciaColaborador.query.filter_by(colaborador_id=cid)
+              .filter(AusenciaColaborador.data_inicio <= rdo.data, AusenciaColaborador.data_retorno > rdo.data)
+              .first())
+        if aus:
+            colab = db.session.get(Colaborador, cid)
+            ausentes.append({"nome": colab.nome if colab else "—", "motivo": aus.motivo})
+    return ausentes
+
+
 def gerar_pdf_rdo(rdo):
     """Gera o PDF do RDO. `rdo` é uma instância de RelatorioDiarioObra (já com .atividades
     resolvido). Retorna BytesIO pronto para enviar como resposta HTTP."""
@@ -186,6 +206,32 @@ def gerar_pdf_rdo(rdo):
     story.append(cab)
     story.append(Spacer(1, 10))
 
+    # [23/09 segunda leva] Mão de obra (Nome, Função, Horários) movida pro CABEÇALHO do PDF —
+    # antes ficava só na seção própria mais abaixo (entrega anterior); agora aparece logo no
+    # topo também, junto dos dados gerais, pedido do Antonio.
+    if rdo.mao_de_obra:
+        story.append(_faixa_secao(f"Mão de obra ({len(rdo.mao_de_obra)})"))
+        cab_mo = ["Nome", "Função", "Entrada", "Saída"]
+        linhas_mo_cab = [cab_mo] + [[m.nome, m.funcao or "—", m.horario_entrada or "—", m.horario_saida or "—"]
+                                    for m in rdo.mao_de_obra]
+        t_mo_cab = Table(linhas_mo_cab, colWidths=[70 * mm, 60 * mm, 24 * mm, 24 * mm])
+        t_mo_cab.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), AREIA), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA), ("LINEBELOW", (0, 0), (-1, -2), 0.4, AREIA_ESCURA),
+            ("TEXTCOLOR", (0, 1), (-1, -1), GRAFITE),
+        ]))
+        story.append(t_mo_cab)
+        story.append(Spacer(1, 8))
+    elif rdo.mao_de_obra_texto:   # [legado] RDOs antigos sem RDOMaoDeObra
+        story.append(_faixa_secao("Mão de obra presente"))
+        t_mo_cab = Table([[Paragraph(rdo.mao_de_obra_texto.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
+        t_mo_cab.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
+        story.append(t_mo_cab)
+        story.append(Spacer(1, 8))
+
     # ---- Dados gerais ----
     # [23/09 reformulacao RDO] Removidos do PDF: Obra, Contratante, Responsável, Prazo
     # contratual/decorrido/a vencer (nunca existiram nesta versão do RDO — o modelo de
@@ -198,37 +244,28 @@ def gerar_pdf_rdo(rdo):
     if rdo.horario_intervalo_inicio and rdo.horario_intervalo_fim:
         horario_txt += f" (intervalo {rdo.horario_intervalo_inicio}-{rdo.horario_intervalo_fim})"
     story.append(_faixa_secao("Dados gerais"))
+    # [23/09 segunda leva] "% média executada" removida do PDF (pedido do Antonio) — o campo/
+    # cálculo (percentual_medio / _calcular_media_ponderada_dia) continua existindo no banco.
     story.append(_grade([
-        [_campo("Data", rdo.data.strftime("%d/%m/%Y")), _campo("Planta", rdo.planta.nome if rdo.planta else "—"),
-         _campo("% média executada no dia", f"{rdo.percentual_medio}%" if rdo.percentual_medio is not None else "—")],
+        [_campo("Data", rdo.data.strftime("%d/%m/%Y")), _campo("Planta", rdo.planta.nome if rdo.planta else "—")],
         [_campo("Clima — Manhã", clima_manha), _campo("Clima — Tarde", clima_tarde),
          _campo("Horário de trabalho", horario_txt)],
     ]))
     story.append(Spacer(1, 8))
 
-    # ---- Mão de obra (só PESSOAS — RDOMaoDeObra; sem misturar maquinário) ----
-    if rdo.mao_de_obra:
-        story.append(_faixa_secao(f"Mão de obra ({len(rdo.mao_de_obra)})"))
-        cab = ["Nome", "Função", "Entrada", "Saída"]
-        linhas_mo = [cab] + [[m.nome, m.funcao or "—", m.horario_entrada or "—", m.horario_saida or "—"]
-                             for m in rdo.mao_de_obra]
-        t = Table(linhas_mo, colWidths=[70 * mm, 60 * mm, 24 * mm, 24 * mm])
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), AREIA), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8.5), ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA), ("LINEBELOW", (0, 0), (-1, -2), 0.4, AREIA_ESCURA),
-            ("TEXTCOLOR", (0, 1), (-1, -1), GRAFITE),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 8))
-    elif rdo.mao_de_obra_texto:   # [legado] RDOs antigos sem RDOMaoDeObra
-        story.append(_faixa_secao("Mão de obra presente"))
-        t = Table([[Paragraph(rdo.mao_de_obra_texto.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
-        t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    # [23/09 segunda leva] ausentes/férias do dia — item 4 do pedido
+    ausentes = _ausentes_do_dia_pdf(rdo)
+    if ausentes:
+        story.append(_faixa_secao("Colaboradores ausentes"))
+        texto_ausentes = ", ".join(f"{a['nome']} ({a['motivo']})" for a in ausentes)
+        t_aus = Table([[Paragraph(texto_ausentes, _OBS)]], colWidths=[178 * mm])
+        t_aus.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                                ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
-        story.append(t)
+        story.append(t_aus)
         story.append(Spacer(1, 8))
+
+    # [23/09 segunda leva] mão de obra já foi exibida no CABEÇALHO (ver acima) — não repete
+    # aqui embaixo pra não duplicar a mesma tabela duas vezes no PDF.
 
     # ---- Equipamentos (caixa SEPARADA da mão de obra — RDOEquipamento) ----
     if rdo.equipamentos:
@@ -268,13 +305,8 @@ def gerar_pdf_rdo(rdo):
         story.append(t)
         story.append(Spacer(1, 8))
 
-    if rdo.observacoes:
-        story.append(_faixa_secao("Observações gerais"))
-        t = Table([[Paragraph(rdo.observacoes.replace("\n", "<br/>"), _OBS)]], colWidths=[178 * mm])
-        t.setStyle(TableStyle([("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("BOX", (0, 0), (-1, -1), 0.6, AREIA_ESCURA)]))
-        story.append(t)
-        story.append(Spacer(1, 8))
+    # [23/09 segunda leva] campo "Observações" removido do PDF — Ocorrências e Comentários
+    # cobrem o mesmo papel (RelatorioDiarioObra.observacoes continua no banco, sem uso aqui).
 
     # ---- Maquinário Pesado (22/09) — só os NOMES das máquinas usadas neste dia, conforme
     # pedido explícito do Antonio ("somente virá o nome da máquina mesmo") ----

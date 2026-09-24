@@ -43,6 +43,7 @@
   <div><h4 class="mb-0">Programação de atividades</h4><p class="text-muted small mb-0">Clique num dia para filtrar; clique em vários para acumular</p></div>
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" id="btnResumo" href="#">📄 Resumo diário</a>
+    <a class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalAusencia" href="#">🏖 Ausência/Férias</a>
     <a class="btn btn-sm btn-primary" href="{{ url_for('facilities.programacao_nova') }}">＋ Nova atividade</a>
   </div>
 </div>
@@ -58,6 +59,13 @@
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao', semana=offset_semanas-1, datas=datas_sel) }}">‹ Semana anterior</a>
     <span class="text-muted small flex-grow-1 text-center">{{ inicio_janela.strftime('%d/%m') }} a {{ fim_janela.strftime('%d/%m/%Y') }}</span>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao', semana=offset_semanas+1, datas=datas_sel) }}">Semana seguinte ›</a>
+    <!-- [23/09 segunda leva] select de semanas — complementa Avançar/Voltar, pula direto -->
+    <select class="form-select form-select-sm" style="max-width:220px" onchange="if(this.value!=='') window.location='{{ url_for('facilities.programacao') }}?semana=' + this.value">
+      <option value="">Ir para semana...</option>
+      {% for op in opcoes_semanas %}
+      <option value="{{ op.offset }}" {{ 'selected' if op.offset == offset_semanas }}>{{ op.label }}</option>
+      {% endfor %}
+    </select>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.programacao') }}">Limpar</a>
   </div>
   <div id="calGrid" class="d-flex gap-2 flex-wrap"></div>
@@ -300,5 +308,59 @@ document.getElementById('btnResumo').href = "{{ url_for('facilities.resumo_diari
 
   document.addEventListener('click', function(){ fecharTodosDropdowns(); });
 })();
+</script>
+
+<!-- [23/09 segunda leva] modal "Ausência/Férias" — faltava a TELA de cadastro (o modelo
+     AusenciaColaborador já existia, só era lido pra exibir no Resumo Diário). -->
+<div class="modal fade" id="modalAusencia" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="{{ url_for('facilities.ausencia_nova') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-header"><h5 class="modal-title">Ausência / Férias</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small">Empresa *</label>
+          <select id="selEmpresaAusencia" class="form-select" required>
+            <option value="">—</option>
+            {% for e in empresas_disp %}<option value="{{ e.id }}">{{ e.nome_fantasia or e.razao_social }}</option>{% endfor %}
+          </select></div>
+        <div class="mb-2"><label class="form-label small">Colaborador *</label>
+          <select name="colaborador_id" id="selColaboradorAusencia" class="form-select" required disabled>
+            <option value="">— escolha a empresa —</option>
+          </select></div>
+        <div class="row g-2 mb-2">
+          <div class="col-md-6"><label class="form-label small">Dia de saída *</label>
+            <input type="date" name="data_saida" class="form-control" required></div>
+          <div class="col-md-6"><label class="form-label small">Dia de retorno *</label>
+            <input type="date" name="data_retorno" class="form-control" required></div>
+        </div>
+        <div class="mb-2"><label class="form-label small">Motivo (opcional)</label>
+          <input type="text" name="motivo" class="form-control" placeholder="Férias/Ausência"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary">Registrar</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+<script>
+document.getElementById('selEmpresaAusencia').addEventListener('change', function(){
+  var fornecedorId = this.value;
+  var selColab = document.getElementById('selColaboradorAusencia');
+  selColab.innerHTML = '';
+  if (!fornecedorId) {
+    selColab.disabled = true;
+    selColab.innerHTML = '<option value="">— escolha a empresa —</option>';
+    return;
+  }
+  selColab.disabled = false;
+  selColab.innerHTML = '<option value="">Carregando...</option>';
+  fetch("{{ url_for('facilities.colaboradores_por_empresa', fornecedor_id=0) }}".replace('0', fornecedorId))
+    .then(r => r.json()).then(function(d){
+      selColab.innerHTML = '<option value="">—</option>' +
+        d.colaboradores.map(function(c){ return '<option value="' + c.id + '">' + c.nome + '</option>'; }).join('');
+    });
+});
 </script>
 {% endblock %}

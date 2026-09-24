@@ -1587,6 +1587,11 @@ class AtividadeGrupo(db.Model):
     maquina_horimetro_id = db.Column(db.ForeignKey("sf_maquinario_pesado_terceiro.id"))  # [22/09] se preenchido, ativa o fluxo de 2 reports/dia com horímetro
     encerrada = db.Column(db.Boolean, default=False)   # [23/09] só relevante pra FIXA — para a geração automática de novos dias
     encerrada_em = db.Column(db.DateTime)
+    # [23/09 segunda leva] "Atividade finalizada 100%" — só pra atividade LOCAL (tipo == NORMAL,
+    # ver preencher_dia). Ao marcar: exclui os AtividadeDia futuros ainda não aprovados e grava
+    # a justificativa automática "Atividade já foi entregue" no justificativa_queda do último dia.
+    finalizada_antecipadamente = db.Column(db.Boolean, default=False)
+    finalizada_em = db.Column(db.DateTime)
     # [fix CRÍTICO 23/09] criado_por era uma FK ÚNICA pra usuarios.id — quebrava sempre que
     # quem cria a atividade é um Colaborador (Encarregado logado normalmente, não via QR),
     # cujo ID não existe na tabela de usuários. Mesmo padrão de bug já corrigido em
@@ -1686,6 +1691,11 @@ class AtividadeDia(db.Model):
     retificado = db.Column(db.Boolean, default=False)
     gerado_por_crescimento = db.Column(db.Boolean, default=False)  # [19/09] esta linha nasceu de um report que precisou de mais dias
     aviso_conflito_agenda = db.Column(db.Text)  # [fix 22/09] antes só aparecia 1x pro colaborador; agora fica salvo e visível pro Encarregado na aprovação
+    # [23/09 segunda leva] marcado pelo botão "Atividade não executada" (só atividade LOCAL,
+    # ver preencher_dia) — força o Encarregado a Reprogramar ou Cancelar em vez de aprovar
+    # normalmente (decisão de implementação: campo novo, não pedido explicitamente no roadmap
+    # mas necessário pra distinguir esse fluxo do preenchimento normal na tela de aprovação).
+    nao_executada = db.Column(db.Boolean, default=False)
 
     preenchimentos = db.relationship("RegistroPreenchimento", backref="dia",
                                      order_by="RegistroPreenchimento.criado_em",

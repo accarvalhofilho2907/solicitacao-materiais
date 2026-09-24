@@ -44,8 +44,17 @@
     <div class="col-md-3"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
     <div class="col-md-3"><label class="form-label small text-muted">Clima — Manhã / Tarde</label><p class="mb-0">{{ r.clima_manha or r.condicao_climatica or '—' }} / {{ r.clima_tarde or r.condicao_climatica or '—' }}</p></div>
     <div class="col-md-3"><label class="form-label small text-muted">Horário</label><p class="mb-0">{{ r.horario_inicio or '—' }} às {{ r.horario_termino or '—' }}{% if r.horario_intervalo_inicio %} (intervalo {{ r.horario_intervalo_inicio }}-{{ r.horario_intervalo_fim }}){% endif %}</p></div>
-    <div class="col-md-3"><label class="form-label small text-muted">% média executada</label><p class="mb-0">{{ r.percentual_medio if r.percentual_medio is not none else '—' }}{% if r.percentual_medio is not none %}%{% endif %}</p></div>
+    <!-- [23/09 segunda leva] "% média executada" removida da tela (pedido do Antonio) — o
+         campo/cálculo (percentual_medio / _calcular_media_ponderada_dia) continua existindo
+         no banco/código, só não é mais exibido aqui. -->
   </div>
+
+  {% if ausentes_do_dia %}
+  <div class="alert alert-secondary small py-2 mb-2">
+    <b>Colaboradores ausentes:</b>
+    {% for a in ausentes_do_dia %}{{ a.nome }} ({{ a.motivo }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </div>
+  {% endif %}
 
   {% if r.mao_de_obra %}
   <p class="small mb-1"><b>Mão de obra ({{ r.mao_de_obra|length }}):</b></p>
@@ -63,7 +72,8 @@
 
   {% if r.ocorrencias %}<p class="small"><b>Ocorrências:</b> {{ r.ocorrencias }}</p>{% endif %}
   {% if r.comentarios %}<p class="small"><b>Comentários:</b> {{ r.comentarios }}</p>{% endif %}
-  {% if r.observacoes %}<p class="small"><b>Observações:</b> {{ r.observacoes }}</p>{% endif %}
+  <!-- [23/09 segunda leva] campo "Observações" removido da tela — Ocorrências e Comentários
+       cobrem o mesmo papel (o campo RelatorioDiarioObra.observacoes continua no banco). -->
 </div></div>
 
 <div class="card mt-3"><div class="card-body">

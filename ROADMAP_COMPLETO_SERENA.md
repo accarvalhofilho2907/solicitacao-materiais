@@ -4558,3 +4558,229 @@ TESTES: venv novo criado (`python3 -m venv .venv && pip install -r requirements.
 (reproduz o schema de producao via `_light_migrate`), scripts de teste com `app.test_client()`
 simulando login como Usuario (`session["_user_id"]="U:<id>"`) e como Colaborador
 (`session["_user_id"]="C:<id>"`, papel="admin" como proxy de "Encarregado com perm_total").
+
+### ================== SOLICITACAO REGISTRADA: SEGUNDA LEVA DE AJUSTES NO RDO/FACILITIES (23/09) ==================
+NADA FOI IMPLEMENTADO — registrado conforme a regra fixa do projeto. Pedido do Antonio, en bloco,
+logo apos a entrega da reformulacao grande do RDO (entrada anterior). Varios pontos aqui SUPERPOEM
+ou CORRIGEM decisoes da entrega anterior (ex.: mao de obra/equipamentos deixam de ser manuais e
+passam a ser automaticos) — tratar como a versao mais recente da verdade quando implementar.
+
+## 1) GERACAO DO RDO — automatizar mao de obra e maquinario, simplificar campos, filtro de empresa
+- MAO DE OBRA AUTOMATICA: remover o preenchimento manual (RDOMaoDeObra por linhas digitadas/
+  combobox, implementado na entrega anterior) — buscar automaticamente as PESSOAS das
+  AtividadeColaborador das AtividadeGrupo com atividade programada naquele dia (mesma planta, e
+  filtradas pela EMPRESA selecionada, ver proximo item). Funcao de cada um vem do cadastro
+  (Colaborador.cargo/funcao), nao mais digitada no form do RDO.
+- MAQUINARIO AUTOMATICO: hoje (bug) os equipamentos as vezes nao aparecem — corrigir puxando
+  AUTOMATICAMENTE os equipamentos/maquinas ligados as atividades do dia (RDOEquipamento manual +
+  pre-preenchimento do RDO anterior, da entrega anterior, deixam de ser o mecanismo principal;
+  equipamentos vem das atividades do dia, nao mais de selecao manual/copia do RDO anterior).
+- SIMPLIFICACAO: remover o campo "OBSERVACOES" (RelatorioDiarioObra.observacoes) da tela e do PDF —
+  manter so' Ocorrencias e Comentarios (adicionados na entrega anterior), que cobrem o mesmo papel.
+- FILTRO POR EMPRESA: novo campo <select> no formulario do RDO pra o Encarregado escolher
+  EXPLICITAMENTE a empresa (Fornecedor) daquele RDO — a mao de obra/maquinario automaticos (itens
+  acima) sao filtrados por essa empresa escolhida, nao por todas as empresas do dia.
+
+## 2) TELA E PDF DO RDO VIRTUAL
+- Remover o campo "% MEDIA EXECUTADA" (RelatorioDiarioObra.percentual_medio /
+  `_calcular_media_ponderada_dia`) tanto da tela (rdo_preview.html) quanto do PDF — sumir da
+  interface por completo, nao so' esconder visualmente.
+- Cabecalho do PDF: exibir a lista de colaboradores (Nome, Funcao, Horarios) no CABECALHO do PDF
+  (hoje a tabela de mao de obra fica numa secao propria mais abaixo, conforme a entrega anterior —
+  mover/duplicar pro cabecalho, a definir no detalhe de layout na hora de implementar).
+
+## 3) PREENCHER ATIVIDADE — botoes novos
+- "ATIVIDADE NAO EXECUTADA": disponivel so' pra atividades "LOCAIS" (**AMBIGUIDADE A CONFIRMAR COM
+  ANTONIO** — ver perguntas abaixo, nao ha' hoje no sistema um campo que distinga atividade "local"
+  de outro tipo; hipotese mais provavel: atividade SEM maquinario/horimetro vinculado, ou seja,
+  `not AtividadeGrupo.tem_horimetro`). Ao clicar, EXIGE aprovacao do Encarregado mesmo sem
+  execucao naquele dia. O Encarregado e' OBRIGADO a escolher uma de duas acoes: Reprogramar pra
+  outro dia (reaproveita `reprogramar_dia` ja existente) OU Cancelar com motivo (reaproveita o
+  campo `AtividadeGrupo.motivo_cancelamento` ja usado em Programacao de Atividades — motivo fica
+  visivel pra todos).
+- "ATIVIDADE FINALIZADA 100%": disponivel so' pra atividades LOCAIS (mesma ambiguidade acima). Ao
+  ativar: (a) encerra a atividade (precisa de um campo tipo `encerrada`/`finalizada`, similar ao ja
+  usado em FIXA, mas pra NORMAL — a definir o nome exato na implementacao); (b) EXCLUI
+  automaticamente os AtividadeDia FUTUROS ja programados daquele grupo (dias com `data` posterior a
+  hoje e `status` ainda nao aprovado); (c) grava a justificativa automatica "Atividade ja foi
+  entregue" (em qual campo exatamente — `justificativa_queda` do ultimo dia, ou um campo novo — a
+  definir, ver pergunta abaixo).
+
+## 4) PROGRAMACAO DE ATIVIDADE
+- Botao "AUSENCIA/FERIAS": abre formulario/modal com campos OBRIGATORIOS: Empresa, Colaborador, Dia
+  de Saida, Dia de Retorno — grava em `AusenciaColaborador` (modelo JA EXISTE, usado hoje so' pra
+  EXIBIR ausentes no Resumo Diario "inicio" — falta a TELA de cadastro/criacao). Colaboradores
+  ausentes devem aparecer tanto no RESUMO DIARIO DE INICIO quanto no DE FIM (hoje conferir se ja'
+  aparece nos dois ou so' num — registrar como parte do trabalho garantir os dois) E TAMBEM no RDO.
+- NAVEGACAO POR SEMANAS: substituir/complementar os botoes Avancar/Voltar da tela de Programacao por
+  um <select> de semanas (escolher diretamente a semana desejada).
+
+## 5) RESUMO DIARIO
+- ORDEM DOS FILTROS: mudar de Tipo -> Dia -> Empresa (ordem atual, conferida no template
+  `resumo_diario.html`) para Data -> Tipo -> Empresa (so' reordenar os campos no formulario).
+- VALIDACAO DE DATA PRO "FIM DO DIA": JA IMPLEMENTADO (conferido no codigo — `fim_liberado =
+  data_d < hoje_brasil or (data_d == hoje_brasil and agora.hour >= 14)` em `resumo_diario()`) — ou
+  seja, qualquer data anterior a hoje ja' libera o Fim do Dia imediatamente, sem esperar as 14h.
+  NADA A FAZER aqui alem de confirmar com o Antonio que o comportamento ja' atende o pedido.
+
+## 6) APROVACAO DE ATIVIDADES
+- Mover o campo "% executada NESTE DIA" pra fora do collapse "Retificar" — CONFERIDO NO TEMPLATE: o
+  campo ja' esta' fora do Retificar, dentro do collapse "Aprovar como está" (outro botao). O pedido
+  do Antonio parece ser deixá-lo SEMPRE VISIVEL na tela principal (sem precisar clicar em nenhum
+  botao pra abrir o collapse antes de ver/preencher o campo) — a confirmar.
+- NOVA TRAVA DE SEGURANCA: se o colaborador reportou `dias_restantes == 0` (indicando que nao havera'
+  mais dias pra essa atividade) MAS a atividade NAO foi marcada como "Finalizada 100%" (novo campo do
+  item 3) E o Encarregado tenta aprovar com `percentual_dia < 100`, BLOQUEAR a aprovacao com a
+  mensagem: "Nao tem como deixar a atividade sem finalizar toda, e' necessario indicar um dia pra
+  executar o restante." (ou seja, nesse caso o Encarregado e' forcado a usar "Reprogramar"/adicionar
+  mais dias em vez de aprovar como incompleta).
+
+## PERGUNTAS EM ABERTO (bloqueiam o inicio da implementacao com seguranca — perguntar ao Antonio
+antes de comecar, em vez de supor e ter que refazer):
+1. O que define uma atividade "LOCAL" (que ganha os botoes de "Nao executada"/"Finalizada 100%")?
+   Hipotese: atividade sem maquinario/horimetro vinculado (`not tem_horimetro`). Outra hipotese:
+   tem a ver com Planta/Predio (Edificacao) preenchidos vs. atividade "fora" de uma edificacao?
+2. Mao de obra/equipamento automaticos no RDO: confirma que a fonte e' SEMPRE "atividades
+   programadas naquele dia, na planta do RDO, filtradas pela empresa escolhida no novo dropdown"?
+   E os REGISTROS DE HORIMETRO (RegistroHorimetro, maquina pesada) tambem entram como
+   "maquinario" automatico do RDO, ou so' os equipamentos (EquipamentoTerceiro)?
+3. "% MEDIA EXECUTADA" removida da tela/PDF — o campo/calculo (`percentual_medio`,
+   `_calcular_media_ponderada_dia`) pode ser removido do BANCO/codigo tambem, ou so' parar de
+   EXIBIR (mantendo o calculo internamente, caso algum outro lugar dependa dele)?
+4. "Atividade finalizada 100%": em qual campo exatamente grava a justificativa automatica "Atividade
+   ja foi entregue"? E precisa de um campo novo tipo `encerrada`/`finalizada_antecipadamente` no
+   modelo `AtividadeGrupo`, similar ao que ja existe pra FIXA (`encerrada`/`encerrada_em`)?
+
+PROXIMO PASSO: aguardando as respostas das 4 perguntas acima e a ordem explicita pra comecar a
+implementar (regra fixa do projeto).
+
+### ================== RESPOSTAS DO ANTONIO AS 4 PERGUNTAS (23/09) — AINDA PENDENTE DE ORDEM ==================
+1. ATIVIDADE "LOCAL": e' o `AtividadeGrupo.tipo` escolhido pelo Encarregado NA CRIACAO da atividade
+   — ou seja, "LOCAL" = tipo NORMAL (como ja' existe hoje, so' que o Antonio chama esse tipo de
+   "Local" em vez de "Normal") e "FIXA" continua sendo FIXA. NAO e' um campo novo, NAO tem relacao
+   com horimetro/maquinario — e' simplesmente `not grupo.eh_fixa` (ou `grupo.tipo == "NORMAL"`).
+   DECISAO: ao implementar, considerar trocar o ROTULO exibido na UI de "Normal" pra "Local" (nos
+   2 cards clicaveis da criacao de atividade e em qualquer lugar que hoje mostra "NORMAL"), mantendo
+   o valor interno do banco como esta' (nao vale a pena migrar o valor `tipo="NORMAL"` pra
+   `tipo="LOCAL"` no banco so' por causa do rotulo — decidir na hora, dando preferencia a so' mudar
+   o texto exibido).
+2. FONTE AUTOMATICA DE MAO DE OBRA/MAQUINARIO NO RDO: "atividades do dia" — os colaboradores vem de
+   `AtividadeColaborador` das `AtividadeGrupo` programadas pra aquele dia/planta (ja' indicados na
+   MONTAGEM da atividade, em Programacao — nao digitados de novo no RDO). Continua valendo o filtro
+   por EMPRESA (item 1 do pedido): dentre as atividades do dia, so' entram os colaboradores cuja
+   empresa bate com a selecionada no dropdown novo do RDO. Maquinario: mesma logica, atividades do
+   dia com `maquina_horimetro_id` preenchido (MaquinarioPesadoTerceiro) — reaproveitar/restaurar o
+   comportamento ja' descrito em uma entrega ANTERIOR (secao "MAQUINARIO PESADO" do RDO antigo, que
+   listava so' os NOMES das maquinas usadas no dia) — o "bug de nao aparecer" e' provavelmente uma
+   regressao causada pela reformulacao grande anterior (que trocou isso por selecao manual via
+   `RDOEquipamento`). `EquipamentoTerceiro` (equipamento generico, sem vinculo direto com atividade)
+   nao tem hoje nenhum campo que ligue ele a uma `AtividadeGrupo` especifica — SE o Antonio quiser
+   equipamento generico tambem automatico, precisaria antes vincular `EquipamentoTerceiro` a uma
+   atividade em algum lugar (nao pedido explicitamente aqui) — por ora, tratar "maquinario
+   automatico" como = maquinas com horimetro vinculadas as atividades do dia.
+3. "% MEDIA EXECUTADA": só' PARAR DE EXIBIR na tela (rdo_preview.html) e no PDF — o campo
+   `percentual_medio` e o calculo `_calcular_media_ponderada_dia` CONTINUAM existindo no
+   codigo/banco, sem uso visual.
+4. "ATIVIDADE FINALIZADA 100%": a justificativa e o controle ficam SOMENTE NA ATIVIDADE
+   (`AtividadeGrupo`), visiveis/editaveis a partir da tela de PROGRAMACAO DE ATIVIDADE — nao um
+   modelo/tela separados. DECISAO DE IMPLEMENTACAO (menor mudanca de schema possivel, a confirmar
+   se o Antonio quiser diferente quando for revisar o resultado): adicionar em `AtividadeGrupo` os
+   campos `finalizada_antecipadamente` (Boolean) e `finalizada_em` (DateTime), e gravar a
+   justificativa automatica "Atividade já foi entregue" no `justificativa_queda` do ULTIMO
+   `AtividadeDia` do grupo (mesmo campo ja' usado hoje pra justificativas de crescimento de prazo,
+   reaproveitando em vez de criar mais um campo de texto).
+
+PROXIMO PASSO: aguardando ordem explicita do Antonio ("pode rodar"/"implementar") pra comecar. As
+decisoes acima (rotulo Local/Normal, fonte automatica, campo `finalizada_antecipadamente`) serao
+implementadas assim salvo o Antonio corrigir algo ao ver o resultado.
+
+### ================== SEGUNDA LEVA DE AJUSTES NO RDO/FACILITIES — IMPLEMENTADA (23/09) ==================
+Implementados e testados (smoke test automatizado — SQLite local, login simulado como Usuario
+Admin/Master e como Colaborador) os 6 itens da segunda leva, seguindo a especificacao e as
+respostas do Antonio registradas nas duas entradas acima.
+
+1. RDO — mao de obra/maquinario automaticos: removido o form manual (RDOMaoDeObra digitado por
+   linha) do template `rdo.html` e da rota `rdo()` em `app/facilities.py`. Novo `<select name=
+   "fornecedor_id">` obrigatorio no form. Ao salvar, mao de obra vem de `AtividadeColaborador`
+   das `AtividadeDia` do dia/planta, filtrada por `Colaborador.empresa` == nome do Fornecedor
+   escolhido (funcao gravada em `RDOMaoDeObra.funcao` a partir de `Colaborador.cargo_exib`).
+   Maquinario: mesma fonte, `AtividadeGrupo.maquina_horimetro` das atividades do dia, gravado em
+   `RDOEquipamento.nome_livre` (so' o nome da maquina, restaurando o comportamento antigo que
+   tinha regredido). Endpoint `/facilities/rdo/atividades-do-dia` ganhou parametro `fornecedor_id`
+   pra mostrar um preview de quem/o que vai entrar antes de salvar. Campo "Observacoes" removido
+   do form de criacao, de `rdo_editar.html`/rota `rdo_editar`, e da tela `rdo_preview.html` (a
+   coluna `RelatorioDiarioObra.observacoes` continua no banco, sem uso na UI).
+   FIX ENCONTRADO NO CAMINHO: `Fornecedor.nome_fantasia/razao_social` sao normalizados pra
+   MAIUSCULAS pela rotina de migracao `_maiusculas_cadastros`, mas `Colaborador.empresa` (texto
+   livre) NAO passa por essa normalizacao — comparacao direta ia falhar quase sempre por causa da
+   caixa (bug pre-existente, o mesmo padrao ja' existia no filtro de empresa do Encarregado no
+   proprio `rdo()`). A comparacao nova (mao de obra/maquinario automaticos) ja nasce corrigida,
+   usando `.strip().upper()` dos dois lados — o filtro pre-existente do Encarregado NAO foi
+   mexido (fora do escopo pedido), mas fica registrado aqui como ponto de atencao futuro.
+2. Tela e PDF do RDO Virtual: "% MEDIA EXECUTADA" removida de `rdo_preview.html` e de
+   `app/pdf_rdo.py` (campo/calculo `percentual_medio`/`_calcular_media_ponderada_dia` continuam
+   no banco/codigo, sem uso visual). Mao de obra (Nome, Funcao, Horarios) movida pro CABECALHO do
+   PDF (logo apos o bloco grafite do topo, antes de "Dados gerais") — a tabela nao aparece mais
+   duplicada mais abaixo.
+3. Preencher Atividade — 2 botoes novos, so' pra atividade LOCAL (`not grupo.eh_fixa`; rotulo da
+   UI trocado de "Normal" pra "Local" no card de criacao em `programacao_nova.html`, valor no
+   banco continua "NORMAL"):
+   - "Atividade nao executada": marca `AtividadeDia.nao_executada=True` (campo novo, decisao de
+     implementacao — necessario pra distinguir esse fluxo do preenchimento normal na tela de
+     aprovacao) e status=AGUARDANDO_APROVACAO. Em `aprovacao.html`, quando `nao_executada`, o
+     Encarregado NAO ve mais o botao "Aprovar" — so' Reprogramar (rota `reprogramar_dia` ja'
+     existente) ou Cancelar (rota nova `dia_cancelar`, grava `AtividadeGrupo.motivo_cancelamento`,
+     visivel pra todos, mesmo campo ja' usado em Programacao de Atividades).
+   - "Atividade finalizada 100%": rota nova `preencher_finalizar_100` — marca
+     `AtividadeGrupo.finalizada_antecipadamente=True` + `finalizada_em`, EXCLUI os `AtividadeDia`
+     futuros (`data > hoje`, `status != APROVADA`) do grupo, e grava a justificativa automatica
+     "Atividade já foi entregue" no `justificativa_queda` do dia que esta' sendo finalizado.
+4. Programacao de Atividade: botao "🏖 Ausencia/Ferias" abre modal (`programacao.html`) com
+   Empresa (Fornecedor) + Colaborador (combo carregado via AJAX, reaproveitando o endpoint
+   `colaboradores_por_empresa` ja' existente) + Dia de saida + Dia de retorno, todos obrigatorios
+   — nova rota `ausencia_nova` grava em `AusenciaColaborador` (`motivo` default "Ferias/Ausencia"
+   se nao preenchido; `dias_uteis` calculado a partir do intervalo). Confirmado que ausentes ja'
+   apareciam no Resumo Diario tanto de INICIO quanto de FIM (o bloco que monta
+   `ausentes_da_empresa` em `resumo_diario()` roda fora do `if tipo == 'fim'`, nao precisou
+   replicar nada) — e agora aparecem tambem no RDO (preview e PDF), via novo helper
+   `_ausentes_do_dia`/`_ausentes_do_dia_pdf`. Navegacao por semanas: `<select>` novo em
+   `programacao.html` complementando os botoes Avancar/Voltar ja' existentes (usa o mesmo
+   parametro `?semana=N` que a rota `programacao()` ja' aceitava).
+5. Resumo Diario: filtros reordenados em `resumo_diario.html` de Tipo->Dia->Empresa pra
+   Data->Tipo->Empresa (so' reordenacao de campos, sem mudanca de logica). Validacao do "Fim do
+   dia" conferida — ja' estava correta, nada mexido.
+6. Aprovacao de Atividades: campo "% executada NESTE DIA" e o botao "Confirmar aprovacao" saíram
+   do `<div class="collapse" id="aprov...">` em `aprovacao.html` e ficam SEMPRE VISIVEIS no corpo
+   do card (Retificar/Reprogramar continuam em collapse, com botao). NOVA TRAVA em
+   `_validar_e_gravar_percentual_dia` (`app/facilities.py`): se `dias_restantes == 0` E
+   `AtividadeGrupo.finalizada_antecipadamente` for False E `percentual_dia < 100`, bloqueia com a
+   mensagem exata pedida ("Não tem como deixar a atividade sem finalizar toda, é necessário
+   indicar um dia para executar o restante.") — nada e' gravado nesse caso.
+
+MODELO: `AtividadeGrupo` ganhou `finalizada_antecipadamente` (Boolean) e `finalizada_em`
+(DateTime); `AtividadeDia` ganhou `nao_executada` (Boolean) — cobertos automaticamente pelo loop
+generico de `_light_migrate()` em `app/__init__.py` (nao precisou de entrada nova la').
+
+TESTADO (smoke test em `/tmp`, SQLite local, `db.create_all()` + banco novo): as ~7 URLs
+principais do modulo (programacao, programacao/nova, preencher, aprovacao, resumo-diario, rdo,
+painel-horimetros) respondem 200 logado como Usuario Master E como Colaborador; os 2 botoes
+novos aparecem em `preencher_dia.html` pra atividade Local pendente; a trava da aprovacao bloqueia
+percentual<100 com dias_restantes=0 sem finalizada_antecipadamente (mensagem exata confirmada) e
+libera depois de "Atividade finalizada 100%"; "Atividade nao executada" marca o dia e o card de
+aprovacao passa a exigir Reprogramar/Cancelar; RDO criado com filtro de empresa traz mao de obra e
+maquinario automaticos corretos (2 colaboradores da empresa X + 1 maquina); preview e PDF do RDO
+gerados sem erro, sem "% media" visivel e com aviso de ausentes; ordem dos filtros do Resumo
+Diario confirmada (Data antes de Tipo no HTML); cadastro de Ausencia/Ferias grava no banco.
+
+NAO TESTADO / PENDENTE:
+- Nao foi testado com Postgres (produção usa Neon) — só SQLite local, mas `_light_migrate()` já
+  cobre os dois dialetos pelo padrão existente no projeto.
+- O preview de mao de obra/maquinario automatico no MODAL de criacao do RDO (JS em `rdo.html`,
+  `previewMaoDeObraRDO`/`previewMaquinarioRDO`) foi revisado por leitura, mas não testado via
+  browser real (só a gravação via POST direto, que é o que importa pro resultado final).
+- Não foi migrado/testado em ambiente com dados de produção reais (nomes de empresa com grafias
+  inconsistentes entre Colaborador.empresa e Fornecedor podem não casar mesmo com o fix de
+  maiúsculas — vale conferir com o Antonio nas primeiras gerações de RDO reais).
+- A comparação de empresa pré-existente no próprio `rdo()` (trava "Encarregado só pode fazer RDO
+  das próprias empresas") NÃO foi corrigida para maiúsculas — mesma limitação de antes, fora do
+  escopo pedido nesta leva.

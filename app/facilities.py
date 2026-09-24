@@ -25,7 +25,7 @@ from .models import (ModeloChecklist, ItemChecklist, ProdutoAlmox, ExecucaoCheck
                      AtividadeGrupo, AtividadeColaborador, AtividadeDia, RegistroPreenchimento,
                      EncarregadoEmpresa, RelatorioDiarioObra, RDOMaoDeObra, RDOEquipamento,
                      EquipamentoTerceiro, MaquinarioPesadoTerceiro, RegistroHorimetro,
-                     HistoricoRetificacao,
+                     HistoricoRetificacao, AusenciaColaborador,
                      UNIDADES_DURACAO_DIAS_UTEIS, OPCOES_RECORRENCIA)
 
 facilities_bp = Blueprint("facilities", __name__, url_prefix="/facilities")
@@ -662,12 +662,24 @@ def programacao():
         titulos = [x.grupo.titulo for x in qc.all()]
         contagem[d.isoformat()] = titulos
 
+    # [23/09 segunda leva] <select> de semanas — complementa os botões Avançar/Voltar,
+    # permitindo pular direto pra uma semana específica sem clicar várias vezes. Janela de
+    # -12 a +12 semanas a partir de hoje (suficiente pra navegação normal do dia a dia).
+    semana_atual_inicio = hoje - timedelta(days=hoje.weekday())
+    opcoes_semanas = []
+    for off in range(-12, 13):
+        ini = semana_atual_inicio + timedelta(weeks=off)
+        fim = ini + timedelta(days=13)
+        opcoes_semanas.append({"offset": off, "label": f"{ini.strftime('%d/%m')} a {fim.strftime('%d/%m/%Y')}"})
+
+    empresas_disp = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all()
+
     return render_template("facilities/programacao.html", dias=dias,
                            datas_sel=[d.isoformat() for d in datas_sel],
                            offset_semanas=offset_semanas, inicio_janela=inicio_janela,
-                           fim_janela=fim_janela,
+                           fim_janela=fim_janela, opcoes_semanas=opcoes_semanas,
                            n_incompletas=n_incompletas, contagem_json=json.dumps(contagem),
-                           hoje=date.today())
+                           empresas_disp=empresas_disp, hoje=date.today())
 
 
 @facilities_bp.route("/programacao/nova", methods=["GET", "POST"])
@@ -1040,6 +1052,42 @@ def colaboradores_por_empresa(fornecedor_id):
     return jsonify(colaboradores=[{"id": c.id, "nome": c.nome} for c in itens])
 
 
+@facilities_bp.route("/programacao/ausencia", methods=["POST"])
+@_ver_required
+def ausencia_nova():
+    """[23/09 segunda leva] Cadastro de Ausência/Férias — faltava a TELA de criação (o modelo
+    AusenciaColaborador já existia e já era usado só pra EXIBIR ausentes no Resumo Diário).
+    Campos obrigatórios (pedido do Antonio): Empresa (só usada pra filtrar o colaborador no
+    form — não gravada aqui, já que AusenciaColaborador não tem esse campo), Colaborador,
+    Dia de saída, Dia de retorno. dias_uteis calculado a partir do intervalo (não pedido
+    explicitamente, mas o campo é NOT NULL no modelo)."""
+    colaborador_id = request.form.get("colaborador_id")
+    data_saida_str = request.form.get("data_saida")
+    data_retorno_str = request.form.get("data_retorno")
+    motivo = (request.form.get("motivo") or "").strip() or "Férias/Ausência"
+    if not colaborador_id or not data_saida_str or not data_retorno_str:
+        flash("Empresa, Colaborador, Dia de saída e Dia de retorno são obrigatórios.", "danger")
+        return redirect(request.referrer or url_for("facilities.programacao"))
+    try:
+        data_saida = datetime.strptime(data_saida_str, "%Y-%m-%d").date()
+        data_retorno = datetime.strptime(data_retorno_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Data inválida.", "danger")
+        return redirect(request.referrer or url_for("facilities.programacao"))
+    if data_retorno <= data_saida:
+        flash("O dia de retorno deve ser depois do dia de saída.", "danger")
+        return redirect(request.referrer or url_for("facilities.programacao"))
+    dias_uteis = sum(1 for i in range((data_retorno - data_saida).days) if _dia_util(data_saida + timedelta(days=i)))
+    aus = AusenciaColaborador(colaborador_id=int(colaborador_id), motivo=motivo,
+                              data_inicio=data_saida, dias_uteis=dias_uteis or 1,
+                              data_retorno=data_retorno)
+    _marcar_autor(aus, "criado_por")
+    db.session.add(aus)
+    db.session.commit()
+    flash("Ausência/férias registrada.", "success")
+    return redirect(request.referrer or url_for("facilities.programacao"))
+
+
 # ============================================================================
 # PREENCHIMENTO (colaborador) — fluxo obrigatório: escolher HOJE ou OUTRO DIA primeiro
 # ============================================================================
@@ -1239,6 +1287,82 @@ def preencher_dia(data_str):
                            compartilhar_id=request.args.get("compartilhar"))
 
 
+def _pode_marcar_dia(dia, colab_id, ids_visiveis):
+    """[23/09 segunda leva] mesma checagem de permissão usada no POST normal de preencher_dia
+    — reaproveitada pelos 2 botões novos (não executada / finalizada 100%)."""
+    eh_participante = colab_id and any(ac.colaborador_id in ids_visiveis for ac in dia.grupo.colaboradores)
+    eh_gestor = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))
+    return eh_participante or eh_gestor
+
+
+@facilities_bp.route("/preencher/<data_str>/nao-executada", methods=["POST"])
+@_logado_required
+def preencher_nao_executada(data_str):
+    """[23/09 segunda leva] Botão "Atividade não executada" — só pra atividade LOCAL (tipo
+    NORMAL, ver AtividadeGrupo.eh_fixa). Marca o dia como precisando de aprovação MESMO sem
+    execução — o Encarregado é OBRIGADO a Reprogramar ou Cancelar (não pode simplesmente
+    aprovar como se tivesse sido executada), ver aprovacao.html/dia_cancelar."""
+    dia_id = request.form.get("dia_id")
+    dia = db.session.get(AtividadeDia, int(dia_id)) if dia_id else None
+    if not dia:
+        abort(404)
+    colab_id, usuario_id = _quem_preencheu()
+    ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
+    if not _pode_marcar_dia(dia, colab_id, ids_visiveis):
+        abort(403)
+    if dia.grupo.eh_fixa:
+        flash("Atividade fixa não usa esse botão.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+    dia.nao_executada = True
+    dia.descricao_execucao = dia.descricao_execucao or "(Não executada neste dia)"
+    dia.status = "AGUARDANDO_APROVACAO"
+    db.session.commit()
+    flash("Marcado como não executada — o Encarregado vai precisar reprogramar ou cancelar esta atividade.", "warning")
+    return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+
+@facilities_bp.route("/preencher/<data_str>/finalizar-100", methods=["POST"])
+@_logado_required
+def preencher_finalizar_100(data_str):
+    """[23/09 segunda leva] Botão "Atividade finalizada 100%" — só pra atividade LOCAL. Marca
+    AtividadeGrupo.finalizada_antecipadamente, exclui os AtividadeDia FUTUROS ainda não
+    aprovados do grupo, e grava a justificativa automática "Atividade já foi entregue" no
+    justificativa_queda deste dia (que passa a ser o último report do grupo)."""
+    dia_id = request.form.get("dia_id")
+    dia = db.session.get(AtividadeDia, int(dia_id)) if dia_id else None
+    if not dia:
+        abort(404)
+    colab_id, usuario_id = _quem_preencheu()
+    ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
+    if not _pode_marcar_dia(dia, colab_id, ids_visiveis):
+        abort(403)
+    grupo = dia.grupo
+    if grupo.eh_fixa:
+        flash("Atividade fixa não usa esse botão.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+    hoje = date.today()
+    futuros = AtividadeDia.query.filter(AtividadeDia.grupo_id == grupo.id,
+                                        AtividadeDia.data > hoje,
+                                        AtividadeDia.status != "APROVADA",
+                                        AtividadeDia.id != dia.id).all()
+    for f in futuros:
+        db.session.delete(f)
+
+    grupo.finalizada_antecipadamente = True
+    grupo.finalizada_em = datetime.utcnow()
+    dia.dias_restantes = 0
+    if not dia.descricao_execucao:
+        dia.descricao_execucao = "Atividade finalizada 100%."
+    dia.justificativa_queda = "Atividade já foi entregue"
+    dia.status = "AGUARDANDO_APROVACAO"
+    db.session.add(RegistroPreenchimento(dia_id=dia.id, colaborador_id=colab_id, usuario_id=usuario_id, percentual=100))
+    db.session.commit()
+    flash("Atividade marcada como finalizada 100% — aguardando aprovação do Encarregado de Campo.", "success")
+    return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+
 @facilities_bp.route("/preencher/<data_str>/horimetro", methods=["POST"])
 @_logado_required
 def preencher_horimetro(data_str):
@@ -1387,6 +1511,15 @@ def _validar_e_gravar_percentual_dia(dia, valor_atual_percentual=None):
         return "% do dia inválido — use só números."
     if percentual_novo < 0 or percentual_novo > 100:
         return "% do dia deve estar entre 0 e 100."
+    # [23/09 segunda leva] TRAVA DE SEGURANÇA: se o colaborador indicou dias_restantes == 0
+    # (não haverá mais dias pra essa atividade) mas ela NÃO foi marcada como "Finalizada 100%"
+    # (item 3 do pedido — AtividadeGrupo.finalizada_antecipadamente) e o Encarregado tenta
+    # aprovar com menos de 100%, bloqueia — força o Encarregado a reprogramar/adicionar mais
+    # dias em vez de deixar a atividade "presa" incompleta sem previsão de terminar.
+    if (dia.dias_restantes == 0 and not dia.grupo.finalizada_antecipadamente
+            and percentual_novo < 100):
+        return ("Não tem como deixar a atividade sem finalizar toda, é necessário indicar um "
+                "dia para executar o restante.")
     # soma os dias já aprovados do grupo, EXCETO este (se ele já estava aprovado antes, ex.:
     # retificação), pra não contar o valor antigo dele duas vezes.
     acumulado_outros = sum(
@@ -1404,6 +1537,9 @@ def _validar_e_gravar_percentual_dia(dia, valor_atual_percentual=None):
 @_ver_required
 def aprovar_dia(dia_id):
     dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    if dia.nao_executada:
+        flash("Atividade marcada como não executada — reprograme ou cancele em vez de aprovar.", "danger")
+        return redirect(url_for("facilities.aprovacao"))
     erro_percentual = _validar_e_gravar_percentual_dia(dia)
     if erro_percentual:
         flash(erro_percentual, "danger")
@@ -1489,6 +1625,25 @@ def retificar_dia(dia_id):
         flash("⚠️ Atenção: foto(s) salvas num armazenamento temporário (Cloudinary indisponível no momento) — "
               "podem se perder no próximo deploy.", "warning")
     flash("Retificado e aprovado.", "success")
+    return redirect(url_for("facilities.aprovacao"))
+
+
+@facilities_bp.route("/aprovacao/<int:dia_id>/cancelar", methods=["POST"])
+@_ver_required
+def dia_cancelar(dia_id):
+    """[23/09 segunda leva] Segunda opção obrigatória do fluxo "Atividade não executada": o
+    Encarregado cancela este dia com motivo (reaproveita AtividadeGrupo.motivo_cancelamento,
+    já usado em Programação de Atividades — motivo fica visível pra todos)."""
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    motivo = (request.form.get("motivo_cancelamento") or "").strip()
+    if not motivo:
+        flash("Informe o motivo do cancelamento.", "danger")
+        return redirect(url_for("facilities.aprovacao"))
+    dia.status = "CANCELADA"
+    dia.motivo_reprogramacao = f"[cancelado] {motivo}"
+    dia.grupo.motivo_cancelamento = motivo
+    db.session.commit()
+    flash("Dia cancelado.", "success")
     return redirect(url_for("facilities.aprovacao"))
 
 
@@ -1642,6 +1797,23 @@ def resumo_diario():
 # RELATÓRIO DIÁRIO DE OBRA (RDO)
 # ============================================================================
 
+def _ausentes_do_dia(r):
+    """[23/09 segunda leva] Colaboradores das atividades do RDO que estão de férias/ausência
+    na data do RDO — usado pra mostrar um aviso simples no preview/PDF (item 4 do pedido)."""
+    colaboradores_ids = {ac.colaborador_id for grupo in r.atividades for ac in grupo.colaboradores}
+    if not colaboradores_ids:
+        return []
+    ausentes = []
+    for cid in colaboradores_ids:
+        aus = (AusenciaColaborador.query.filter_by(colaborador_id=cid)
+              .filter(AusenciaColaborador.data_inicio <= r.data, AusenciaColaborador.data_retorno > r.data)
+              .first())
+        if aus:
+            colab = db.session.get(Colaborador, cid)
+            ausentes.append({"nome": colab.nome if colab else "—", "motivo": aus.motivo})
+    return ausentes
+
+
 @facilities_bp.route("/rdo/atividades-do-dia")
 @_rdo_required
 def rdo_atividades_do_dia():
@@ -1690,13 +1862,27 @@ def rdo_atividades_do_dia():
     # cada atividade no dia (uma atividade com meta 100% pesa mais que uma com meta 25%).
     media_ponderada = _calcular_media_ponderada_dia(dias)
 
-    # mão de obra pré-preenchida: todos os colaboradores distintos das atividades do dia
-    nomes_colab = sorted({ac.colaborador.nome for d in dias for ac in d.grupo.colaboradores if ac.colaborador})
-    mao_de_obra_sugerida = "\n".join(nomes_colab)
+    # [23/09 segunda leva] preview da mão de obra/maquinário AUTOMÁTICOS, filtrados pela
+    # empresa escolhida no novo <select> — só pra o Encarregado conferir antes de salvar (a
+    # gravação de verdade acontece no POST de rdo(), usando a mesma lógica).
+    fornecedor_id = request.args.get("fornecedor_id")
+    nomes_colab, nomes_maquinas = [], []
+    if fornecedor_id and fornecedor_id.isdigit():
+        empresa_sel = db.session.get(Fornecedor, int(fornecedor_id))
+        nome_empresa_sel = ((empresa_sel.nome_fantasia or empresa_sel.razao_social or empresa_sel.nome or "").strip().upper()
+                            if empresa_sel else None)
+        if nome_empresa_sel:
+            nomes_colab = sorted({ac.colaborador.nome for d in dias for ac in d.grupo.colaboradores
+                                  if ac.colaborador and (ac.colaborador.empresa or "").strip().upper() == nome_empresa_sel})
+        if empresa_sel:
+            nomes_maquinas = sorted({d.grupo.maquina_horimetro.nome for d in dias
+                                     if d.grupo.tem_horimetro and d.grupo.maquina_horimetro
+                                     and (not d.grupo.maquina_horimetro.fornecedor_padrao_id
+                                          or d.grupo.maquina_horimetro.fornecedor_padrao_id == empresa_sel.id)})
 
     return jsonify(atividades=itens, pode_gerar=(not bloqueia and bool(itens)),
                    motivo_bloqueio=motivo, media_ponderada=media_ponderada,
-                   mao_de_obra_sugerida=mao_de_obra_sugerida)
+                   mao_de_obra_sugerida=nomes_colab, maquinario_sugerido=nomes_maquinas)
 
 
 @facilities_bp.route("/rdo", methods=["GET", "POST"])
@@ -1714,10 +1900,23 @@ def rdo():
         data_str = request.form.get("data")
         planta_id = request.form.get("planta_id")
         clima = (request.form.get("condicao_climatica") or "").strip()
-        # [item novo] campos obrigatórios: data, planta, clima
-        if not data_str or not planta_id or not clima:
-            flash("Data, Planta e Condição climática são obrigatórios.", "danger")
+        fornecedor_id = request.form.get("fornecedor_id")
+        # [23/09 segunda leva] campo novo OBRIGATÓRIO: Empresa (Fornecedor) — direciona a busca
+        # automática de mão de obra/maquinário (ver mais abaixo).
+        if not data_str or not planta_id or not clima or not fornecedor_id:
+            flash("Data, Planta, Condição climática e Empresa são obrigatórios.", "danger")
             return redirect(url_for("facilities.rdo"))
+        empresa_sel = db.session.get(Fornecedor, int(fornecedor_id)) if fornecedor_id.isdigit() else None
+        if not empresa_sel:
+            flash("Empresa inválida.", "danger")
+            return redirect(url_for("facilities.rdo"))
+        # [fix 23/09 segunda leva] Fornecedor.nome_fantasia/razao_social são normalizados pra
+        # MAIÚSCULAS pela rotina de migração (_maiusculas_cadastros), mas Colaborador.empresa
+        # (texto livre digitado no cadastro do colaborador) NÃO passa por essa normalização —
+        # comparação direta (==) quase sempre falharia por causa da caixa. Compara em maiúsculas
+        # dos dois lados (mesmo "bug" pré-existente no filtro de empresas do Encarregado, linhas
+        # abaixo — aqui já nasce corrigido).
+        nome_empresa_sel = (empresa_sel.nome_fantasia or empresa_sel.razao_social or empresa_sel.nome or "").strip().upper()
         try:
             data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
         except ValueError:
@@ -1766,53 +1965,51 @@ def rdo():
             horario_intervalo_inicio=(request.form.get("horario_intervalo_inicio") or "12:00").strip(),
             horario_intervalo_fim=(request.form.get("horario_intervalo_fim") or "13:00").strip(),
             atividades_ids_json=json.dumps([d.grupo_id for d in dias_do_dia]),
-            percentual_medio=media, observacoes=(request.form.get("observacoes") or "").strip(),
+            percentual_medio=media,
             ocorrencias=(request.form.get("ocorrencias") or "").strip(),
             comentarios=(request.form.get("comentarios") or "").strip(),
             status="PENDENTE")
+        # [23/09 segunda leva] campo "Observações" removido do form — Ocorrências e Comentários
+        # cobrem o mesmo papel; a coluna observacoes continua existindo no banco, sem uso aqui.
         _marcar_autor(rdo_novo, "criado_por")
         db.session.add(rdo_novo)
         db.session.flush()  # [data] precisa do rdo_novo.id antes de gravar mão de obra/equipamentos
 
-        # [23/09 reformulacao RDO] mão de obra: uma linha por colaborador (RDOMaoDeObra), em
-        # vez do texto livre antigo — arrays paralelos vindos do form (add-row em JS no template).
-        colab_ids = request.form.getlist("mo_colaborador_id")
-        colab_livres = request.form.getlist("mo_nome_livre")
-        funcoes = request.form.getlist("mo_funcao")
-        entradas = request.form.getlist("mo_entrada")
-        saidas = request.form.getlist("mo_saida")
-        for i in range(len(funcoes)):
-            cid = colab_ids[i] if i < len(colab_ids) else ""
-            nome_livre = colab_livres[i] if i < len(colab_livres) else ""
-            funcao = funcoes[i] if i < len(funcoes) else ""
-            if not cid and not nome_livre and not funcao:
-                continue  # linha em branco (sobrou do template) — ignora
-            db.session.add(RDOMaoDeObra(
-                rdo_id=rdo_novo.id,
-                colaborador_id=int(cid) if cid else None,
-                nome_livre=(nome_livre or None) if not cid else None,
-                funcao=funcao or None,
-                horario_entrada=(entradas[i] if i < len(entradas) and entradas[i] else "07:00"),
-                horario_saida=(saidas[i] if i < len(saidas) and saidas[i] else "16:48")))
+        # [23/09 segunda leva] MÃO DE OBRA AUTOMÁTICA: em vez do preenchimento manual (linhas
+        # digitadas/combobox da entrega anterior), busca os colaboradores das AtividadeColaborador
+        # das atividades do dia/planta, filtrados pela EMPRESA escolhida acima — função vem do
+        # cadastro (Colaborador.cargo/funcao), não mais digitada no form do RDO.
+        colaboradores_vistos = set()
+        for d in dias_do_dia:
+            for ac in d.grupo.colaboradores:
+                colab = ac.colaborador
+                if not colab or colab.id in colaboradores_vistos:
+                    continue
+                if (colab.empresa or "").strip().upper() != nome_empresa_sel:
+                    continue
+                colaboradores_vistos.add(colab.id)
+                db.session.add(RDOMaoDeObra(
+                    rdo_id=rdo_novo.id, colaborador_id=colab.id,
+                    funcao=colab.cargo_exib if colab.cargo_exib != "—" else None,
+                    horario_entrada="07:00", horario_saida="16:48"))
 
-        # [23/09 reformulacao RDO] equipamentos: mesma lógica, RDOEquipamento em vez de texto livre.
-        equip_ids = request.form.getlist("eq_equipamento_id")
-        equip_livres = request.form.getlist("eq_nome_livre")
-        equip_qtds = request.form.getlist("eq_quantidade")
-        for i in range(len(equip_ids)):
-            eid = equip_ids[i]
-            nome_livre = equip_livres[i] if i < len(equip_livres) else ""
-            if not eid and not nome_livre:
+        # [23/09 segunda leva] MAQUINÁRIO AUTOMÁTICO: restaura o comportamento antigo (só os
+        # NOMES das máquinas usadas no dia, via AtividadeGrupo.maquina_horimetro) — regredido na
+        # reformulação anterior, que trocou isso por seleção manual via RDOEquipamento. Mesmo
+        # filtro de empresa: só entram máquinas cuja empresa PADRÃO bate com a selecionada (ou
+        # sem empresa padrão cadastrada — nesse caso não há como filtrar, então mostra mesmo assim).
+        maquinas_vistas = set()
+        for d in dias_do_dia:
+            grupo = d.grupo
+            if not grupo.tem_horimetro or not grupo.maquina_horimetro:
                 continue
-            try:
-                qtd = max(1, int(equip_qtds[i])) if i < len(equip_qtds) and equip_qtds[i] else 1
-            except ValueError:
-                qtd = 1
-            db.session.add(RDOEquipamento(
-                rdo_id=rdo_novo.id,
-                equipamento_id=int(eid) if eid else None,
-                nome_livre=(nome_livre or None) if not eid else None,
-                quantidade=qtd))
+            maquina = grupo.maquina_horimetro
+            if maquina.id in maquinas_vistas:
+                continue
+            if maquina.fornecedor_padrao_id and maquina.fornecedor_padrao_id != empresa_sel.id:
+                continue
+            maquinas_vistas.add(maquina.id)
+            db.session.add(RDOEquipamento(rdo_id=rdo_novo.id, nome_livre=maquina.nome, quantidade=1))
 
         db.session.commit()
         flash("RDO registrado — confira o preview antes de confirmar o envio para aprovação.", "success")
@@ -1828,13 +2025,14 @@ def rdo():
     eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
                 or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
 
-    # [23/09 reformulacao RDO] lista de colaboradores ativos pra alimentar o combobox de mão
-    # de obra do form de criação (item 4/11 — busca em vez de rolar lista longa).
-    colaboradores_disp = Colaborador.query.filter_by(ativo=True).order_by(Colaborador.nome).all()
+    # [23/09 segunda leva] mão de obra/maquinário agora são automáticos (ver POST acima) — o
+    # combobox de colaboradores do form manual não é mais necessário; fica só o select de
+    # empresas, que direciona a busca automática.
+    fornecedores_disp = Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome_fantasia).all()
 
     return render_template("facilities/rdo.html", itens=itens, plantas_disp=plantas_disp,
                            hoje=date.today(), eh_gestor=eh_gestor,
-                           colaboradores_disp=colaboradores_disp,
+                           fornecedores_disp=fornecedores_disp,
                            eh_admin=(current_user.is_authenticated and (getattr(current_user, "is_admin", False)
                                      or getattr(current_user, "is_master", False))))
 
@@ -2068,7 +2266,7 @@ def rdo_preview(rdo_id):
                 or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
     eh_admin = current_user.is_authenticated and (getattr(current_user, "is_admin", False) or getattr(current_user, "is_master", False))
     return render_template("facilities/rdo_preview.html", r=r, pode_editar=_pode_editar_rdo(r, colab_atual),
-                           eh_gestor=eh_gestor, eh_admin=eh_admin)
+                           eh_gestor=eh_gestor, eh_admin=eh_admin, ausentes_do_dia=_ausentes_do_dia(r))
 
 
 @facilities_bp.route("/atividade-dia/<int:dia_id>/historico")
@@ -2106,7 +2304,8 @@ def rdo_editar(rdo_id):
         r.horario_termino = (request.form.get("horario_termino") or r.horario_termino or "16:48").strip()
         r.mao_de_obra_texto = (request.form.get("mao_de_obra_texto") or "").strip()
         r.equipamentos_texto = (request.form.get("equipamentos_texto") or "").strip()
-        r.observacoes = (request.form.get("observacoes") or "").strip()
+        # [23/09 segunda leva] campo "Observações" removido da tela — não é mais gravado aqui
+        # (coluna observacoes continua existindo no banco, só sem uso na UI).
         db.session.commit()
         flash("RDO atualizado.", "success")
         return redirect(url_for("facilities.rdo_preview", rdo_id=rdo_id))

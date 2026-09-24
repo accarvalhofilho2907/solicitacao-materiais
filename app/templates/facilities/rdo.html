@@ -101,12 +101,19 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <div class="row g-2 mb-2">
-          <div class="col-md-6"><label class="form-label small">Data *</label>
+          <div class="col-md-4"><label class="form-label small">Data *</label>
             <input type="date" name="data" id="inpDataRDO" class="form-control" value="{{ hoje.strftime('%Y-%m-%d') }}" required></div>
-          <div class="col-md-6"><label class="form-label small">Planta *</label>
+          <div class="col-md-4"><label class="form-label small">Planta *</label>
             <select name="planta_id" id="selPlantaRDO" class="form-select" required>
               <option value="">—</option>
               {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+            </select></div>
+          <!-- [23/09 segunda leva] novo select de Empresa — direciona a busca automática de
+               mão de obra/maquinário (item 1 do pedido). -->
+          <div class="col-md-4"><label class="form-label small">Empresa *</label>
+            <select name="fornecedor_id" id="selEmpresaRDO" class="form-select" required>
+              <option value="">—</option>
+              {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
             </select></div>
         </div>
         <input type="hidden" name="condicao_climatica" id="inpCondicaoClimaticaCompat">
@@ -142,33 +149,24 @@
         <div id="avisoBloqueioRDO" class="alert alert-danger small py-2 d-none"></div>
         <div id="avisoMediaRDO" class="alert alert-secondary small py-2 d-none"></div>
 
-        <!-- [23/09 reformulacao RDO] Mão de obra: uma linha por PESSOA (RDOMaoDeObra) — combobox
-             pesquisável (datalist) pro colaborador, ou nome livre se não estiver cadastrado. -->
-        <datalist id="listaColaboradoresRDO">
-          {% for c in colaboradores_disp %}<option data-id="{{ c.id }}" value="{{ c.nome }}">{% endfor %}
-        </datalist>
-        <label class="form-label small mb-1">Mão de obra (pessoas)</label>
-        <table class="table table-sm" id="tabelaMaoDeObraRDO">
-          <thead><tr><th>Nome</th><th>Função</th><th style="width:100px">Entrada</th><th style="width:100px">Saída</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="addLinhaMaoDeObra()">+ Adicionar pessoa</button>
-
-        <!-- [23/09 reformulacao RDO] Equipamentos: select alimentado por EquipamentoTerceiro da
-             planta escolhida, pré-preenchido com os do RDO anterior da mesma planta. -->
-        <label class="form-label small mb-1">Equipamentos</label>
-        <table class="table table-sm" id="tabelaEquipamentosRDO">
-          <thead><tr><th>Equipamento</th><th style="width:100px">Quantidade</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="addLinhaEquipamento()">+ Adicionar equipamento</button>
+        <!-- [23/09 segunda leva] Mão de obra e maquinário deixam de ser preenchidos manualmente
+             — vêm AUTOMATICAMENTE das atividades programadas do dia/planta, filtrados pela
+             empresa escolhida acima (AtividadeColaborador / AtividadeGrupo.maquina_horimetro).
+             Aqui só mostramos um PREVIEW de quem/o que vai entrar; a gravação de fato acontece
+             no servidor ao salvar. -->
+        <div class="mb-2"><label class="form-label small mb-1">Mão de obra (automático, pela empresa escolhida)</label>
+          <div class="border rounded p-2 small text-muted" id="previewMaoDeObraRDO">Escolha data, planta e empresa.</div>
+        </div>
+        <div class="mb-3"><label class="form-label small mb-1">Maquinário (automático, pela empresa escolhida)</label>
+          <div class="border rounded p-2 small text-muted" id="previewMaquinarioRDO">Escolha data, planta e empresa.</div>
+        </div>
 
         <div class="mb-2"><label class="form-label small">Ocorrências</label>
           <textarea name="ocorrencias" class="form-control" rows="2"></textarea></div>
         <div class="mb-2"><label class="form-label small">Comentários</label>
           <textarea name="comentarios" class="form-control" rows="2"></textarea></div>
-        <div class="mb-2"><label class="form-label small">Observações</label>
-          <textarea name="observacoes" class="form-control" rows="2"></textarea></div>
+        <!-- [23/09 segunda leva] campo "Observações" removido do form — Ocorrências e
+             Comentários cobrem o mesmo papel (a coluna continua no banco, sem uso aqui). -->
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -182,11 +180,13 @@
 function carregarAtividadesRDO(){
   var data = document.getElementById('inpDataRDO').value;
   var planta = document.getElementById('selPlantaRDO').value;
+  var fornecedor = document.getElementById('selEmpresaRDO').value;
   var lista = document.getElementById('listaAtividadesRDO');
   var avisoBloqueio = document.getElementById('avisoBloqueioRDO');
   var avisoMedia = document.getElementById('avisoMediaRDO');
   var btnSalvar = document.getElementById('btnSalvarRDO');
-  var txtMaoDeObra = document.getElementById('txtMaoDeObra');
+  var previewMO = document.getElementById('previewMaoDeObraRDO');
+  var previewMaq = document.getElementById('previewMaquinarioRDO');
 
   if (!data) {
     lista.innerHTML = 'Escolha a data e a planta para carregar as atividades programadas.';
@@ -196,7 +196,7 @@ function carregarAtividadesRDO(){
     return;
   }
   lista.innerHTML = 'Carregando...';
-  var url = "{{ url_for('facilities.rdo_atividades_do_dia') }}?data=" + data + (planta ? "&planta_id=" + planta : "");
+  var url = "{{ url_for('facilities.rdo_atividades_do_dia') }}?data=" + data + (planta ? "&planta_id=" + planta : "") + (fornecedor ? "&fornecedor_id=" + fornecedor : "");
   fetch(url).then(r => r.json()).then(function(d){
     if (d.atividades.length === 0) {
       lista.innerHTML = '<span class="text-muted">' + (d.motivo_bloqueio || 'Nenhuma atividade neste dia.') + '</span>';
@@ -220,78 +220,27 @@ function carregarAtividadesRDO(){
     } else {
       avisoMedia.classList.add('d-none');
     }
+    // [23/09 segunda leva] preview de mão de obra/maquinário automáticos (filtrados por empresa)
+    if (!fornecedor) {
+      previewMO.textContent = 'Escolha a empresa para ver a mão de obra automática.';
+      previewMaq.textContent = 'Escolha a empresa para ver o maquinário automático.';
+    } else {
+      previewMO.textContent = (d.mao_de_obra_sugerida && d.mao_de_obra_sugerida.length)
+        ? d.mao_de_obra_sugerida.join(', ') : 'Nenhum colaborador dessa empresa nas atividades do dia.';
+      previewMaq.textContent = (d.maquinario_sugerido && d.maquinario_sugerido.length)
+        ? d.maquinario_sugerido.join(', ') : 'Nenhuma máquina dessa empresa nas atividades do dia.';
+    }
     btnSalvar.disabled = !d.pode_gerar;
   });
 }
 document.getElementById('inpDataRDO').addEventListener('change', carregarAtividadesRDO);
-document.getElementById('selPlantaRDO').addEventListener('change', function(){ carregarAtividadesRDO(); carregarDadosPlantaRDO(); });
-
-// [23/09 reformulacao RDO] linhas de mão de obra: nome (combobox via datalist) + função +
-// horário entrada/saída (padrão 07:00/16:48).
-function addLinhaMaoDeObra(nome, colaboradorId, funcao, entrada, saida){
-  var tbody = document.querySelector('#tabelaMaoDeObraRDO tbody');
-  var tr = document.createElement('tr');
-  tr.innerHTML =
-    '<td><input type="text" class="form-control form-control-sm" list="listaColaboradoresRDO" value="' + (nome || '') + '" oninput="atualizarColaboradorLinha(this)"><input type="hidden" class="mo-colab-id"></td>' +
-    '<td><input type="text" name="mo_funcao" class="form-control form-control-sm" value="' + (funcao || '') + '"></td>' +
-    '<td><input type="time" name="mo_entrada" class="form-control form-control-sm" value="' + (entrada || '07:00') + '"></td>' +
-    '<td><input type="time" name="mo_saida" class="form-control form-control-sm" value="' + (saida || '16:48') + '"></td>' +
-    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()">✕</button></td>';
-  tbody.appendChild(tr);
-  // campos "reais" enviados no submit (colaborador_id OU nome_livre) — resolvidos aqui pra
-  // não depender de índice de array coincidir entre colunas diferentes.
-  var hiddenColabId = tr.querySelector('.mo-colab-id');
-  hiddenColabId.name = 'mo_colaborador_id';
-  hiddenColabId.value = colaboradorId || '';
-  var inputNome = tr.querySelector('input[list]');
-  var hiddenNomeLivre = document.createElement('input');
-  hiddenNomeLivre.type = 'hidden'; hiddenNomeLivre.name = 'mo_nome_livre'; hiddenNomeLivre.value = colaboradorId ? '' : (nome || '');
-  tr.querySelector('td').appendChild(hiddenNomeLivre);
-  inputNome._hiddenNomeLivre = hiddenNomeLivre;
-}
-function atualizarColaboradorLinha(inputNome){
-  var tr = inputNome.closest('tr');
-  var opts = document.querySelectorAll('#listaColaboradoresRDO option');
-  var achou = null;
-  opts.forEach(function(o){ if (o.value === inputNome.value) achou = o.dataset.id; });
-  tr.querySelector('.mo-colab-id').value = achou || '';
-  if (inputNome._hiddenNomeLivre) inputNome._hiddenNomeLivre.value = achou ? '' : inputNome.value;
-}
-
-// [23/09 reformulacao RDO] linhas de equipamento: select (alimentado pela planta escolhida) +
-// quantidade. Se o equipamento não estiver na lista, permite digitar nome livre.
-var equipamentosDaPlantaAtual = [];
-function addLinhaEquipamento(equipamentoId, nome, quantidade){
-  var tbody = document.querySelector('#tabelaEquipamentosRDO tbody');
-  var tr = document.createElement('tr');
-  var opcoes = '<option value="">— selecione ou digite abaixo —</option>' +
-    equipamentosDaPlantaAtual.map(function(e){ return '<option value="' + e.id + '"' + (String(e.id) === String(equipamentoId) ? ' selected' : '') + '>' + e.nome + '</option>'; }).join('');
-  tr.innerHTML =
-    '<td>' +
-      '<select class="form-select form-select-sm mb-1" name="eq_equipamento_id" onchange="this.nextElementSibling.style.display = this.value ? \'none\' : \'\'">' + opcoes + '</select>' +
-      '<input type="text" name="eq_nome_livre" class="form-control form-control-sm" placeholder="ou nome livre" value="' + (equipamentoId ? '' : (nome || '')) + '" style="' + (equipamentoId ? 'display:none' : '') + '">' +
-    '</td>' +
-    '<td><input type="number" name="eq_quantidade" min="1" class="form-control form-control-sm" value="' + (quantidade || 1) + '"></td>' +
-    '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'tr\').remove()">✕</button></td>';
-  tbody.appendChild(tr);
-}
-function carregarDadosPlantaRDO(){
-  var planta = document.getElementById('selPlantaRDO').value;
-  document.querySelector('#tabelaEquipamentosRDO tbody').innerHTML = '';
-  if (!planta) { equipamentosDaPlantaAtual = []; return; }
-  fetch("{{ url_for('facilities.rdo_dados_planta') }}?planta_id=" + planta).then(r => r.json()).then(function(d){
-    equipamentosDaPlantaAtual = d.equipamentos || [];
-    (d.sugestoes || []).forEach(function(s){ addLinhaEquipamento(s.equipamento_id, s.nome, s.quantidade); });
-  });
-}
+document.getElementById('selPlantaRDO').addEventListener('change', carregarAtividadesRDO);
+document.getElementById('selEmpresaRDO').addEventListener('change', carregarAtividadesRDO);
 // mantém a coluna antiga (condicao_climatica) preenchida por compatibilidade — só um resumo,
 // sem exibir pro usuário, já que a coluna continua NOT NULL no banco.
 document.getElementById('formNovoRDO').addEventListener('submit', function(){
   var m = document.getElementById('selClimaManha').value, t = document.getElementById('selClimaTarde').value;
   document.getElementById('inpCondicaoClimaticaCompat').value = 'Manhã: ' + m + ' / Tarde: ' + t;
-});
-document.getElementById('modalNovoRDO').addEventListener('shown.bs.modal', function(){
-  if (!document.querySelector('#tabelaMaoDeObraRDO tbody').children.length) addLinhaMaoDeObra();
 });
 
 // [item novo] Filtro estilo Excel: cada coluna tem um funil que abre um dropdown com os

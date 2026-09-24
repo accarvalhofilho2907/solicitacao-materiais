@@ -42,26 +42,44 @@
   <p class="text-muted small mb-2">{{ fotos_do_dia|length }}/4 fotos anexadas até agora.</p>
   {% endif %}
 
+  {% if d.nao_executada %}
+  <!-- [23/09 segunda leva] "Atividade não executada" — o Encarregado NÃO pode simplesmente
+       aprovar; é OBRIGADO a Reprogramar ou Cancelar com motivo. -->
+  <div class="alert alert-danger small py-2">⚠️ Marcada como <b>NÃO EXECUTADA</b> neste dia — escolha Reprogramar ou Cancelar abaixo (não é possível aprovar como está).</div>
   <div class="d-flex gap-2 mt-2 flex-wrap">
-    <button class="btn btn-success btn-sm" data-bs-toggle="collapse" data-bs-target="#aprov{{ d.id }}">✓ Aprovar como está</button>
+    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#reprog{{ d.id }}">📅 Reprogramar</button>
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="collapse" data-bs-target="#cancel{{ d.id }}">✕ Cancelar</button>
+  </div>
+  <div class="collapse mt-2" id="cancel{{ d.id }}">
+    <form method="post" action="{{ url_for('facilities.dia_cancelar', dia_id=d.id) }}" class="border rounded p-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-label small">Motivo do cancelamento (obrigatório — fica visível pra todos)</label>
+      <textarea name="motivo_cancelamento" class="form-control form-control-sm mb-2" required></textarea>
+      <button class="btn btn-sm btn-danger">Confirmar cancelamento</button>
+    </form>
+  </div>
+  {% else %}
+  <!-- [23/09 segunda leva] "% executada NESTE DIA" e o botão de confirmar aprovação saem do
+       collapse e ficam SEMPRE VISÍVEIS no corpo do card — pedido do Antonio pra não precisar
+       clicar em nada antes de ver/preencher o campo. -->
+  <form method="post" action="{{ url_for('facilities.aprovar_dia', dia_id=d.id) }}" enctype="multipart/form-data" class="border rounded p-2 mt-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if not d.grupo.eh_fixa %}
+    <label class="form-label small">% executada NESTE DIA (obrigatório) — acumulado até agora: {{ d.grupo.percentual_acumulado }}%</label>
+    <input type="number" name="percentual_dia" class="form-control form-control-sm mb-2" min="0" max="100" required>
+    {% endif %}
+    {% if fotos_do_dia|length < 4 %}
+    <label class="form-label small">Anexar foto(s) extra (opcional, até {{ 4 - fotos_do_dia|length }} restante(s))</label>
+    <input type="file" name="fotos" class="form-control form-control-sm mb-2" accept="image/*" multiple>
+    {% endif %}
+    <button class="btn btn-sm btn-success">✓ Confirmar aprovação</button>
+  </form>
+
+  <div class="d-flex gap-2 mt-2 flex-wrap">
     <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#retif{{ d.id }}">✎ Retificar</button>
     <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#reprog{{ d.id }}">📅 Reprogramar</button>
   </div>
-
-  <div class="collapse mt-2" id="aprov{{ d.id }}">
-    <form method="post" action="{{ url_for('facilities.aprovar_dia', dia_id=d.id) }}" enctype="multipart/form-data" class="border rounded p-2">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {% if not d.grupo.eh_fixa %}
-      <label class="form-label small">% executada NESTE DIA (obrigatório) — acumulado até agora: {{ d.grupo.percentual_acumulado }}%</label>
-      <input type="number" name="percentual_dia" class="form-control form-control-sm mb-2" min="0" max="100" required>
-      {% endif %}
-      {% if fotos_do_dia|length < 4 %}
-      <label class="form-label small">Anexar foto(s) extra (opcional, até {{ 4 - fotos_do_dia|length }} restante(s))</label>
-      <input type="file" name="fotos" class="form-control form-control-sm mb-2" accept="image/*" multiple>
-      {% endif %}
-      <button class="btn btn-sm btn-success">Confirmar aprovação</button>
-    </form>
-  </div>
+  {% endif %}
 
   <div class="collapse mt-2" id="retif{{ d.id }}">
     <form method="post" action="{{ url_for('facilities.retificar_dia', dia_id=d.id) }}" enctype="multipart/form-data" class="border rounded p-2">

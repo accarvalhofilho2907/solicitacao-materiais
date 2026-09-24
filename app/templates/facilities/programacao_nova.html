@@ -43,7 +43,9 @@
       <div class="d-flex gap-3">
         <label class="tipo-card selecionado" id="cardNormal">
           <input type="radio" name="tipo_atividade" id="tipoNormal" value="NORMAL" checked onchange="mudarTipo()">
-          <div class="tipo-titulo">📋 Normal</div>
+          <!-- [23/09 segunda leva] rótulo trocado de "Normal" pra "Local" — só o texto exibido,
+               o valor gravado no banco continua "NORMAL" (não vale a pena migrar por causa do rótulo). -->
+          <div class="tipo-titulo">📋 Local</div>
           <div class="tipo-desc">O colaborador reporta, a cada dia, quantos dias ainda faltam pra terminar.</div>
         </label>
         <label class="tipo-card" id="cardFixa">

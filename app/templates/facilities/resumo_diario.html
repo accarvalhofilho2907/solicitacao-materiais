@@ -7,12 +7,13 @@
 </div>
 
 <form method="get" class="card mb-3"><div class="card-body row g-2 align-items-end">
+  <!-- [23/09 segunda leva] ordem dos filtros trocada de Tipo->Dia->Empresa pra Data->Tipo->Empresa -->
+  <div class="col-md-3"><label class="form-label small">Data</label><input type="date" name="data" class="form-control" value="{{ data_d.strftime('%Y-%m-%d') }}"></div>
   <div class="col-md-3"><label class="form-label small">Tipo</label>
     <select name="tipo" class="form-select">
       <option value="inicio" {{ 'selected' if tipo=='inicio' }}>Início do dia</option>
       <option value="fim" {{ 'selected' if tipo=='fim' }} {{ 'disabled' if not fim_liberado }}>Fim do dia{% if not fim_liberado %} (disponível após 14h){% endif %}</option>
     </select></div>
-  <div class="col-md-3"><label class="form-label small">Dia</label><input type="date" name="data" class="form-control" value="{{ data_d.strftime('%Y-%m-%d') }}"></div>
   <div class="col-md-4"><label class="form-label small">Empresa</label>
     <select name="empresa" class="form-select">
       <option value="">— selecione —</option>

@@ -10,6 +10,12 @@ class Config:
     _db = os.environ.get("DATABASE_URL", "sqlite:///" + os.path.join(basedir, "app.db"))
     if _db.startswith("postgres://"):
         _db = _db.replace("postgres://", "postgresql://", 1)
+    # [25/09] Correção do erro de deploy "ModuleNotFoundError: No module named 'psycopg'":
+    # o Neon às vezes fornece a DATABASE_URL já no formato "postgresql+psycopg://" (driver
+    # psycopg 3), mas o projeto só tem psycopg2-binary instalado (requirements.txt). Força
+    # o uso do driver psycopg2, que já está instalado, independente do prefixo recebido.
+    if _db.startswith("postgresql+psycopg://"):
+        _db = _db.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
     SQLALCHEMY_DATABASE_URI = _db
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     # Corrige "SSL connection has been closed unexpectedly" (Neon derruba conexões

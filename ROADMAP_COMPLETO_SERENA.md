@@ -4973,3 +4973,22 @@ NAO TESTADO / PENDENTE:
 - Não foi adicionado suporte a quilometragem no PDF do RDO (só no Painel de Quilometragem) — o
   roadmap não pediu isso explicitamente (só citou "Painel de Quilometragem" análogo ao de
   Horímetros); registrar como próximo passo se o Antonio quiser depois.
+
+### ================== FIX URGENTE: DEPLOY QUEBRADO — DATABASE_URL COM DRIVER PSYCOPG3 (25/09) ==================
+INCIDENTE: apos o deploy da terceira leva, o Render caiu com `ModuleNotFoundError: No module named
+'psycopg'` na inicializacao (`db.init_app`/`create_engine`). NAO era bug de codigo das entregas
+anteriores — o traceback mostrava o SQLAlchemy tentando carregar o dialeto `psycopg` (driver v3,
+`sqlalchemy/dialects/postgresql/psycopg.py`), mas o projeto so' tem `psycopg2-binary` instalado
+(`requirements.txt`). Ou seja, a variavel `DATABASE_URL` configurada no Render passou a vir no
+formato `postgresql+psycopg://...` (driver v3, que o Neon as vezes fornece) em vez de
+`postgresql://...` simples, que o codigo assumia.
+
+FIX (autorizado pelo Antonio, implementado direto por ser bloqueio de producao): em `config.py`,
+normaliza qualquer `DATABASE_URL` que comece com `postgresql+psycopg://` pra
+`postgresql+psycopg2://` — forca o uso do driver ja instalado, independente do formato que o
+Neon/Render fornecerem. TESTADO isoladamente (script simulando `DATABASE_URL` com `+psycopg`,
+confirmado que vira `+psycopg2` antes de virar `SQLALCHEMY_DATABASE_URI`).
+
+NAO EXIGIU passar pelo fluxo normal de "registrar e aguardar ordem" por ser correcao de producao
+fora do ar — o Antonio confirmou a abordagem (normalizar no codigo, em vez de mexer na variavel no
+painel do Render) antes da implementacao.

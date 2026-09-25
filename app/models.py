@@ -648,6 +648,34 @@ class RegistroHorimetro(db.Model):
     dia = db.relationship("AtividadeDia", backref="registros_horimetro")
 
 
+class RegistroQuilometragem(db.Model):
+    """[25/09 terceira leva] Um lançamento de quilometragem (início OU fim do dia) de uma
+    AtividadeDia cuja atividade tem quilometragem_ativa=True. Mesmo espírito de
+    RegistroHorimetro, mas SEM vínculo a um veículo cadastrado — placa/modelo são texto
+    livre, digitados a CADA registro (podem variar de veículo a cada dia/report, confirmado
+    por Antonio). Por isso NÃO tem as travas i/ii de sequência entre dias do horímetro (que só
+    fazem sentido pra uma máquina fixa) — só a validação de formato numérico (iii)."""
+    __tablename__ = "sf_registros_quilometragem"
+    id = db.Column(db.Integer, primary_key=True)
+    dia_id = db.Column(db.ForeignKey("sf_atividade_dias.id"), nullable=False)
+    tipo = db.Column(db.String(10), nullable=False)   # INICIO | FIM
+    valor_km = db.Column(db.Float, nullable=False)
+    placa = db.Column(db.String(10))
+    modelo = db.Column(db.String(80))
+    fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"))   # empresa operando NESTE dia
+    foto_painel_url = db.Column(db.Text)   # foto do painel/odômetro — segue o padrão do horímetro
+    status = db.Column(db.String(20), default="PENDENTE")   # PENDENTE | APROVADO
+    aprovado_em = db.Column(db.DateTime)
+    aprovado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    aprovado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    criado_por_colaborador_id = db.Column(db.ForeignKey("almox_colaboradores.id"))
+    criado_por_usuario_id = db.Column(db.ForeignKey("usuarios.id"))
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    fornecedor = db.relationship("Fornecedor")
+    dia = db.relationship("AtividadeDia", backref="registros_quilometragem")
+
+
 class Armazem(db.Model):
     """Galpão dentro de uma planta (ex.: Galpão D6)."""
     __tablename__ = "almox_armazens"
@@ -1585,6 +1613,10 @@ class AtividadeGrupo(db.Model):
     status_cadastro = db.Column(db.String(20), default="COMPLETO")  # COMPLETO|INCOMPLETO
     motivo_cancelamento = db.Column(db.Text)
     maquina_horimetro_id = db.Column(db.ForeignKey("sf_maquinario_pesado_terceiro.id"))  # [22/09] se preenchido, ativa o fluxo de 2 reports/dia com horímetro
+    # [25/09 terceira leva] "Quilometragem de viagens" — mesmo espírito do horímetro (2 reports
+    # diários), mas SEM cadastro prévio de veículo: placa/modelo são digitados livremente a
+    # CADA report (ver RegistroQuilometragem), podendo variar de veículo a cada dia.
+    quilometragem_ativa = db.Column(db.Boolean, default=False)
     encerrada = db.Column(db.Boolean, default=False)   # [23/09] só relevante pra FIXA — para a geração automática de novos dias
     encerrada_em = db.Column(db.DateTime)
     # [23/09 segunda leva] "Atividade finalizada 100%" — só pra atividade LOCAL (tipo == NORMAL,
@@ -1617,6 +1649,10 @@ class AtividadeGrupo(db.Model):
     @property
     def tem_horimetro(self):
         return self.maquina_horimetro_id is not None
+
+    @property
+    def tem_quilometragem(self):
+        return bool(self.quilometragem_ativa)
 
     @property
     def eh_fixa(self):
@@ -1812,6 +1848,20 @@ class RelatorioDiarioObra(db.Model):
     planta = db.relationship("Planta")
     mao_de_obra = db.relationship("RDOMaoDeObra", backref="rdo", cascade="all, delete-orphan")
     equipamentos = db.relationship("RDOEquipamento", backref="rdo", cascade="all, delete-orphan")
+    # [25/09 terceira leva] empresas do RDO viram MULTI-SELEÇÃO — tabela associativa nova.
+    # RDOs antigos (criados antes desta leva) simplesmente não têm nenhuma linha aqui.
+    rdo_empresas = db.relationship("RDOEmpresa", backref="rdo", cascade="all, delete-orphan")
+
+    @property
+    def nomes_empresas(self):
+        """[25/09 terceira leva] Lista de nomes (fantasia/razão social) das empresas
+        selecionadas neste RDO — usado na tela e no PDF em vez de um fornecedor único."""
+        nomes = []
+        for re in self.rdo_empresas:
+            f = re.fornecedor
+            if f:
+                nomes.append(f.nome_fantasia or f.razao_social or f.nome or "—")
+        return nomes
 
     @property
     def atividades(self):
@@ -1886,5 +1936,19 @@ class RDOEquipamento(db.Model):
         if self.equipamento_id and self.equipamento:
             return self.equipamento.nome
         return self.nome_livre or "—"
+
+
+class RDOEmpresa(db.Model):
+    """[25/09 terceira leva] Uma empresa (Fornecedor) marcada num RDO — o select de empresa do
+    RDO virou MULTI-SELEÇÃO (Antonio confirmou: pode marcar 2+ empresas no mesmo RDO). Substitui
+    o campo único `fornecedor_id` do form usado transitoriamente na leva anterior (que nunca
+    chegou a ser uma coluna persistida em RelatorioDiarioObra — só um parâmetro de form usado
+    pra filtrar mão de obra/maquinário automáticos na hora de criar)."""
+    __tablename__ = "sf_rdo_empresas"
+    id = db.Column(db.Integer, primary_key=True)
+    rdo_id = db.Column(db.ForeignKey("sf_rdo.id"), nullable=False)
+    fornecedor_id = db.Column(db.ForeignKey("fornecedores.id"), nullable=False)
+
+    fornecedor = db.relationship("Fornecedor")
 
 

@@ -42,7 +42,7 @@
   <thead class="table-light"><tr>
     <th style="width:30px"></th>
     <th data-col="1" data-tipo="data">Data</th><th data-col="2">Planta</th><th data-col="3">Clima</th>
-    <th data-col="4" data-tipo="num">% média</th><th data-col="5">Atividades</th><th data-col="6">Status</th><th></th>
+    <th data-col="4" data-tipo="num">% média</th><th data-col="5">Atividades</th><th data-col="6">Status</th><th>Empresa(s)</th><th></th>
   </tr></thead>
   <tbody>
     {% for r in itens %}
@@ -60,6 +60,7 @@
         {% elif r.aprovado_encarregado_em %}<span class="badge bg-warning text-dark">pendente (falta Admin)</span>
         {% else %}<span class="badge bg-secondary">aguardando Encarregado</span>{% endif %}
       </td>
+      <td class="small">{{ r.nomes_empresas|join(', ') if r.nomes_empresas else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('facilities.rdo_preview', rdo_id=r.id) }}">👁 Ver</a>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('facilities.rdo_pdf', rdo_id=r.id) }}" target="_blank">📄 PDF</a>
@@ -84,7 +85,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="8" class="text-muted text-center py-3">Nenhum RDO registrado ainda.</td></tr>
+    <tr><td colspan="9" class="text-muted text-center py-3">Nenhum RDO registrado ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -108,11 +109,11 @@
               <option value="">—</option>
               {% for p in plantas_disp %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
             </select></div>
-          <!-- [23/09 segunda leva] novo select de Empresa — direciona a busca automática de
-               mão de obra/maquinário (item 1 do pedido). -->
-          <div class="col-md-4"><label class="form-label small">Empresa *</label>
-            <select name="fornecedor_id" id="selEmpresaRDO" class="form-select" required>
-              <option value="">—</option>
+          <!-- [25/09 terceira leva] Empresa vira MULTI-SELEÇÃO — pode marcar 2+ empresas no
+               mesmo RDO (direciona a busca automática de mão de obra/maquinário, agora
+               considerando qualquer colaborador/máquina de QUALQUER UMA das selecionadas). -->
+          <div class="col-md-4"><label class="form-label small">Empresa(s) * <span class="text-muted">(ctrl/cmd+clique pra marcar mais de uma)</span></label>
+            <select name="fornecedores_ids" id="selEmpresaRDO" class="form-select" multiple required size="4">
               {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
             </select></div>
         </div>
@@ -177,10 +178,14 @@
 </div>
 
 <script>
+function _empresasSelecionadasRDO(){
+  // [25/09 terceira leva] multi-select — devolve a lista de <option> marcadas
+  return Array.from(document.getElementById('selEmpresaRDO').selectedOptions).map(function(o){ return o.value; });
+}
 function carregarAtividadesRDO(){
   var data = document.getElementById('inpDataRDO').value;
   var planta = document.getElementById('selPlantaRDO').value;
-  var fornecedor = document.getElementById('selEmpresaRDO').value;
+  var fornecedores = _empresasSelecionadasRDO();
   var lista = document.getElementById('listaAtividadesRDO');
   var avisoBloqueio = document.getElementById('avisoBloqueioRDO');
   var avisoMedia = document.getElementById('avisoMediaRDO');
@@ -196,7 +201,8 @@ function carregarAtividadesRDO(){
     return;
   }
   lista.innerHTML = 'Carregando...';
-  var url = "{{ url_for('facilities.rdo_atividades_do_dia') }}?data=" + data + (planta ? "&planta_id=" + planta : "") + (fornecedor ? "&fornecedor_id=" + fornecedor : "");
+  var url = "{{ url_for('facilities.rdo_atividades_do_dia') }}?data=" + data + (planta ? "&planta_id=" + planta : "")
+    + fornecedores.map(function(f){ return "&fornecedor_id=" + f; }).join("");
   fetch(url).then(r => r.json()).then(function(d){
     if (d.atividades.length === 0) {
       lista.innerHTML = '<span class="text-muted">' + (d.motivo_bloqueio || 'Nenhuma atividade neste dia.') + '</span>';
@@ -220,10 +226,11 @@ function carregarAtividadesRDO(){
     } else {
       avisoMedia.classList.add('d-none');
     }
-    // [23/09 segunda leva] preview de mão de obra/maquinário automáticos (filtrados por empresa)
-    if (!fornecedor) {
-      previewMO.textContent = 'Escolha a empresa para ver a mão de obra automática.';
-      previewMaq.textContent = 'Escolha a empresa para ver o maquinário automático.';
+    // [23/09 segunda leva, ajustado 25/09] preview de mão de obra/maquinário automáticos
+    // (filtrados por QUALQUER UMA das empresas selecionadas)
+    if (!fornecedores.length) {
+      previewMO.textContent = 'Escolha ao menos uma empresa para ver a mão de obra automática.';
+      previewMaq.textContent = 'Escolha ao menos uma empresa para ver o maquinário automático.';
     } else {
       previewMO.textContent = (d.mao_de_obra_sugerida && d.mao_de_obra_sugerida.length)
         ? d.mao_de_obra_sugerida.join(', ') : 'Nenhum colaborador dessa empresa nas atividades do dia.';

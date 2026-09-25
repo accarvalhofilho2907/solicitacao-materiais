@@ -9,11 +9,22 @@
 
 {% for d in atividades %}
 <div class="card mb-3"><div class="card-body">
-  <h6 class="mb-1">{{ d.grupo.titulo }}
-    <span class="text-muted small">— dia {{ d.ordem }} de {{ d.grupo.duracao_dias_uteis }}</span>
-    {% if d.grupo.eh_fixa %}<span class="badge bg-secondary">fixa</span>{% endif %}
-  </h6>
-  <p class="text-muted small mb-3">{{ d.grupo.planta.nome if d.grupo.planta else '—' }}{% if d.grupo.predio %} · {{ d.grupo.predio.nome }}{% endif %} · Responsável: {{ d.grupo.responsavel.nome if d.grupo.responsavel else '—' }}</p>
+  <!-- [25/09 terceira leva] item 2 — cabeçalho SEMPRE visível (título + badge de status),
+       clicável pra recolher/expandir o resto do card (fotos, campos, botões). Útil quando há
+       muitas atividades na tela do dia. -->
+  <div class="d-flex justify-content-between align-items-center" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#corpoCard{{ d.id }}" aria-expanded="true">
+    <h6 class="mb-0">{{ d.grupo.titulo }}
+      <span class="text-muted small">— dia {{ d.ordem }} de {{ d.grupo.duracao_dias_uteis }}</span>
+      {% if d.grupo.eh_fixa %}<span class="badge bg-secondary">fixa</span>{% endif %}
+      {% if d.nao_executada %}<span class="badge bg-danger">não executada</span>
+      {% elif d.status == 'APROVADA' %}<span class="badge bg-success">aprovada</span>
+      {% elif d.status == 'AGUARDANDO_APROVACAO' %}<span class="badge bg-warning text-dark">aguardando aprovação</span>
+      {% else %}<span class="badge bg-secondary">pendente</span>{% endif %}
+    </h6>
+    <span class="text-muted small">▾</span>
+  </div>
+  <div class="collapse show" id="corpoCard{{ d.id }}">
+  <p class="text-muted small mb-3 mt-2">{{ d.grupo.planta.nome if d.grupo.planta else '—' }}{% if d.grupo.predio %} · {{ d.grupo.predio.nome }}{% endif %} · Responsável: {{ d.grupo.responsavel.nome if d.grupo.responsavel else '—' }}</p>
 
   <!-- [23/09 segunda leva] 2 botões novos, só pra atividade LOCAL (tipo NORMAL — "Local" é só
        o rótulo exibido, o valor no banco continua NORMAL) e enquanto o dia ainda não foi
@@ -104,6 +115,80 @@
   </div>
   {% endif %}
 
+  {% if d.grupo.tem_quilometragem %}
+  {% set regs_km = registros_quilometragem_por_dia.get(d.id, {}) %}
+  <div class="border rounded p-2 mb-3" style="background:rgba(50,202,160,.06)">
+    <p class="small mb-2"><b>🚗 Quilometragem de viagens</b> — este dia precisa de 2 registros: KM de início e de fim (placa/modelo digitados a cada report).</p>
+    <div class="row g-2">
+      <div class="col-md-6">
+        {% if 'INICIO' in regs_km %}
+        <div class="alert alert-success small py-2 mb-0">✓ Início registrado: {{ regs_km['INICIO'].valor_km }} km — {{ regs_km['INICIO'].placa or '—' }} / {{ regs_km['INICIO'].modelo or '—' }}
+          {% if regs_km['INICIO'].foto_painel_url %}<br><a href="{{ regs_km['INICIO'].foto_painel_url }}" target="_blank">ver foto do painel</a>{% endif %}
+        </div>
+        {% else %}
+        <form method="post" action="{{ url_for('facilities.preencher_quilometragem', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data" class="border rounded p-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="dia_id" value="{{ d.id }}">
+          <input type="hidden" name="tipo_registro" value="INICIO">
+          <p class="small mb-1"><b>Quilometragem de início do dia</b></p>
+          <label class="form-label small">Valor do KM (odômetro) *</label>
+          <input type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]+)?"
+                 title="Só números — vírgula ou ponto para decimal" name="valor_km"
+                 class="form-control form-control-sm mb-2" oninput="_validarHorimetro(this)" required>
+          <label class="form-label small">Placa do veículo *</label>
+          <input type="text" name="placa" class="form-control form-control-sm mb-2" maxlength="10" required>
+          <label class="form-label small">Modelo do veículo *</label>
+          <input type="text" name="modelo" class="form-control form-control-sm mb-2" maxlength="80" required>
+          <label class="form-label small">Empresa operando hoje</label>
+          <select name="fornecedor_id" class="form-select form-select-sm mb-2">
+            <option value="">—</option>
+            {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
+          </select>
+          <label class="form-label small">Foto do painel (odômetro) *</label>
+          <input type="file" name="foto_painel" class="form-control form-control-sm mb-2" accept="image/*" required>
+          <button class="btn btn-sm btn-primary">Registrar início</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="col-md-6">
+        {% if 'FIM' in regs_km %}
+        <div class="alert alert-success small py-2 mb-0">✓ Fim registrado: {{ regs_km['FIM'].valor_km }} km — {{ regs_km['FIM'].placa or '—' }} / {{ regs_km['FIM'].modelo or '—' }}
+          {% if regs_km['FIM'].foto_painel_url %}<br><a href="{{ regs_km['FIM'].foto_painel_url }}" target="_blank">ver foto do painel</a>{% endif %}
+        </div>
+        {% elif 'INICIO' not in regs_km %}
+        <details class="border rounded p-2 text-muted small">
+          <summary>Quilometragem de fim do dia (bloqueado)</summary>
+          Registre primeiro a quilometragem de <b>início</b> deste dia.
+        </details>
+        {% else %}
+        <form method="post" action="{{ url_for('facilities.preencher_quilometragem', data_str=data_d.strftime('%Y-%m-%d')) }}" enctype="multipart/form-data" class="border rounded p-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="dia_id" value="{{ d.id }}">
+          <input type="hidden" name="tipo_registro" value="FIM">
+          <p class="small mb-1"><b>Quilometragem de fim do dia</b></p>
+          <label class="form-label small">Valor do KM (odômetro) *</label>
+          <input type="text" inputmode="decimal" pattern="[0-9]+([.,][0-9]+)?"
+                 title="Só números — vírgula ou ponto para decimal" name="valor_km"
+                 class="form-control form-control-sm mb-2" oninput="_validarHorimetro(this)" required>
+          <label class="form-label small">Placa do veículo *</label>
+          <input type="text" name="placa" class="form-control form-control-sm mb-2" maxlength="10" required>
+          <label class="form-label small">Modelo do veículo *</label>
+          <input type="text" name="modelo" class="form-control form-control-sm mb-2" maxlength="80" required>
+          <label class="form-label small">Empresa operando hoje</label>
+          <select name="fornecedor_id" class="form-select form-select-sm mb-2">
+            <option value="">—</option>
+            {% for f in fornecedores_disp %}<option value="{{ f.id }}">{{ f.nome_fantasia or f.razao_social }}</option>{% endfor %}
+          </select>
+          <label class="form-label small">Foto do painel (odômetro) *</label>
+          <input type="file" name="foto_painel" class="form-control form-control-sm mb-2" accept="image/*" required>
+          <button class="btn btn-sm btn-primary">Registrar fim</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if d.status == 'APROVADA' %}
   <div class="alert alert-success small py-2">
     Já aprovado.
@@ -170,6 +255,7 @@
     <button class="btn btn-primary mt-3">Salvar</button>
   </form>
   {% endif %}
+  </div>
 </div></div>
 {% else %}
 <div class="alert alert-secondary">Nenhuma atividade sua neste dia.</div>

@@ -2,6 +2,16 @@
 {% block title %}Aprovação{% endblock %}
 {% block content %}
 <h4 class="mb-1">Aprovação — Encarregado de Campo</h4>
+
+<!-- [25/09 terceira leva] item 1 — depois de aprovada, a atividade continua visível numa aba
+     separada até o dia dela entrar num RDO gerado (data+planta cobertas por algum RDO). -->
+<ul class="nav nav-tabs mb-3" id="abasAprovacao">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabPendentes" type="button">Pendentes <span class="badge bg-warning text-dark">{{ pendentes|length }}</span></button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabAprovadas" type="button">Aprovadas (aguardando RDO) <span class="badge bg-secondary">{{ aguardando_rdo|length }}</span></button></li>
+</ul>
+
+<div class="tab-content">
+<div class="tab-pane fade show active" id="tabPendentes">
 <div class="alert alert-warning small py-2"><b>{{ pendentes|length }}</b> atividade(s) aguardando sua aprovação.</div>
 
 {% for d in pendentes %}
@@ -114,4 +124,26 @@
 {% else %}
 <div class="alert alert-secondary">Nada pendente de aprovação.</div>
 {% endfor %}
+</div>
+
+<div class="tab-pane fade" id="tabAprovadas">
+<div class="alert alert-secondary small py-2">Atividades já aprovadas pelo Encarregado, mas que ainda não entraram em nenhum RDO (Relatório Diário de Obra). Somem daqui assim que o RDO da data+planta for gerado.</div>
+{% for d in aguardando_rdo %}
+<div class="card mb-2"><div class="card-body py-2">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <b>{{ d.grupo.titulo }}</b> — dia {{ d.ordem }}/{{ d.grupo.duracao_dias_uteis }}
+      {% if d.grupo.eh_fixa %}<span class="badge bg-secondary">fixa</span>{% endif %}
+      <span class="text-muted small d-block">{{ d.data.strftime('%d/%m/%Y') }} · {{ d.grupo.planta.nome if d.grupo.planta else '—' }}
+        {% if not d.grupo.eh_fixa %} · {{ d.percentual if d.percentual is not none else '—' }}% do dia{% endif %}
+      </span>
+    </div>
+    <span class="badge bg-success">aprovada — aguardando RDO</span>
+  </div>
+</div></div>
+{% else %}
+<div class="alert alert-secondary">Nenhuma atividade aprovada aguardando RDO.</div>
+{% endfor %}
+</div>
+</div>
 {% endblock %}

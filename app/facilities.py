@@ -25,6 +25,7 @@ from .models import (ModeloChecklist, ItemChecklist, ProdutoAlmox, ExecucaoCheck
                      AtividadeGrupo, AtividadeColaborador, AtividadeDia, RegistroPreenchimento,
                      EncarregadoEmpresa, RelatorioDiarioObra, RDOMaoDeObra, RDOEquipamento,
                      EquipamentoTerceiro, MaquinarioPesadoTerceiro, RegistroHorimetro,
+                     RegistroQuilometragem, RDOEmpresa,
                      HistoricoRetificacao, AusenciaColaborador,
                      UNIDADES_DURACAO_DIAS_UTEIS, OPCOES_RECORRENCIA)
 
@@ -711,6 +712,7 @@ def programacao_nova():
     maquina_horimetro_id = request.form.get("maquina_horimetro_id") or None
     if not tem_horimetro:
         maquina_horimetro_id = None
+    quilometragem_ativa = request.form.get("quilometragem_ativa") == "1"  # [25/09 terceira leva]
     data_inicio_str = request.form.get("data_inicio")
     unidade = request.form.get("unidade_duracao") or "dias"
     if not titulo or not data_inicio_str:
@@ -753,7 +755,8 @@ def programacao_nova():
                            produto_id=int(produto_id) if produto_id else None,
                            fotos_antes_json=json.dumps(fotos_antes) if fotos_antes else None,
                            status_cadastro="INCOMPLETO" if faltando_campo else "COMPLETO",
-                           maquina_horimetro_id=int(maquina_horimetro_id) if maquina_horimetro_id else None)
+                           maquina_horimetro_id=int(maquina_horimetro_id) if maquina_horimetro_id else None,
+                           quilometragem_ativa=quilometragem_ativa)
     _marcar_autor(grupo, "criado_por")
     db.session.add(grupo)
     db.session.commit()
@@ -1148,6 +1151,14 @@ def preencher_dia(data_str):
         existentes = RegistroHorimetro.query.filter_by(dia_id=at.id).all()
         registros_horimetro_por_dia[at.id] = {r.tipo: r for r in existentes}
 
+    # [25/09 terceira leva] mesma ideia, pra atividades com "Quilometragem de viagens" ativa.
+    registros_quilometragem_por_dia = {}
+    for at in minhas_atividades:
+        if not at.grupo.tem_quilometragem:
+            continue
+        existentes = RegistroQuilometragem.query.filter_by(dia_id=at.id).all()
+        registros_quilometragem_por_dia[at.id] = {r.tipo: r for r in existentes}
+
     if request.method == "POST":
         dia_id = int(request.form.get("dia_id"))
         dia = db.session.get(AtividadeDia, dia_id) or abort(404)
@@ -1283,6 +1294,7 @@ def preencher_dia(data_str):
     return render_template("facilities/preencher_dia.html", data_d=data_d, atividades=minhas_atividades,
                            dias_restantes_anterior_por_dia=dias_restantes_anterior_por_dia,
                            registros_horimetro_por_dia=registros_horimetro_por_dia,
+                           registros_quilometragem_por_dia=registros_quilometragem_por_dia,
                            fornecedores_disp=Fornecedor.query.filter_by(ativo=True).order_by(Fornecedor.nome).all(),
                            compartilhar_id=request.args.get("compartilhar"))
 
@@ -1454,6 +1466,77 @@ def preencher_horimetro(data_str):
     return redirect(url_for("facilities.preencher_dia", data_str=data_str))
 
 
+@facilities_bp.route("/preencher/<data_str>/quilometragem", methods=["POST"])
+@_logado_required
+def preencher_quilometragem(data_str):
+    """[25/09 terceira leva] Registro de quilometragem (INICIO ou FIM) — mesmo espírito de
+    preencher_horimetro, mas SEM cadastro de veículo: placa/modelo são digitados livremente a
+    CADA report (podem mudar de veículo a cada dia). Por isso NÃO tem as travas i/ii de
+    sequência entre dias do horímetro (só fazem sentido pra uma máquina fixa cadastrada) — só a
+    validação de formato numérico (vírgula/ponto, sem letras)."""
+    dia_id = int(request.form.get("dia_id"))
+    tipo_registro = request.form.get("tipo_registro")
+    if tipo_registro not in ("INICIO", "FIM"):
+        abort(400)
+    dia = db.session.get(AtividadeDia, dia_id) or abort(404)
+    if not dia.grupo.tem_quilometragem:
+        abort(400)
+
+    colab_id, usuario_id = _quem_preencheu()
+    ids_visiveis = _colaboradores_ids_visiveis_preencher(colab_id)
+    eh_participante = colab_id and any(ac.colaborador_id in ids_visiveis for ac in dia.grupo.colaboradores)
+    eh_gestor = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))
+    if not eh_participante and not eh_gestor:
+        abort(403)
+
+    # não deixa duplicar: só 1 registro de cada tipo por dia (mesma trava do horímetro)
+    ja_existe = RegistroQuilometragem.query.filter_by(dia_id=dia_id, tipo=tipo_registro).first()
+    if ja_existe:
+        flash(f"Já existe um registro de {tipo_registro.lower()} para este dia.", "warning")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+    valor_str = (request.form.get("valor_km") or "").strip()
+    placa = (request.form.get("placa") or "").strip()
+    modelo = (request.form.get("modelo") or "").strip()
+    fornecedor_id = request.form.get("fornecedor_id") or None
+    if not valor_str:
+        flash("Informe o valor da quilometragem.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+    if not placa or not modelo:
+        flash("Informe a placa e o modelo do veículo.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+    # aceita vírgula OU ponto como separador decimal; rejeita letras/caracteres especiais
+    # (mesma regra do horímetro, item 12.iii da leva anterior).
+    import re as _re
+    if not _re.fullmatch(r"[0-9]+([.,][0-9]+)?", valor_str):
+        flash("Valor de quilometragem inválido — use só números (vírgula ou ponto para decimal).", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+    try:
+        valor_km = float(valor_str.replace(",", "."))
+    except ValueError:
+        flash("Valor de quilometragem inválido.", "danger")
+        return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+    # foto do painel/odômetro — segue o padrão do horímetro, por consistência (campo próprio,
+    # fora das 4 fotos normais da atividade).
+    fotos_painel, foto_fallback_local = _salvar_fotos("foto_painel", maximo=1)
+    foto_painel_url = fotos_painel[0] if fotos_painel else None
+
+    registro = RegistroQuilometragem(dia_id=dia_id, tipo=tipo_registro, valor_km=valor_km,
+                                     placa=placa or None, modelo=modelo or None,
+                                     foto_painel_url=foto_painel_url,
+                                     fornecedor_id=int(fornecedor_id) if fornecedor_id else None,
+                                     criado_por_colaborador_id=colab_id, criado_por_usuario_id=usuario_id)
+    db.session.add(registro)
+    db.session.commit()
+    if foto_fallback_local:
+        flash("⚠️ Atenção: a foto do painel foi salva num armazenamento temporário (Cloudinary indisponível "
+              "no momento) — pode se perder no próximo deploy. Avise o administrador.", "warning")
+    flash(f"Quilometragem de {'início' if tipo_registro == 'INICIO' else 'fim'} do dia registrada.", "success")
+    return redirect(url_for("facilities.preencher_dia", data_str=data_str))
+
+
 # ============================================================================
 # APROVAÇÃO (Encarregado de Campo) — só Aprovar ou Retificar (sem reprovar)
 # ============================================================================
@@ -1474,23 +1557,38 @@ def aprovacao():
     if not is_encarregado:
         abort(403)
     colab_atual = colab if colab else (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
-    q = AtividadeDia.query.filter_by(status="AGUARDANDO_APROVACAO")
     # [fix] Admin (qualquer um, is_admin já cobre o Master também, já que Master sempre tem
     # papel="admin") vê TODAS as pendências, sem filtro de empresa — só filtra por empresa
     # quando quem está vendo é um Colaborador Encarregado (não Admin/Usuario).
     eh_admin_ou_master = current_user.is_authenticated and (getattr(current_user, "is_admin", False)
                          or getattr(current_user, "is_master", False))
-    if colab_atual and not eh_admin_ou_master:
-        empresas_ids = {e.id for e in colab_atual.empresas_encarregado}
-        if empresas_ids:
-            nomes_empresas = {db.session.get(Fornecedor, eid).nome_fantasia or db.session.get(Fornecedor, eid).razao_social
-                              for eid in empresas_ids}
-            q = (q.join(AtividadeGrupo)
-                 .join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeGrupo.id)
-                 .join(Colaborador, Colaborador.id == AtividadeColaborador.colaborador_id)
-                 .filter(Colaborador.empresa.in_(nomes_empresas)))
+
+    def _filtra_por_empresa(query):
+        """[25/09 terceira leva] mesmo filtro de empresa do Encarregado, extraído pra reusar
+        tanto na lista de pendentes quanto na nova de "aprovadas aguardando RDO"."""
+        if colab_atual and not eh_admin_ou_master:
+            empresas_ids = {e.id for e in colab_atual.empresas_encarregado}
+            if empresas_ids:
+                nomes_empresas = {db.session.get(Fornecedor, eid).nome_fantasia or db.session.get(Fornecedor, eid).razao_social
+                                  for eid in empresas_ids}
+                query = (query.join(AtividadeGrupo)
+                        .join(AtividadeColaborador, AtividadeColaborador.grupo_id == AtividadeGrupo.id)
+                        .join(Colaborador, Colaborador.id == AtividadeColaborador.colaborador_id)
+                        .filter(Colaborador.empresa.in_(nomes_empresas)))
+        return query
+
+    q = _filtra_por_empresa(AtividadeDia.query.filter_by(status="AGUARDANDO_APROVACAO"))
     pendentes = q.order_by(AtividadeDia.data.desc()).all()
-    return render_template("facilities/aprovacao.html", pendentes=pendentes)
+
+    # [25/09 terceira leva] item 1 — depois de aprovada, a atividade continua listada (numa aba
+    # separada) até o dia dela entrar num RDO gerado. Um RDO "cobre" uma data+planta quando já
+    # existe um RelatorioDiarioObra com aquela data+planta_id (não olha empresa aqui).
+    q2 = _filtra_por_empresa(AtividadeDia.query.filter_by(status="APROVADA"))
+    aprovadas = q2.order_by(AtividadeDia.data.desc()).all()
+    cobertos = set(db.session.query(RelatorioDiarioObra.data, RelatorioDiarioObra.planta_id).all())
+    aguardando_rdo = [d for d in aprovadas if (d.data, d.grupo.planta_id) not in cobertos]
+
+    return render_template("facilities/aprovacao.html", pendentes=pendentes, aguardando_rdo=aguardando_rdo)
 
 
 def _validar_e_gravar_percentual_dia(dia, valor_atual_percentual=None):
@@ -1862,23 +1960,25 @@ def rdo_atividades_do_dia():
     # cada atividade no dia (uma atividade com meta 100% pesa mais que uma com meta 25%).
     media_ponderada = _calcular_media_ponderada_dia(dias)
 
-    # [23/09 segunda leva] preview da mão de obra/maquinário AUTOMÁTICOS, filtrados pela
-    # empresa escolhida no novo <select> — só pra o Encarregado conferir antes de salvar (a
-    # gravação de verdade acontece no POST de rdo(), usando a mesma lógica).
-    fornecedor_id = request.args.get("fornecedor_id")
+    # [23/09 segunda leva, ajustado 25/09 pra multi-empresa] preview da mão de obra/maquinário
+    # AUTOMÁTICOS, filtrados pelas empresas escolhidas no novo multi-select — só pra o
+    # Encarregado conferir antes de salvar (a gravação de verdade acontece no POST de rdo(),
+    # usando a mesma lógica). Aceita vários "fornecedor_id" na querystring.
+    fornecedores_ids = [f for f in request.args.getlist("fornecedor_id") if f.isdigit()]
     nomes_colab, nomes_maquinas = [], []
-    if fornecedor_id and fornecedor_id.isdigit():
-        empresa_sel = db.session.get(Fornecedor, int(fornecedor_id))
-        nome_empresa_sel = ((empresa_sel.nome_fantasia or empresa_sel.razao_social or empresa_sel.nome or "").strip().upper()
-                            if empresa_sel else None)
-        if nome_empresa_sel:
+    if fornecedores_ids:
+        empresas_sel_preview = [db.session.get(Fornecedor, int(f)) for f in fornecedores_ids]
+        empresas_sel_preview = [e for e in empresas_sel_preview if e]
+        nomes_empresas_preview = {(e.nome_fantasia or e.razao_social or e.nome or "").strip().upper() for e in empresas_sel_preview}
+        ids_empresas_preview = {e.id for e in empresas_sel_preview}
+        if nomes_empresas_preview:
             nomes_colab = sorted({ac.colaborador.nome for d in dias for ac in d.grupo.colaboradores
-                                  if ac.colaborador and (ac.colaborador.empresa or "").strip().upper() == nome_empresa_sel})
-        if empresa_sel:
+                                  if ac.colaborador and (ac.colaborador.empresa or "").strip().upper() in nomes_empresas_preview})
+        if ids_empresas_preview:
             nomes_maquinas = sorted({d.grupo.maquina_horimetro.nome for d in dias
                                      if d.grupo.tem_horimetro and d.grupo.maquina_horimetro
                                      and (not d.grupo.maquina_horimetro.fornecedor_padrao_id
-                                          or d.grupo.maquina_horimetro.fornecedor_padrao_id == empresa_sel.id)})
+                                          or d.grupo.maquina_horimetro.fornecedor_padrao_id in ids_empresas_preview)})
 
     return jsonify(atividades=itens, pode_gerar=(not bloqueia and bool(itens)),
                    motivo_bloqueio=motivo, media_ponderada=media_ponderada,
@@ -1900,23 +2000,28 @@ def rdo():
         data_str = request.form.get("data")
         planta_id = request.form.get("planta_id")
         clima = (request.form.get("condicao_climatica") or "").strip()
-        fornecedor_id = request.form.get("fornecedor_id")
-        # [23/09 segunda leva] campo novo OBRIGATÓRIO: Empresa (Fornecedor) — direciona a busca
-        # automática de mão de obra/maquinário (ver mais abaixo).
-        if not data_str or not planta_id or not clima or not fornecedor_id:
-            flash("Data, Planta, Condição climática e Empresa são obrigatórios.", "danger")
+        # [25/09 terceira leva] Empresa vira MULTI-SELEÇÃO — Encarregado pode marcar 2+
+        # empresas no mesmo RDO (antes era um único <select>). Aceita tanto vários campos
+        # "fornecedores_ids" (select multiple/checkboxes) quanto, por compatibilidade com
+        # chamadas antigas, um único "fornecedor_id".
+        fornecedores_ids_str = request.form.getlist("fornecedores_ids")
+        if not fornecedores_ids_str and request.form.get("fornecedor_id"):
+            fornecedores_ids_str = [request.form.get("fornecedor_id")]
+        if not data_str or not planta_id or not clima or not fornecedores_ids_str:
+            flash("Data, Planta, Condição climática e ao menos uma Empresa são obrigatórios.", "danger")
             return redirect(url_for("facilities.rdo"))
-        empresa_sel = db.session.get(Fornecedor, int(fornecedor_id)) if fornecedor_id.isdigit() else None
-        if not empresa_sel:
+        empresas_sel = [db.session.get(Fornecedor, int(fid)) for fid in fornecedores_ids_str if fid.isdigit()]
+        empresas_sel = [e for e in empresas_sel if e]
+        if not empresas_sel:
             flash("Empresa inválida.", "danger")
             return redirect(url_for("facilities.rdo"))
-        # [fix 23/09 segunda leva] Fornecedor.nome_fantasia/razao_social são normalizados pra
-        # MAIÚSCULAS pela rotina de migração (_maiusculas_cadastros), mas Colaborador.empresa
-        # (texto livre digitado no cadastro do colaborador) NÃO passa por essa normalização —
-        # comparação direta (==) quase sempre falharia por causa da caixa. Compara em maiúsculas
-        # dos dois lados (mesmo "bug" pré-existente no filtro de empresas do Encarregado, linhas
-        # abaixo — aqui já nasce corrigido).
-        nome_empresa_sel = (empresa_sel.nome_fantasia or empresa_sel.razao_social or empresa_sel.nome or "").strip().upper()
+        # [fix 23/09 segunda leva, mantido na terceira] Fornecedor.nome_fantasia/razao_social
+        # são normalizados pra MAIÚSCULAS pela rotina de migração (_maiusculas_cadastros), mas
+        # Colaborador.empresa (texto livre digitado no cadastro do colaborador) NÃO passa por
+        # essa normalização — comparação direta (==) quase sempre falharia por causa da caixa.
+        # Compara em maiúsculas dos dois lados. Agora é um CONJUNTO (multi-empresa).
+        nomes_empresas_sel = {(e.nome_fantasia or e.razao_social or e.nome or "").strip().upper() for e in empresas_sel}
+        ids_empresas_sel = {e.id for e in empresas_sel}
         try:
             data_d = datetime.strptime(data_str, "%Y-%m-%d").date()
         except ValueError:
@@ -1951,6 +2056,20 @@ def rdo():
 
         media = _calcular_media_ponderada_dia(dias_do_dia)
 
+        # [fix 25/09 terceira leva] BUG: antes, `atividades_ids_json` (as atividades que de fato
+        # entram no RDO/preview/PDF) usava TODAS as atividades da data+planta, sem considerar a
+        # empresa selecionada — uma atividade de OUTRA empresa aparecia incorretamente no RDO.
+        # Agora só entram os GRUPOS cuja equipe tenha PELO MENOS UM colaborador de QUALQUER UMA
+        # das empresas selecionadas (dedupe natural por set — equipe mista de 2+ empresas
+        # marcadas aparece UMA SÓ VEZ, não duplicada).
+        grupos_ids_empresa = set()
+        for d in dias_do_dia:
+            if d.grupo_id in grupos_ids_empresa:
+                continue
+            if any((ac.colaborador.empresa or "").strip().upper() in nomes_empresas_sel
+                   for ac in d.grupo.colaboradores if ac.colaborador):
+                grupos_ids_empresa.add(d.grupo_id)
+
         # [23/09 reformulacao RDO] clima_manha/clima_tarde substituem condicao_climatica pra
         # RDOs novos — mas a coluna antiga continua NOT NULL (RDOs antigos a usam), então
         # gravamos nela também um resumo (não trava nada, só mantém compatibilidade).
@@ -1964,7 +2083,7 @@ def rdo():
             horario_termino=(request.form.get("horario_termino") or "16:48").strip(),
             horario_intervalo_inicio=(request.form.get("horario_intervalo_inicio") or "12:00").strip(),
             horario_intervalo_fim=(request.form.get("horario_intervalo_fim") or "13:00").strip(),
-            atividades_ids_json=json.dumps([d.grupo_id for d in dias_do_dia]),
+            atividades_ids_json=json.dumps(list(grupos_ids_empresa)),
             percentual_medio=media,
             ocorrencias=(request.form.get("ocorrencias") or "").strip(),
             comentarios=(request.form.get("comentarios") or "").strip(),
@@ -1975,17 +2094,22 @@ def rdo():
         db.session.add(rdo_novo)
         db.session.flush()  # [data] precisa do rdo_novo.id antes de gravar mão de obra/equipamentos
 
-        # [23/09 segunda leva] MÃO DE OBRA AUTOMÁTICA: em vez do preenchimento manual (linhas
-        # digitadas/combobox da entrega anterior), busca os colaboradores das AtividadeColaborador
-        # das atividades do dia/planta, filtrados pela EMPRESA escolhida acima — função vem do
-        # cadastro (Colaborador.cargo/funcao), não mais digitada no form do RDO.
+        # [25/09 terceira leva] grava as empresas selecionadas (RDOEmpresa — multi-seleção).
+        for e in empresas_sel:
+            db.session.add(RDOEmpresa(rdo_id=rdo_novo.id, fornecedor_id=e.id))
+
+        # [23/09 segunda leva, ajustado 25/09 pra multi-empresa] MÃO DE OBRA AUTOMÁTICA: busca
+        # os colaboradores das AtividadeColaborador das atividades do dia/planta, filtrados por
+        # QUALQUER UMA das empresas SELECIONADAS — função vem do cadastro (Colaborador.cargo/
+        # funcao), não mais digitada no form do RDO. Dedupe por colaborador.id garante que
+        # alguém de equipe mista (2+ empresas marcadas) apareça UMA SÓ VEZ.
         colaboradores_vistos = set()
         for d in dias_do_dia:
             for ac in d.grupo.colaboradores:
                 colab = ac.colaborador
                 if not colab or colab.id in colaboradores_vistos:
                     continue
-                if (colab.empresa or "").strip().upper() != nome_empresa_sel:
+                if (colab.empresa or "").strip().upper() not in nomes_empresas_sel:
                     continue
                 colaboradores_vistos.add(colab.id)
                 db.session.add(RDOMaoDeObra(
@@ -1993,11 +2117,10 @@ def rdo():
                     funcao=colab.cargo_exib if colab.cargo_exib != "—" else None,
                     horario_entrada="07:00", horario_saida="16:48"))
 
-        # [23/09 segunda leva] MAQUINÁRIO AUTOMÁTICO: restaura o comportamento antigo (só os
-        # NOMES das máquinas usadas no dia, via AtividadeGrupo.maquina_horimetro) — regredido na
-        # reformulação anterior, que trocou isso por seleção manual via RDOEquipamento. Mesmo
-        # filtro de empresa: só entram máquinas cuja empresa PADRÃO bate com a selecionada (ou
-        # sem empresa padrão cadastrada — nesse caso não há como filtrar, então mostra mesmo assim).
+        # [23/09 segunda leva, ajustado 25/09 pra multi-empresa] MAQUINÁRIO AUTOMÁTICO: só os
+        # NOMES das máquinas usadas no dia, via AtividadeGrupo.maquina_horimetro. Entram máquinas
+        # cuja empresa PADRÃO bate com QUALQUER UMA das selecionadas (ou sem empresa padrão
+        # cadastrada — nesse caso não há como filtrar, então mostra mesmo assim).
         maquinas_vistas = set()
         for d in dias_do_dia:
             grupo = d.grupo
@@ -2006,7 +2129,7 @@ def rdo():
             maquina = grupo.maquina_horimetro
             if maquina.id in maquinas_vistas:
                 continue
-            if maquina.fornecedor_padrao_id and maquina.fornecedor_padrao_id != empresa_sel.id:
+            if maquina.fornecedor_padrao_id and maquina.fornecedor_padrao_id not in ids_empresas_sel:
                 continue
             maquinas_vistas.add(maquina.id)
             db.session.add(RDOEquipamento(rdo_id=rdo_novo.id, nome_livre=maquina.nome, quantidade=1))
@@ -2478,3 +2601,93 @@ def painel_horimetros_excluir(registro_id):
     db.session.commit()
     flash("Registro de horímetro excluído.", "success")
     return redirect(url_for("facilities.painel_horimetros"))
+
+
+# ============================================================================
+# PAINEL DE QUILOMETRAGEM — [25/09 terceira leva] espelha o Painel de Horímetros, mas sem
+# filtro de "máquina" (não há cadastro de veículo — placa/modelo variam por report).
+# ============================================================================
+
+@facilities_bp.route("/painel-quilometragem")
+@_ver_programacao_required
+def painel_quilometragem():
+    """Tabela dinâmica com todos os lançamentos de quilometragem — INICIO e FIM de cada dia de
+    atividades com quilometragem_ativa. Filtro de período (semana/mês/trimestre/semestre) e
+    total de KM rodado (soma de fim-início dos pares completos, por dia — sem "máquina" fixa,
+    o par é identificado só pelo dia_id)."""
+    periodo = request.args.get("periodo", "mes")
+    hoje = date.today()
+    if periodo == "semana":
+        data_ini_filtro = hoje - timedelta(days=hoje.weekday())
+    elif periodo == "trimestre":
+        mes_ini = ((hoje.month - 1) // 3) * 3 + 1
+        data_ini_filtro = date(hoje.year, mes_ini, 1)
+    elif periodo == "semestre":
+        mes_ini = 1 if hoje.month <= 6 else 7
+        data_ini_filtro = date(hoje.year, mes_ini, 1)
+    else:  # mes (padrão)
+        data_ini_filtro = date(hoje.year, hoje.month, 1)
+
+    registros = (RegistroQuilometragem.query
+                .join(AtividadeDia, RegistroQuilometragem.dia_id == AtividadeDia.id)
+                .filter(AtividadeDia.data >= data_ini_filtro)
+                .order_by(AtividadeDia.data.desc()).all())
+
+    # total de KM: pra cada dia (dia_id), pega o par INICIO/FIM e soma (fim - início)
+    por_dia = {}
+    for r in registros:
+        por_dia.setdefault(r.dia_id, {})[r.tipo] = r.valor_km
+    total_km = 0.0
+    for valores in por_dia.values():
+        if "INICIO" in valores and "FIM" in valores:
+            total_km += max(0.0, valores["FIM"] - valores["INICIO"])
+
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False)))
+    return render_template("facilities/painel_quilometragem.html", registros=registros, periodo=periodo,
+                           total_km=round(total_km, 1), data_ini_filtro=data_ini_filtro, hoje=hoje,
+                           eh_gestor=eh_gestor)
+
+
+@facilities_bp.route("/painel-quilometragem/<int:registro_id>/aprovar", methods=["POST"])
+@_ver_programacao_required
+def painel_quilometragem_aprovar(registro_id):
+    """Aprovação do registro de quilometragem — mesmo espírito do painel de horímetros."""
+    registro = db.session.get(RegistroQuilometragem, registro_id) or abort(404)
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_gestor:
+        abort(403)
+    registro.status = "APROVADO"
+    registro.aprovado_em = datetime.utcnow()
+    if current_user.is_authenticated and isinstance(current_user, Colaborador):
+        registro.aprovado_por_colaborador_id = current_user.id
+    elif current_user.is_authenticated:
+        registro.aprovado_por_usuario_id = current_user.id
+    elif colab_atual:
+        registro.aprovado_por_colaborador_id = colab_atual.id
+    db.session.commit()
+    flash("Registro de quilometragem aprovado.", "success")
+    return redirect(url_for("facilities.painel_quilometragem"))
+
+
+@facilities_bp.route("/painel-quilometragem/<int:registro_id>/excluir", methods=["POST"])
+@_ver_programacao_required
+def painel_quilometragem_excluir(registro_id):
+    """Exclui um registro de quilometragem — só permitido enquanto PENDENTE."""
+    registro = db.session.get(RegistroQuilometragem, registro_id) or abort(404)
+    from .almox import _colab_sessao
+    colab_atual = _colab_sessao() or (current_user if (current_user.is_authenticated and isinstance(current_user, Colaborador)) else None)
+    eh_gestor = (current_user.is_authenticated and (getattr(current_user, "is_admin", False)
+                or getattr(current_user, "is_master", False))) or getattr(colab_atual, "eh_encarregado_campo", False)
+    if not eh_gestor:
+        abort(403)
+    if registro.status == "APROVADO":
+        flash("Este registro já está aprovado — não pode ser excluído.", "danger")
+        return redirect(url_for("facilities.painel_quilometragem"))
+    db.session.delete(registro)
+    db.session.commit()
+    flash("Registro de quilometragem excluído.", "success")
+    return redirect(url_for("facilities.painel_quilometragem"))

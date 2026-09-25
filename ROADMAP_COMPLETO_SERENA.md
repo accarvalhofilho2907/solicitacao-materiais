@@ -4784,3 +4784,192 @@ NAO TESTADO / PENDENTE:
 - A comparação de empresa pré-existente no próprio `rdo()` (trava "Encarregado só pode fazer RDO
   das próprias empresas") NÃO foi corrigida para maiúsculas — mesma limitação de antes, fora do
   escopo pedido nesta leva.
+
+### ================== SOLICITACAO REGISTRADA: TERCEIRA LEVA DE AJUSTES (25/09) ==================
+NADA FOI IMPLEMENTADO — registrado conforme a regra fixa. Pedido do Antonio em 25/09, logo apos
+confirmar que a segunda leva funcionou em producao (deploy feito com sucesso).
+
+## 1) APROVACAO DE ATIVIDADES
+- Depois de aprovada, a atividade precisa CONTINUAR listada em "Aprovacao de Atividades" (hoje a
+  rota `aprovacao()` filtra so' `status="AGUARDANDO_APROVACAO"` — uma vez aprovada, some da lista,
+  CONFIRMADO no codigo). Objetivo: o Admin conseguir ver o que ja' foi aprovado ANTES de virar RDO
+  (ou seja, antes daquele dia entrar num RDO gerado). Depois que o dia efetivamente aparecer num RDO,
+  ai' sim pode sumir dessa lista (a definir o criterio exato na implementacao — provavel: uma aba/
+  filtro "Aprovadas (aguardando RDO)" alem da lista de pendentes, mostrando `AtividadeDia` com
+  `status="APROVADA"` cuja `data`+`planta` ainda NAO estejam cobertas por nenhum `RelatorioDiarioObra`
+  existente).
+
+## 2) PREENCHER MINHA ATIVIDADE
+- Cada card de atividade precisa poder ser RECOLHIDO (collapse), mostrando so' o TITULO quando
+  recolhido, e o STATUS (aprovado ou nao) sempre visivel mesmo recolhido — pra facilitar quando tem
+  muitas atividades na tela.
+
+## 3) PROGRAMACAO DE ATIVIDADE — novo checkbox "Quilometragem de viagens"
+- Na criacao de atividade (`programacao_nova`), logo ABAIXO do checkbox de Horimetro, novo checkbox
+  "Quilometragem de viagens". Mesma ideia de fluxo do Horimetro: PAINEL DE QUILOMETRAGEM dedicado
+  (analogo ao Painel de Horimetros) computando os relatorios de KM. O report e' feito em PREENCHER
+  ATIVIDADE, IGUAL ao fluxo de Horimetro (2 registros por dia — inicio/fim — com valor + empresa),
+  porem com 2 campos A MAIS: PLACA do veiculo e MODELO do veiculo.
+- **AMBIGUIDADE A CONFIRMAR**: Horimetro hoje funciona vinculado a uma MAQUINA CADASTRADA
+  (`MaquinarioPesadoTerceiro`, escolhida na criacao da atividade) — placa/modelo do veiculo de
+  quilometragem devem vir de um CADASTRO NOVO parecido (ex.: "Veiculo Terceiro" dentro de Cadastro
+  Geral Terceiro, escolhido na criacao da atividade, placa/modelo fixos no cadastro) OU sao digitados
+  LIVREMENTE em cada relatorio de KM (podendo variar veiculo a cada report, sem cadastro previo)? A
+  redacao do pedido ("informar a placa do veiculo e modelo" no momento do REPORT) sugere a segunda
+  opcao (texto livre por report), mas o padrao ja estabelecido no sistema (Cadastro Geral Terceiro)
+  sugere a primeira — CONFIRMAR com Antonio antes de implementar.
+
+## 4) RELATORIO DIARIO DE OBRA — corrigir bug do filtro de empresa
+- BUG CONFIRMADO NO CODIGO: `rdo()` (facilities.py) filtra `dias_do_dia` so' por `data`+`planta_id`
+  (linha ~1935) — o filtro de EMPRESA (fornecedor_id, adicionado na leva anterior) so' e' usado pra
+  filtrar MAO DE OBRA/MAQUINARIO automaticos, mas NAO filtra quais ATIVIDADES entram no RDO
+  (`atividades_ids_json`, linha ~1967) — por isso uma atividade de OUTRA empresa (fora da selecionada)
+  aparece incorretamente no RDO. CORRIGIR: `atividades_ids_json` (e a lista de atividades exibida no
+  RDO/preview/PDF) deve incluir so' os grupos cuja equipe tenha PELO MENOS UM colaborador da empresa
+  selecionada.
+- REGRA PARA EQUIPE MISTA (2 empresas na mesma atividade): se a atividade tem gente das DUAS
+  empresas, ela deve aparecer nos RDOs de AMBAS as empresas (se forem gerados RDOs SEPARADOS, um pra
+  cada empresa, cada um deve trazer essa atividade).
+- REGRA DE DEDUPLICACAO: "nos casos de ser marcado duas empresas... trazer apenas 1 vez, pra nao
+  trazer duplicado" — **AMBIGUIDADE A CONFIRMAR**: isso sugere que o campo de Empresa do RDO PODE
+  passar a aceitar MAIS DE UMA empresa marcada ao mesmo tempo (hoje e' um `<select>` de UMA soh,
+  implementado na leva anterior)? Se sim: ao gerar UM UNICO RDO com 2+ empresas marcadas, uma
+  atividade com gente das 2 empresas marcadas aparece so' 1 vez nesse RDO (nao duplicada). CONFIRMAR
+  com Antonio: (a) o select de empresa do RDO vira multi-selecao (checkboxes/multi-select)? (b) o
+  RDO final registra QUAL(IS) empresa(s) foram selecionadas (hoje so' guarda 1 `fornecedor_id`,
+  seria preciso um campo tipo `RDOEmpresa` — tabela associativa — ou lista em JSON)?
+
+## PERGUNTAS EM ABERTO (perguntar antes de implementar, junto com a ordem "pode rodar"):
+1. Quilometragem: cadastro previo de veiculo (placa/modelo fixos, escolhido na criacao da atividade,
+   igual Horimetro) OU digitado livremente a cada report (pode mudar de veiculo a cada dia)?
+2. RDO por empresa: o select vira multi-selecao (varias empresas no mesmo RDO) ou continua sendo 1
+   empresa por RDO (e a regra de "nao duplicar" se aplica so' quando o Encarregado gera, em SEGUIDA,
+   um RDO pra cada empresa da mesma planta/dia — nesse caso nao ha' o que deduplicar DENTRO de um
+   mesmo RDO, so' precisa mesmo e' o fix do item 4 acima)?
+
+PROXIMO PASSO: aguardando respostas das 2 perguntas + ordem explicita ("pode rodar"/"implementar").
+
+### ================== RESPOSTAS DO ANTONIO AS 2 PERGUNTAS (25/09) — AINDA PENDENTE DE ORDEM ==================
+1. QUILOMETRAGEM: SEM cadastro previo de veiculo — placa e modelo sao DIGITADOS LIVREMENTE a cada
+   report (inicio/fim), podendo variar de veiculo a cada dia/report. Ou seja, o checkbox
+   "Quilometragem de viagens" na criacao de atividade so' ativa o FLUXO (2 reports/dia, igual
+   Horimetro), sem exigir vinculo a uma maquina/veiculo cadastrado — modelo novo (tipo
+   `RegistroQuilometragem`) tera' campos de placa/modelo como TEXTO LIVRE em cada registro, alem de
+   valor do KM e empresa (fornecedor_id) e foto (a definir se e' obrigatoria foto tambem, seguindo o
+   padrao do Horimetro, que exige foto do painel — decidir na implementacao, provavel que sim por
+   consistencia, mas o pedido nao foi explicito sobre foto pra quilometragem).
+2. EMPRESA NO RDO: select VIRA MULTI-SELECAO — Encarregado pode marcar 2+ empresas ao gerar UM RDO
+   so'. Implica: (a) trocar o `<select>` unico por multi-select (checkboxes ou `<select multiple>`)
+   no form de criacao do RDO; (b) `RelatorioDiarioObra` precisa guardar MAIS DE UMA empresa — trocar
+   o campo unico (se houver `fornecedor_id` direto no modelo, confirmar na hora de implementar) por
+   uma tabela associativa nova (ex.: `RDOEmpresa` — rdo_id + fornecedor_id) ou um JSON de ids,
+   seguindo o padrao ja usado em `atividades_ids_json`; (c) mao de obra/maquinario automaticos passam
+   a considerar QUALQUER colaborador cuja empresa esteja entre as SELECIONADAS (nao mais uma unica);
+   (d) atividades com equipe mista das empresas selecionadas aparecem UMA SO' VEZ no RDO (nao
+   duplicada, mesmo que tenha gente de 2+ das empresas marcadas); (e) ATENCAO: isso muda o
+   comportamento implementado na leva anterior (fornecedor_id unico obrigatorio no form) — ajustar
+   tudo que dependia de um `fornecedor_id` singular (aprovacao.html, validacoes, etc, conferir no
+   codigo na hora de implementar).
+
+PROXIMO PASSO: aguardando ordem explicita ("pode rodar"/"implementar") pra comecar com essas
+decisoes ja confirmadas.
+
+### ================== TERCEIRA LEVA DE AJUSTES — IMPLEMENTADA E TESTADA (25/09) ==================
+ORDEM EXPLICITA RECEBIDA pra implementar os 4 itens da terceira leva (registrados nas duas
+entradas acima), seguindo as decisoes ja confirmadas por Antonio. Testado localmente (venv novo
+em `/tmp`, SQLite, `db.create_all()` + `_light_migrate()`, `app.test_client()` simulando login
+como Usuario Master e verificando os fluxos ponta a ponta). Detalhe por item:
+
+1) APROVACAO DE ATIVIDADES — feito. `aprovacao()` (`app/facilities.py`) agora devolve DUAS
+   listas: `pendentes` (como já era, `status="AGUARDANDO_APROVACAO"`) e `aguardando_rdo`
+   (`status="APROVADA"` cuja `data`+`planta_id` ainda não estão cobertas por nenhum
+   `RelatorioDiarioObra`). O filtro de empresa do Encarregado (já existente) foi extraído pra
+   uma função `_filtra_por_empresa()` reusada nas duas listas. `aprovacao.html` ganhou duas abas
+   Bootstrap (nav-tabs): "Pendentes" (comportamento igual a antes) e "Aprovadas (aguardando
+   RDO)" (cards simples, só leitura, sem os botões de aprovar/retificar/reprogramar — já foram
+   aprovados, só aguardam entrar num RDO). TESTADO: atividade aprovada aparece na aba nova antes
+   de existir RDO pra data+planta; depois de criar o RDO cobrindo aquela data+planta, a
+   atividade some da aba (badge de contagem confirmado indo de 1 pra 0), sem mexer no `status`
+   dela no banco (continua "APROVADA").
+
+2) PREENCHER MINHA ATIVIDADE — feito. Em `preencher_dia.html`, cada card ganhou um cabeçalho
+   clicável (`data-bs-toggle="collapse"`) com o título + um badge de status SEMPRE visível
+   (aprovada/aguardando aprovação/pendente/não executada), e o resto do card (botões, bloco de
+   horímetro/quilometragem, formulários, fotos) foi movido pra dentro de um
+   `<div class="collapse show">` — expandido por padrão, recolhe ao clicar no cabeçalho.
+   TESTADO: renderização sem erro de template, `id="corpoCard<id>"` presente no HTML.
+
+2b) QUILOMETRAGEM DE VIAGENS — feito, SEM cadastro de veículo (confirmado por Antonio: placa e
+   modelo são digitados livremente a CADA report). Modelo novo `AtividadeGrupo.quilometragem_ativa`
+   (Boolean) + property `tem_quilometragem`. Modelo novo `RegistroQuilometragem` (mesmo espírito
+   de `RegistroHorimetro`): `dia_id`, `tipo` (INICIO/FIM), `valor_km`, `placa`, `modelo`,
+   `fornecedor_id`, `foto_painel_url` (foto do odômetro, obrigatória — decisão de implementação
+   por consistência com o horímetro), `status`, campos de aprovação e autoria. Rota nova
+   `preencher_quilometragem` (POST), espelhando `preencher_horimetro`: mesma trava de não
+   duplicar (1 registro de cada tipo por dia) e mesma validação de formato numérico (vírgula ou
+   ponto, sem letras) — SEM as travas i/ii de sequência entre dias (não fazem sentido aqui, já
+   que o veículo pode mudar a cada report). Checkbox novo "🚗 Quilometragem de viagens" em
+   `programacao_nova.html`, logo abaixo do checkbox de Horímetro. `preencher_dia.html` ganhou o
+   bloco de 2 reports (início/fim) com campos de placa/modelo, análogo ao bloco de horímetro.
+   Painel novo `/facilities/painel-quilometragem` (rota + template `painel_quilometragem.html`,
+   espelhando `painel_horimetros.html`): tabela de lançamentos, filtro por período, total de KM
+   rodado (soma fim-início por dia, já que não há "máquina" fixa pra agrupar). Rotas de aprovar/
+   excluir registro, iguais ao painel de horímetros. Link novo no menu (`base.html`). NÃO precisou
+   mexer em `_light_migrate()` — o loop genérico já existente em `app/__init__.py` cobre
+   automaticamente colunas/tabelas novas (mesmo padrão confirmado nas duas levas anteriores).
+   TESTADO: valor "abc" rejeitado; valor "1000,5" aceito e convertido pra 1000.5; report de
+   INICIO (1000,5) + FIM (1050.0) calculam corretamente 49.5 km no painel; card de quilometragem
+   aparece em `preencher_dia.html` pra atividade com `quilometragem_ativa=True`.
+
+3) RDO — bug do filtro de empresa corrigido + multi-seleção implementada. Modelo novo
+   `RDOEmpresa` (`rdo_id`, `fornecedor_id`) — tabela associativa, substitui o `fornecedor_id`
+   único do form (que na leva anterior nunca chegou a ser uma coluna persistida, só um parâmetro
+   de form usado transitoriamente pra filtrar mão de obra/maquinário — não havia nada a migrar
+   pra manter compatibilidade). `RelatorioDiarioObra` ganhou `rdo_empresas` (relationship) e a
+   property `nomes_empresas`. Em `rdo.html`, o `<select>` único virou `<select multiple>` (nome
+   `fornecedores_ids`). Em `rdo()` (facilities.py): `fornecedores_ids` (lista) substitui
+   `fornecedor_id`; BUG CORRIGIDO — antes `atividades_ids_json` usava TODAS as atividades da
+   data+planta sem considerar empresa; agora só entram os grupos cuja equipe tenha PELO MENOS UM
+   colaborador de QUALQUER UMA das empresas selecionadas (`grupos_ids_empresa`, um `set` — dedupe
+   natural: atividade com equipe mista de 2+ empresas marcadas aparece UMA SÓ VEZ). Mão de obra e
+   maquinário automáticos ajustados pra considerar qualquer colaborador/máquina cuja empresa
+   esteja entre as SELECIONADAS (antes comparava com uma única `empresa_sel`). Endpoint AJAX
+   `rdo_atividades_do_dia` (preview) também ajustado pra aceitar múltiplos `fornecedor_id` na
+   querystring. `rdo_preview.html`, a listagem em `rdo.html` e o PDF (`pdf_rdo.py`) passaram a
+   mostrar `nomes_empresas` (lista, join por vírgula) em vez de uma empresa só. RDOs antigos
+   (sem nenhuma linha em `RDOEmpresa`) simplesmente mostram "—" nesse campo, sem quebrar.
+   TESTADO: RDO com 2 empresas marcadas incluindo só a atividade de equipe mista (aparecendo 1x,
+   não duplicada) e trazendo os 2 colaboradores (um de cada empresa) na mão de obra automática;
+   RDO com 1 empresa só continua funcionando normalmente (caso simples não quebrou); preview e
+   PDF do RDO multi-empresa gerados sem erro, mostrando "EMPRESA A, EMPRESA B".
+
+SMOKE TEST GERAL: as mesmas ~7 URLs principais do módulo (incluindo o novo Painel de
+Quilometragem) respondem 200 logado como Usuario Master e como Colaborador com papel="admin".
+
+DECISOES EXTRAS TOMADAS (nao detalhadas ao ponto de ambiguidade no roadmap, resolvidas da forma
+mais simples na implementacao):
+- A trava pré-existente "Encarregado só pode fazer RDO das próprias empresas" (comparação com
+  `empresas_do_dia`, calculada sobre TODAS as atividades da data/planta, não só as selecionadas)
+  foi MANTIDA como estava — fora do escopo pedido nesta leva (só o bug de `atividades_ids_json`
+  foi pedido explicitamente).
+- Na tabela de listagem do RDO (`rdo.html`) foi acrescentada uma coluna "Empresa(s)" (sem filtro
+  de coluna estilo Excel, só exibição) — não pedido explicitamente, mas natural dado que o campo
+  deixou de ser mostrado em lugar nenhum na tela de listagem antes desta leva.
+- A foto do painel/odômetro da quilometragem foi tornada OBRIGATÓRIA (mesmo padrão do
+  horímetro) — o pedido não foi explícito sobre isso, mas Antonio sinalizou "provável que sim
+  por consistência" na resposta às perguntas.
+
+NAO TESTADO / PENDENTE:
+- Não testado com Postgres (produção usa Neon) — só SQLite local, mas `_light_migrate()` já
+  cobre os dois dialetos pelo padrão existente no projeto (loop genérico, sem código específico
+  novo necessário pra esta leva).
+- Interação de UI real via browser (clique no cabeçalho do card recolhendo/expandindo, o
+  multi-select de empresas do RDO com ctrl/cmd+clique) foi revisada por leitura do HTML/JS
+  gerado, mas não testada com um navegador de verdade — só via `test_client()` (sem JS).
+- `rdo_editar.html`/rota `rdo_editar` continuam sem suporte a editar as empresas (RDOEmpresa) de
+  um RDO já criado — mesma limitação já registrada na entrega anterior pra mão de obra/
+  equipamentos/clima, fora do escopo pedido agora; se o Antonio quiser editar depois, precisa do
+  mesmo tratamento dado ao formulário de criação.
+- Não foi adicionado suporte a quilometragem no PDF do RDO (só no Painel de Quilometragem) — o
+  roadmap não pediu isso explicitamente (só citou "Painel de Quilometragem" análogo ao de
+  Horímetros); registrar como próximo passo se o Antonio quiser depois.

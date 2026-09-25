@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Painel de Quilometragem{% endblock %}
+{% block content %}
+<style>
+  /* mesmo filtro estilo Excel já usado em Programação de Atividades, RDO e Painel de Horímetros */
+  .th-filtro{display:flex;align-items:center;justify-content:space-between;gap:4px;user-select:none}
+  .th-filtro .funil{cursor:pointer;opacity:.6;padding:2px 4px;border-radius:4px}
+  .th-filtro .funil:hover{opacity:1;background:rgba(255,255,255,.08)}
+  .th-filtro .funil.ativo{opacity:1;color:#FF5246}
+  .filtro-dropdown{position:absolute;background:var(--card-bg,#232323);border:1px solid var(--linha,#333);
+    border-radius:8px;padding:8px;z-index:50;min-width:200px;max-width:260px;box-shadow:0 6px 18px rgba(0,0,0,.5);
+    display:none}
+  .filtro-dropdown.aberto{display:block}
+  .filtro-dropdown .busca-valores{width:100%;margin-bottom:6px;font-size:12px;padding:4px 6px;
+    background:var(--input-bg);border:1px solid var(--linha);color:var(--texto);border-radius:6px}
+  .filtro-dropdown .ordenar-btns{display:flex;gap:4px;margin-bottom:6px}
+  .filtro-dropdown .ordenar-btns button{flex:1;font-size:11px;padding:3px;background:var(--input-bg);
+    border:1px solid var(--linha);color:var(--texto);border-radius:5px;cursor:pointer}
+  .filtro-dropdown .lista-valores{max-height:180px;overflow-y:auto;border-top:1px solid var(--linha);
+    padding-top:6px;margin-bottom:6px}
+  .filtro-dropdown .valor-item{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;color:var(--texto)}
+  .filtro-dropdown .rodape-btns{display:flex;gap:4px}
+  .filtro-dropdown .rodape-btns button{flex:1;font-size:11px;padding:4px;border-radius:5px;cursor:pointer}
+  .filtro-dropdown .btn-aplicar{background:#FF5246;color:#fff;border:none}
+  .filtro-dropdown .btn-limpar{background:var(--input-bg);color:var(--texto);border:1px solid var(--linha)}
+  th[data-col].tem-filtro-ativo{color:#FF5246}
+</style>
+
+<h4 class="mb-3">Painel de Quilometragem</h4>
+
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="btn-group btn-group-sm">
+      <a class="btn {{ 'btn-primary' if periodo=='semana' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_quilometragem', periodo='semana') }}">Semana</a>
+      <a class="btn {{ 'btn-primary' if periodo=='mes' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_quilometragem', periodo='mes') }}">Mês</a>
+      <a class="btn {{ 'btn-primary' if periodo=='trimestre' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_quilometragem', periodo='trimestre') }}">Trimestre</a>
+      <a class="btn {{ 'btn-primary' if periodo=='semestre' else 'btn-outline-secondary' }}" href="{{ url_for('facilities.painel_quilometragem', periodo='semestre') }}">Semestre</a>
+    </div>
+    <div class="text-end">
+      <span class="text-muted small">Total de KM rodado no período (desde {{ data_ini_filtro.strftime('%d/%m/%Y') }})</span><br>
+      <span class="h4 mb-0">{{ total_km }} km</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="card"><div class="card-body">
+<div style="position:relative">
+<table class="table table-sm align-middle mb-0" id="tabelaQuilometragem">
+  <thead class="table-light"><tr>
+    <th data-col="0" data-tipo="data">Data</th><th data-col="1">Atividade</th><th data-col="2">Tipo</th>
+    <th data-col="3" data-tipo="num">KM</th><th data-col="4">Placa</th><th data-col="5">Modelo</th>
+    <th data-col="6">Empresa</th><th data-col="7">Status</th><th>Foto</th><th></th>
+  </tr></thead>
+  <tbody>
+    {% for r in registros %}
+    <tr>
+      <td class="small" data-sort="{{ r.dia.data.strftime('%Y%m%d') }}">{{ r.dia.data.strftime('%d/%m/%Y') }}</td>
+      <td class="small">{{ r.dia.grupo.titulo if r.dia and r.dia.grupo else '—' }}</td>
+      <td data-valor="{{ r.tipo }}"><span class="badge {{ 'bg-primary' if r.tipo == 'INICIO' else 'bg-success' }}">{{ r.tipo }}</span></td>
+      <td class="small" data-sort="{{ r.valor_km }}">{{ r.valor_km }}</td>
+      <td class="small">{{ r.placa or '—' }}</td>
+      <td class="small">{{ r.modelo or '—' }}</td>
+      <td class="small">{{ (r.fornecedor.nome_fantasia or r.fornecedor.razao_social) if r.fornecedor else '—' }}</td>
+      <td data-valor="{{ 'Aprovado' if r.status == 'APROVADO' else 'Pendente' }}">
+        {% if r.status == 'APROVADO' %}<span class="badge bg-success">aprovado</span>{% else %}<span class="badge bg-warning text-dark">pendente</span>{% endif %}
+      </td>
+      <td>{% if r.foto_painel_url %}<a href="{{ r.foto_painel_url }}" target="_blank"><img src="{{ r.foto_painel_url }}" style="width:50px;height:50px;object-fit:cover;border-radius:6px"></a>{% else %}—{% endif %}</td>
+      <td class="text-end">
+        {% if eh_gestor %}
+        {% if r.status != 'APROVADO' %}
+        <form method="post" action="{{ url_for('facilities.painel_quilometragem_aprovar', registro_id=r.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-success">✓ Aprovar</button>
+        </form>
+        <form method="post" action="{{ url_for('facilities.painel_quilometragem_excluir', registro_id=r.id) }}" style="display:inline" onsubmit="return confirm('Excluir este registro de quilometragem?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger">🗑</button>
+        </form>
+        {% else %}
+        <span class="text-muted small">—</span>
+        {% endif %}
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="10" class="text-muted text-center py-3">Nenhum lançamento de quilometragem neste período.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+</div></div>
+
+<script>
+(function(){
+  var tabela = document.getElementById('tabelaQuilometragem');
+  if (!tabela) return;
+  var thead = tabela.querySelector('thead');
+  var tbody = tabela.querySelector('tbody');
+  var linhas = Array.from(tbody.querySelectorAll('tr')).filter(function(tr){ return tr.children.length > 1; });
+  var escondidosPorCol = {};
+
+  function valorDaCelula(td){
+    return td.dataset.valor !== undefined ? td.dataset.valor : td.textContent.trim();
+  }
+
+  function aplicarFiltros(){
+    linhas.forEach(function(tr){
+      var mostrar = true;
+      Object.keys(escondidosPorCol).forEach(function(col){
+        if (!mostrar) return;
+        var td = tr.children[parseInt(col)];
+        if (!td) return;
+        var v = valorDaCelula(td);
+        if (escondidosPorCol[col].has(v)) mostrar = false;
+      });
+      tr.style.display = mostrar ? '' : 'none';
+    });
+  }
+
+  function fecharTodosDropdowns(){
+    document.querySelectorAll('.filtro-dropdown').forEach(function(dd){ dd.classList.remove('aberto'); });
+  }
+
+  thead.querySelectorAll('th[data-col]').forEach(function(th){
+    var col = th.dataset.col;
+    var tipo = th.dataset.tipo || 'texto';
+    var textoOriginal = th.textContent.trim();
+
+    var wrap = document.createElement('div');
+    wrap.className = 'th-filtro';
+    var span = document.createElement('span');
+    span.textContent = textoOriginal;
+    var funil = document.createElement('span');
+    funil.className = 'funil';
+    funil.textContent = '▾';
+    wrap.appendChild(span);
+    wrap.appendChild(funil);
+    th.textContent = '';
+    th.appendChild(wrap);
+    th.style.position = 'relative';
+
+    var dropdown = document.createElement('div');
+    dropdown.className = 'filtro-dropdown';
+    dropdown.addEventListener('click', function(ev){ ev.stopPropagation(); });
+    th.appendChild(dropdown);
+
+    funil.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var jaAberto = dropdown.classList.contains('aberto');
+      fecharTodosDropdowns();
+      if (jaAberto) return;
+
+      var valores = {};
+      linhas.forEach(function(tr){
+        var td = tr.children[parseInt(col)];
+        if (td) valores[valorDaCelula(td)] = true;
+      });
+      var listaValores = Object.keys(valores).sort();
+      var escondidos = escondidosPorCol[col] || new Set();
+
+      var rotuloAsc = tipo === 'num' ? '1→9' : 'A→Z';
+      var rotuloDesc = tipo === 'num' ? '9→1' : 'Z→A';
+      dropdown.innerHTML =
+        '<input type="text" class="busca-valores" placeholder="Pesquisar...">' +
+        '<div class="ordenar-btns"><button data-dir="asc">' + rotuloAsc + '</button><button data-dir="desc">' + rotuloDesc + '</button></div>' +
+        '<div class="lista-valores"></div>' +
+        '<div class="rodape-btns"><button class="btn-limpar">Limpar</button><button class="btn-aplicar">Aplicar</button></div>';
+
+      var listaEl = dropdown.querySelector('.lista-valores');
+      function redesenharLista(filtroTexto){
+        listaEl.innerHTML = '';
+        listaValores.filter(function(v){ return !filtroTexto || v.toLowerCase().indexOf(filtroTexto.toLowerCase()) !== -1; })
+          .forEach(function(v){
+            var item = document.createElement('label');
+            item.className = 'valor-item';
+            var chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.checked = !escondidos.has(v);
+            chk.dataset.valor = v;
+            item.appendChild(chk);
+            item.appendChild(document.createTextNode(v || '(vazio)'));
+            listaEl.appendChild(item);
+          });
+      }
+      redesenharLista('');
+
+      dropdown.querySelector('.busca-valores').addEventListener('input', function(e){
+        redesenharLista(e.target.value);
+      });
+
+      dropdown.querySelectorAll('.ordenar-btns button').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var dir = btn.dataset.dir;
+          linhas.sort(function(a, b){
+            var ta = a.children[parseInt(col)], tb = b.children[parseInt(col)];
+            var va = ta.dataset.sort !== undefined ? ta.dataset.sort : valorDaCelula(ta).toLowerCase();
+            var vb = tb.dataset.sort !== undefined ? tb.dataset.sort : valorDaCelula(tb).toLowerCase();
+            if (tipo === 'num') { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+            if (va < vb) return dir === 'asc' ? -1 : 1;
+            if (va > vb) return dir === 'asc' ? 1 : -1;
+            return 0;
+          });
+          linhas.forEach(function(tr){ tbody.appendChild(tr); });
+        });
+      });
+
+      dropdown.querySelector('.btn-limpar').addEventListener('click', function(){
+        delete escondidosPorCol[col];
+        th.classList.remove('tem-filtro-ativo');
+        funil.classList.remove('ativo');
+        aplicarFiltros();
+        dropdown.classList.remove('aberto');
+      });
+
+      dropdown.querySelector('.btn-aplicar').addEventListener('click', function(){
+        var marcados = Array.from(listaEl.querySelectorAll('input[type=checkbox]:checked')).map(function(c){ return c.dataset.valor; });
+        var novosEscondidos = new Set(listaValores.filter(function(v){ return marcados.indexOf(v) === -1; }));
+        if (novosEscondidos.size === 0) {
+          delete escondidosPorCol[col];
+          th.classList.remove('tem-filtro-ativo');
+          funil.classList.remove('ativo');
+        } else {
+          escondidosPorCol[col] = novosEscondidos;
+          th.classList.add('tem-filtro-ativo');
+          funil.classList.add('ativo');
+        }
+        aplicarFiltros();
+        dropdown.classList.remove('aberto');
+      });
+
+      dropdown.classList.add('aberto');
+    });
+  });
+
+  document.addEventListener('click', function(){ fecharTodosDropdowns(); });
+})();
+</script>
+{% endblock %}

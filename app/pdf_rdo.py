@@ -246,8 +246,13 @@ def gerar_pdf_rdo(rdo):
     story.append(_faixa_secao("Dados gerais"))
     # [23/09 segunda leva] "% média executada" removida do PDF (pedido do Antonio) — o campo/
     # cálculo (percentual_medio / _calcular_media_ponderada_dia) continua existindo no banco.
+    # [25/09 terceira leva] Empresa(s) do RDO — agora é lista (multi-seleção via RDOEmpresa),
+    # não mais um fornecedor único.
+    nomes_empresas = rdo.nomes_empresas
+    texto_empresas = ", ".join(nomes_empresas) if nomes_empresas else "—"
     story.append(_grade([
-        [_campo("Data", rdo.data.strftime("%d/%m/%Y")), _campo("Planta", rdo.planta.nome if rdo.planta else "—")],
+        [_campo("Data", rdo.data.strftime("%d/%m/%Y")), _campo("Planta", rdo.planta.nome if rdo.planta else "—"),
+         _campo("Empresa(s)", texto_empresas)],
         [_campo("Clima — Manhã", clima_manha), _campo("Clima — Tarde", clima_tarde),
          _campo("Horário de trabalho", horario_txt)],
     ]))

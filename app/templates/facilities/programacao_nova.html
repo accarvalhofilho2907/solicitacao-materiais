@@ -69,6 +69,16 @@
           {% if not maquinas_disp %}<p class="text-muted small mt-1 mb-0">Nenhuma máquina cadastrada — cadastre em Cadastro &gt; Cadastro Geral Terceiro &gt; Maquinário Pesado Terceiro.</p>{% endif %}
         </div>
       </div>
+
+      <!-- [25/09 terceira leva] "Quilometragem de viagens" — mesma ideia de fluxo do
+           Horímetro (2 reports diários), mas SEM cadastro de veículo: placa/modelo são
+           digitados livremente a cada report (ver preencher_dia.html). -->
+      <div class="mt-2">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="quilometragem_ativa" id="chkQuilometragem" value="1">
+          <label class="form-check-label small" for="chkQuilometragem"><b>🚗 Quilometragem de viagens</b> — ativa 2 reports diários (início e fim, com valor do KM + placa + modelo do veículo digitados a cada report)</label>
+        </div>
+      </div>
     </div>
   </div>
 

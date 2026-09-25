@@ -42,6 +42,8 @@
 <div class="card"><div class="card-body">
   <div class="row g-2 mb-2">
     <div class="col-md-3"><label class="form-label small text-muted">Planta</label><p class="mb-0">{{ r.planta.nome if r.planta else '—' }}</p></div>
+    <!-- [25/09 terceira leva] Empresa(s) do RDO — agora é lista (multi-seleção), via RDOEmpresa. -->
+    <div class="col-md-3"><label class="form-label small text-muted">Empresa(s)</label><p class="mb-0">{{ r.nomes_empresas|join(', ') if r.nomes_empresas else '—' }}</p></div>
     <div class="col-md-3"><label class="form-label small text-muted">Clima — Manhã / Tarde</label><p class="mb-0">{{ r.clima_manha or r.condicao_climatica or '—' }} / {{ r.clima_tarde or r.condicao_climatica or '—' }}</p></div>
     <div class="col-md-3"><label class="form-label small text-muted">Horário</label><p class="mb-0">{{ r.horario_inicio or '—' }} às {{ r.horario_termino or '—' }}{% if r.horario_intervalo_inicio %} (intervalo {{ r.horario_intervalo_inicio }}-{{ r.horario_intervalo_fim }}){% endif %}</p></div>
     <!-- [23/09 segunda leva] "% média executada" removida da tela (pedido do Antonio) — o

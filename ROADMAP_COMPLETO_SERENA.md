@@ -4992,3 +4992,27 @@ confirmado que vira `+psycopg2` antes de virar `SQLALCHEMY_DATABASE_URI`).
 NAO EXIGIU passar pelo fluxo normal de "registrar e aguardar ordem" por ser correcao de producao
 fora do ar — o Antonio confirmou a abordagem (normalizar no codigo, em vez de mexer na variavel no
 painel do Render) antes da implementacao.
+
+### ================== FIX URGENTE (TENTATIVA 2): MESMO ERRO PERSISTIU (25/09) ==================
+Apos o deploy da tentativa 1 (match exato `_db.startswith("postgresql+psycopg://")`), o Render
+CONTINUOU com o MESMO erro `ModuleNotFoundError: No module named 'psycopg'`. Isso indica que a
+`DATABASE_URL` real colada no painel do Render tem alguma variacao que o match exato nao cobria
+(aspas ou espaco sobrando ao colar, formato "postgres+psycopg://" sem o "ql", maiusculas, etc — nao
+foi possivel confirmar qual exatamente, pois nao devemos pedir/expor a `DATABASE_URL` real, que
+contem credencial de banco).
+
+FIX MAIS ROBUSTO (`config.py`): troca o match exato por uma normalizacao bem mais defensiva —
+remove espacos/aspas nas pontas do valor, e usa REGEX case-insensitive
+(`^postgres(ql)?(\+psycopg(?!2))?://`) que cobre TODAS as variacoes plausiveis
+("postgres://", "postgresql://", "postgres+psycopg://", "postgresql+psycopg://", em qualquer
+combinacao de maiusculas/minusculas) e forca sempre `postgresql+psycopg2://`. Testado com 8
+variacoes diferentes (incluindo com aspas, espacos, maiusculas, e o formato ja correto que NAO deve
+ser alterado) — todas normalizadas corretamente pra `postgresql+psycopg2://...`.
+
+REDE DE SEGURANCA ADICIONAL: alem da normalizacao, adicionado `psycopg[binary]==3.2.3` tanto no
+`requirements.txt` quanto no `buildCommand` do `render.yaml` (que ja instalava
+`psycopg2-binary==2.9.10` manualmente ali) — assim, MESMO que algum formato de URL escape da
+normalizacao no futuro, o driver psycopg (v3) tambem estara' instalado e disponivel, eliminando essa
+classe inteira de erro.
+
+PROXIMO PASSO: aguardando confirmacao do Antonio de que o proximo deploy sobe sem erro.

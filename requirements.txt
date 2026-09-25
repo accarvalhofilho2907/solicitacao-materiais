@@ -10,6 +10,11 @@ cloudinary==1.41.0
 python-dotenv==1.0.1
 pdfplumber==0.11.4
 psycopg2-binary==2.9.10
+# [25/09] Rede de segurança pro erro de deploy "ModuleNotFoundError: No module named
+# 'psycopg'" — a config.py já normaliza a DATABASE_URL pra sempre usar psycopg2, mas
+# instalar o driver psycopg (v3) também garante que, se algum formato de URL escapar
+# da normalização, o SQLAlchemy ainda encontra um driver instalado pra usar.
+psycopg[binary]==3.2.3
 gunicorn==22.0.0
 Werkzeug==3.0.3
 qrcode==7.4.2

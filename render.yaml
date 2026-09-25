@@ -3,7 +3,7 @@ services:
     name: solicitacao-materiais
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt psycopg2-binary==2.9.10
+    buildCommand: pip install -r requirements.txt psycopg2-binary==2.9.10 "psycopg[binary]==3.2.3"
     startCommand: gunicorn wsgi:app --workers 1 --threads 4 --timeout 120
     envVars:
       - key: SECRET_KEY

@@ -1,4 +1,5 @@
 import os
+import re
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -7,15 +8,20 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-troque-esta-chave")
 
     # Banco: usa DATABASE_URL (Postgres/Neon) se existir; senão SQLite local.
+    # [25/09] A primeira tentativa de corrigir o erro "ModuleNotFoundError: No module
+    # named 'psycopg'" (só fazia _db.startswith(...) num prefixo exato) NÃO resolveu em
+    # produção — sinal de que a string colada no Render tem alguma variação que o match
+    # exato não pegava (espaço/aspas sobrando na hora de colar, "postgres+psycopg://" sem
+    # o "ql", maiúsculas, etc). Reescrito de forma bem mais defensiva: remove espaços e
+    # aspas nas pontas, e usa regex (case-insensitive) pra normalizar QUALQUER variação de
+    # prefixo que comece com "postgres" e mencione "psycopg" (sem o "2") logo em seguida,
+    # forçando sempre "postgresql+psycopg2://" — o único driver que está instalado
+    # (psycopg2-binary, requirements.txt). Também cobre o caso clássico "postgres://" sem
+    # driver nenhum, que o SQLAlchemy 1.4+ não aceita mais sem o "ql".
     _db = os.environ.get("DATABASE_URL", "sqlite:///" + os.path.join(basedir, "app.db"))
-    if _db.startswith("postgres://"):
-        _db = _db.replace("postgres://", "postgresql://", 1)
-    # [25/09] Correção do erro de deploy "ModuleNotFoundError: No module named 'psycopg'":
-    # o Neon às vezes fornece a DATABASE_URL já no formato "postgresql+psycopg://" (driver
-    # psycopg 3), mas o projeto só tem psycopg2-binary instalado (requirements.txt). Força
-    # o uso do driver psycopg2, que já está instalado, independente do prefixo recebido.
-    if _db.startswith("postgresql+psycopg://"):
-        _db = _db.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+    _db = _db.strip().strip('"').strip("'")
+    _db = re.sub(r"^postgres(ql)?(\+psycopg(?!2))?://", "postgresql+psycopg2://", _db,
+                 count=1, flags=re.IGNORECASE)
     SQLALCHEMY_DATABASE_URI = _db
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     # Corrige "SSL connection has been closed unexpectedly" (Neon derruba conexões
